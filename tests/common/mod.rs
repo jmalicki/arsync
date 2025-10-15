@@ -2,6 +2,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+pub mod test_args;
+
 pub struct TestTimeoutGuard {
     cancelled: Arc<AtomicBool>,
 }

@@ -7,7 +7,7 @@
 // Known limitation: Nanosecond timestamp propagation is currently unreliable in CI.
 // See issue: https://github.com/jmalicki/arsync/issues/9
 
-use arsync::cli::{Args, CopyMethod};
+use arsync::cli::Args;
 use arsync::copy::copy_file;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
@@ -16,42 +16,16 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
 
+mod common;
+use common::test_args::create_archive_test_args;
+
 /// Create a default Args struct for testing with archive mode enabled
 fn create_test_args_with_archive() -> Args {
-    Args {
-        source: PathBuf::from("/test/source"),
-        destination: PathBuf::from("/test/dest"),
-        queue_depth: 4096,
-        max_files_in_flight: 1024,
-        cpu_count: 1,
-        buffer_size_kb: 64,
-        copy_method: CopyMethod::Auto,
-        archive: true, // Enable archive mode for full metadata preservation
-        recursive: false,
-        links: false,
-        perms: false,
-        times: false,
-        group: false,
-        owner: false,
-        devices: false,
-        xattrs: false,
-        acls: false,
-        hard_links: false,
-        atimes: false,
-        crtimes: false,
-        preserve_xattr: false,
-        preserve_acl: false,
-        dry_run: false,
-        progress: false,
-        verbose: 0,
-        quiet: false,
-        no_adaptive_concurrency: false,
-    }
+    create_archive_test_args()
 }
-#[path = "common/mod.rs"]
-mod test_utils;
+
+use common::test_timeout_guard;
 use std::time::Duration as StdDuration;
-use test_utils::test_timeout_guard;
 
 /// Test permission preservation with special permission bits (setuid, setgid, sticky)
 #[compio::test]

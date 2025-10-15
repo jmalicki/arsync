@@ -6,7 +6,7 @@
 //! 1. With flag enabled: metadata IS preserved
 //! 2. With flag disabled: metadata IS NOT preserved (uses default/umask)
 
-use arsync::cli::{Args, CopyMethod};
+use arsync::cli::Args;
 use arsync::copy::copy_file;
 use arsync::directory::{preserve_directory_metadata, ExtendedMetadata};
 use std::fs;
@@ -14,58 +14,27 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
+mod common;
+use common::test_args::{create_minimal_test_args, ArgsBuilder};
+
 /// Create Args with NO metadata preservation (default rsync behavior)
 fn create_args_no_metadata() -> Args {
-    Args {
-        source: PathBuf::from("/test/source"),
-        destination: PathBuf::from("/test/dest"),
-        queue_depth: 4096,
-        max_files_in_flight: 1024,
-        cpu_count: 1,
-        buffer_size_kb: 64,
-        copy_method: CopyMethod::Auto,
-        archive: false, // No archive mode
-        recursive: false,
-        links: false,
-        perms: false, // No permission preservation
-        times: false, // No timestamp preservation
-        group: false, // No group preservation
-        owner: false, // No owner preservation
-        devices: false,
-        xattrs: false, // No xattr preservation
-        acls: false,
-        hard_links: false,
-        atimes: false,
-        crtimes: false,
-        preserve_xattr: false,
-        preserve_acl: false,
-        dry_run: false,
-        progress: false,
-        verbose: 0,
-        quiet: false,
-        no_adaptive_concurrency: false,
-    }
+    create_minimal_test_args()
 }
 
 /// Create Args with only permissions preservation enabled
 fn create_args_perms_only() -> Args {
-    let mut args = create_args_no_metadata();
-    args.perms = true;
-    args
+    ArgsBuilder::new().perms(true).build()
 }
 
 /// Create Args with only timestamp preservation enabled
 fn create_args_times_only() -> Args {
-    let mut args = create_args_no_metadata();
-    args.times = true;
-    args
+    ArgsBuilder::new().times(true).build()
 }
 
 /// Create Args with archive mode (all metadata)
 fn create_args_archive() -> Args {
-    let mut args = create_args_no_metadata();
-    args.archive = true;
-    args
+    ArgsBuilder::new().archive(true).build()
 }
 
 /// Test: Permissions are NOT preserved when --perms flag is OFF
