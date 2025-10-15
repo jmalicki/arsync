@@ -1007,7 +1007,7 @@ async fn process_file(
                 // If fail_on_exhaustion is true and this is EMFILE, this returns an error
                 // Otherwise, it adapts automatically and returns Ok
                 concurrency_controller.handle_error(&e)?;
-                
+
                 // Log the error and continue
                 warn!(
                     "Failed to copy file {} -> {}: {}",

@@ -29,7 +29,9 @@ async fn test_permission_preservation() {
 
     // Copy the file with archive mode (full metadata preservation)
     let args = create_test_args_with_archive();
-    copy_file(&src_path, &dst_path, &args.metadata).await.unwrap();
+    copy_file(&src_path, &dst_path, &args.metadata)
+        .await
+        .unwrap();
 
     // Check that permissions were preserved
     let src_metadata = fs::metadata(&src_path).unwrap();
@@ -66,7 +68,9 @@ async fn test_timestamp_preservation() {
 
     // Copy the file with archive mode (full metadata preservation)
     let args = create_test_args_with_archive();
-    copy_file(&src_path, &dst_path, &args.metadata).await.unwrap();
+    copy_file(&src_path, &dst_path, &args.metadata)
+        .await
+        .unwrap();
 
     // Check that timestamps were preserved
     let dst_metadata = fs::metadata(&dst_path).unwrap();

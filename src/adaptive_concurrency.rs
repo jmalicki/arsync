@@ -27,7 +27,7 @@ use tracing::warn;
 /// This struct contains all configuration for the adaptive concurrency controller.
 /// It's owned by this module and can be created from CLI args.
 ///
-/// Uses `NonZeroUsize` to guarantee at compile-time that max_files_in_flight >= 1.
+/// Uses `NonZeroUsize` to guarantee at compile-time that `max_files_in_flight` >= 1.
 #[derive(Debug, Clone)]
 pub struct ConcurrencyOptions {
     /// Maximum number of concurrent operations (guaranteed >= 1)
@@ -53,12 +53,11 @@ impl ConcurrencyOptions {
     #[must_use]
     pub fn new(max_files_in_flight: usize, fail_on_exhaustion: bool) -> Self {
         // Ensure max_files_in_flight is at least 1
-        let max_files_in_flight = NonZeroUsize::new(max_files_in_flight)
-            .unwrap_or_else(|| {
-                debug_assert!(false, "max_files_in_flight must be >= 1");
-                // SAFETY: 1 is non-zero
-                unsafe { NonZeroUsize::new_unchecked(1) }
-            });
+        let max_files_in_flight = NonZeroUsize::new(max_files_in_flight).unwrap_or_else(|| {
+            debug_assert!(false, "max_files_in_flight must be >= 1");
+            // SAFETY: 1 is non-zero
+            unsafe { NonZeroUsize::new_unchecked(1) }
+        });
 
         // Compute minimum permits: never go below 10 or 10% of max
         let min_value = std::cmp::max(10, max_files_in_flight.get() / 10);
@@ -145,10 +144,10 @@ impl AdaptiveConcurrencyController {
     ///
     /// # Errors
     ///
-    /// Returns FdExhaustion error if EMFILE detected and fail_on_exhaustion is true
+    /// Returns `FdExhaustion` error if EMFILE detected and `fail_on_exhaustion` is true
     pub fn handle_error(&self, error: &SyncError) -> crate::error::Result<()> {
         use crate::error::SyncError;
-        
+
         // Check if this is a file descriptor exhaustion error
         if Self::is_emfile_error(error) {
             let count = self.emfile_errors.fetch_add(1, Ordering::Relaxed) + 1;
@@ -157,9 +156,8 @@ impl AdaptiveConcurrencyController {
             if self.fail_on_exhaustion {
                 return Err(SyncError::FdExhaustion(format!(
                     "File descriptor exhaustion detected (--no-adaptive-concurrency is set). \
-                     Error: {}. \
-                     Either increase ulimit or remove --no-adaptive-concurrency flag.",
-                    error
+                     Error: {error}. \
+                     Either increase ulimit or remove --no-adaptive-concurrency flag."
                 )));
             }
 
