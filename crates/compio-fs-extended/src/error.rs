@@ -12,13 +12,9 @@ pub enum ExtendedError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
-    /// Task spawn/join error
+    /// Task spawn/join error (from compio::runtime::spawn)
     #[error("spawn failed")]
     SpawnJoin(Box<dyn std::any::Any + Send>),
-
-    /// Spawn blocking error
-    #[error("spawn_blocking failed")]
-    SpawnBlocking(Box<dyn std::any::Any + Send>),
 
     /// copy_file_range specific error
     #[error("copy_file_range failed: {0}")]

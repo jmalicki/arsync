@@ -1,3 +1,7 @@
+*Read this in other languages: [English](CHANGELOG.md) | [Pirate 🏴‍☠️](pirate/CHANGELOG.pirate.md)*
+
+---
+
 # Changelog
 
 All notable changes to this project will be documented in this file.

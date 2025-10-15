@@ -140,6 +140,10 @@ pub struct OutputConfig {
     /// Quiet mode (suppress all output except errors)
     #[arg(short, long)]
     pub quiet: bool,
+
+    /// Enable pirate speak (arrr! 🏴‍☠️)
+    #[arg(long, default_value = "false")]
+    pub pirate: bool,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -152,6 +156,12 @@ pub enum CopyMethod {
     Splice,
     /// Use traditional read/write operations
     ReadWrite,
+}
+
+impl Default for CopyMethod {
+    fn default() -> Self {
+        Self::Auto
+    }
 }
 
 // ============================================================================

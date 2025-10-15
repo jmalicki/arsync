@@ -40,6 +40,11 @@ indicatif = "0.18"
 num_cpus = "1.0"
 async-recursion = "1.0"
 
+# i18n (internationalization)
+fluent = "0.17"
+fluent-bundle = "0.16"
+unic-langid = "0.9"
+
 # io_uring libraries
 libc = "0.2"
 # rio removed - using compio instead
@@ -66,6 +71,7 @@ predicates = "3.0"
 rstest = "0.26"
 walkdir = "2.0"
 xattr = "1.0"
+pulldown-cmark = "0.13"
 
 # Testcontainers for integration testing
 testcontainers = "0.25"

@@ -1,4 +1,8 @@
-# ![arsync](arsync.png "arsync")
+*Read this in other languages: [English](README.md) | [Pirate 🏴‍☠️](docs/pirate/README.pirate.md)*
+
+---
+
+# ![arsync](docs/arsync.png "arsync")
 
 **arsync** = **a**synchronous **[rsync](https://github.com/WayneD/rsync)** (the "a" stands for asynchronous, i.e., [io_uring](https://kernel.dk/io_uring.pdf))
 
@@ -495,10 +499,10 @@ rsync's use of path-based syscalls is a **30+ year old design** from before thes
 
 | Metadata Type | rsync | arsync | Implementation |
 |---------------|-------|---------------|----------------|
-| **Permissions** | ✅ `chmod` (path-based) | ✅ `fchmod` (FD-based) | arsync avoids umask + TOCTOU *([see security →](#security-file-descriptor-based-operations))* |
-| **Ownership** | ✅ `lchown` (path-based) | ✅ `fchown` (FD-based) | arsync prevents race conditions *([see security →](#security-file-descriptor-based-operations))* |
+| **Permissions** | ✅ `chmod` (path-based) | ✅ `fchmod` (FD-based) | arsync avoids umask + TOCTOU *([see security →](#why-file-descriptor-based-operations-matter))* |
+| **Ownership** | ✅ `lchown` (path-based) | ✅ `fchown` (FD-based) | arsync prevents race conditions *([see security →](#why-file-descriptor-based-operations-matter))* |
 | **Timestamps** | ✅ `utimes` | ✅ `utimensat` (nanosec) | arsync has nanosecond precision |
-| **Extended Attributes** | ✅ `getxattr`/`setxattr` | ✅ `fgetxattr`/`fsetxattr` (FD-based) | arsync is immune to symlink attacks *([see security →](#security-file-descriptor-based-operations))* |
+| **Extended Attributes** | ✅ `getxattr`/`setxattr` | ✅ `fgetxattr`/`fsetxattr` (FD-based) | arsync is immune to symlink attacks *([see security →](#why-file-descriptor-based-operations-matter))* |
 | **ACLs** | ✅ `-A` | ✅ `-A` (implies `-p`) | Compatible behavior |
 | **Hard Links** | ✅ `-H` | ✅ `-H` (integrated) | arsync detects during traversal |
 

@@ -1,0 +1,222 @@
+{
+  "hero": {
+    "1_epic_ship_panorama": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_1_epic_ship_panorama_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_1_epic_ship_panorama_02.png"
+    ],
+    "2_captain_at_the_helm": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_2_captain_at_the_helm_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_2_captain_at_the_helm_02.png"
+    ],
+    "3_treasure_transfer_closeup": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_3_treasure_transfer_closeup_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_3_treasure_transfer_closeup_02.png"
+    ],
+    "4_digital_seas_navigation": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_4_digital_seas_navigation_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_4_digital_seas_navigation_02.png"
+    ],
+    "5_crew_at_work": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_5_crew_at_work_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hero_5_crew_at_work_02.png"
+    ]
+  },
+  "io_uring": {
+    "1_parallel_loading_vault": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_1_parallel_loading_vault_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_1_parallel_loading_vault_02.png"
+    ],
+    "2_ring_buffer_diagram": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_2_ring_buffer_diagram_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_2_ring_buffer_diagram_02.png"
+    ],
+    "3_asynchronous_crew": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_3_asynchronous_crew_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_3_asynchronous_crew_02.png"
+    ],
+    "4_queue_visualization": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_4_queue_visualization_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_4_queue_visualization_02.png"
+    ],
+    "5_zero-copy_magic": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_5_zero-copy_magic_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/io_uring_5_zero-copy_magic_02.png"
+    ]
+  },
+  "security": {
+    "1_fd_chains_defense": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_1_fd_chains_defense_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_1_fd_chains_defense_02.png"
+    ],
+    "2_symlink_attack_comparison": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_2_symlink_attack_comparison_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_2_symlink_attack_comparison_02.png"
+    ],
+    "3_fortress_defense": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_3_fortress_defense_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_3_fortress_defense_02.png"
+    ],
+    "4_security_patrol": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_4_security_patrol_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_4_security_patrol_02.png"
+    ],
+    "5_attack_timeline_blocked": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_5_attack_timeline_blocked_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/security_5_attack_timeline_blocked_02.png"
+    ]
+  },
+  "optimization": {
+    "1_wind_optimization": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_1_wind_optimization_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_1_wind_optimization_02.png"
+    ],
+    "2_hull_streamlining": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_2_hull_streamlining_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_2_hull_streamlining_02.png"
+    ],
+    "3_speed_boost_activation": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_3_speed_boost_activation_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_3_speed_boost_activation_02.png"
+    ],
+    "4_defragmentation_process": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_4_defragmentation_process_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_4_defragmentation_process_02.png"
+    ],
+    "5_wind_advisory_system": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_5_wind_advisory_system_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/optimization_5_wind_advisory_system_02.png"
+    ]
+  },
+  "metadata": {
+    "1_navigation_tools_comparison": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_1_navigation_tools_comparison_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_1_navigation_tools_comparison_02.png"
+    ],
+    "2_precision_instruments_desk": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_2_precision_instruments_desk_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_2_precision_instruments_desk_02.png"
+    ],
+    "3_time_precision_clock": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_3_time_precision_clock_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_3_time_precision_clock_02.png"
+    ],
+    "4_data_rich_display": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_4_data_rich_display_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_4_data_rich_display_02.png"
+    ],
+    "5_future_vs_past": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_5_future_vs_past_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/metadata_5_future_vs_past_02.png"
+    ]
+  },
+  "hardlink": {
+    "1_real-time_detection": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_1_real-time_detection_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_1_real-time_detection_02.png"
+    ],
+    "2_inode_link_chains": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_2_inode_link_chains_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_2_inode_link_chains_02.png"
+    ],
+    "3_smart_deduplication_scanner": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_3_smart_deduplication_scanner_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_3_smart_deduplication_scanner_02.png"
+    ],
+    "4_network_of_connections": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_4_network_of_connections_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_4_network_of_connections_02.png"
+    ],
+    "5_one-pass_efficiency": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_5_one-pass_efficiency_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/hardlink_5_one-pass_efficiency_02.png"
+    ]
+  },
+  "rust_testing": {
+    "1_quality_inspection": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_1_quality_inspection_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_1_quality_inspection_02.png"
+    ],
+    "2_test_automation_laboratory": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_2_test_automation_laboratory_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_2_test_automation_laboratory_02.png"
+    ],
+    "3_safety_shield_construction": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_3_safety_shield_construction_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_3_safety_shield_construction_02.png"
+    ],
+    "4_type_safety_forge": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_4_type_safety_forge_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_4_type_safety_forge_02.png"
+    ],
+    "5_test_coverage_shield": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_5_test_coverage_shield_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/rust_testing_5_test_coverage_shield_02.png"
+    ]
+  },
+  "quick_start": {
+    "1_welcome_aboard": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_1_welcome_aboard_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_1_welcome_aboard_02.png"
+    ],
+    "2_three_simple_steps": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_2_three_simple_steps_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_2_three_simple_steps_02.png"
+    ],
+    "3_journey_map_tutorial": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_3_journey_map_tutorial_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_3_journey_map_tutorial_02.png"
+    ],
+    "4_treasure_map_instructions": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_4_treasure_map_instructions_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_4_treasure_map_instructions_02.png"
+    ],
+    "5_first_voyage_celebration": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_5_first_voyage_celebration_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/quick_start_5_first_voyage_celebration_02.png"
+    ]
+  },
+  "performance_benchmarks": {
+    "1_ship_race": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_1_ship_race_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_1_ship_race_02.png"
+    ],
+    "2_speed_gauge_comparison": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_2_speed_gauge_comparison_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_2_speed_gauge_comparison_02.png"
+    ],
+    "3_loading_timeline": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_3_loading_timeline_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_3_loading_timeline_02.png"
+    ],
+    "4_performance_graph": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_4_performance_graph_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_4_performance_graph_02.png"
+    ],
+    "5_treasure_per_second": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_5_treasure_per_second_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/performance_benchmarks_5_treasure_per_second_02.png"
+    ]
+  },
+  "progress_reporting": {
+    "1_frozen_vs_active_ships": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_1_frozen_vs_active_ships_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_1_frozen_vs_active_ships_02.png"
+    ],
+    "2_live_holographic_dashboard": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_2_live_holographic_dashboard_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_2_live_holographic_dashboard_02.png"
+    ],
+    "3_emotional_contrast": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_3_emotional_contrast_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_3_emotional_contrast_02.png"
+    ],
+    "4_transparent_operations": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_4_transparent_operations_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_4_transparent_operations_02.png"
+    ],
+    "5_real-time_stats_overlay": [
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_5_real-time_stats_overlay_01.png",
+      "/home/jmalicki/src/io_uring_sync2/docs/images/pirate/progress_reporting_5_real-time_stats_overlay_02.png"
+    ]
+  }
+}

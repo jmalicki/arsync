@@ -19,8 +19,9 @@ io-uring = "0.7"
 
 # System call dependencies
 libc = "0.2"
-nix = { version = "0.28", features = ["fs"] }
+nix = { version = "0.28", features = ["fs", "user", "time"] }
 filetime = "0.2"
+xattr = "1.0"  # Safe xattr wrapper for operations not in io_uring
 
 # Error handling
 thiserror = "1.0"
