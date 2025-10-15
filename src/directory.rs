@@ -40,7 +40,7 @@ use tracing::{debug, info, warn};
 /// stats.increment_bytes_copied(1024);
 /// let final_stats = stats.into_inner();
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SharedStats {
     /// Files copied counter using atomics for lock-free operations
     files_copied: Arc<AtomicU64>,
