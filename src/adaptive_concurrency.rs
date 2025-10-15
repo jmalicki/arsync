@@ -3,13 +3,97 @@
 //! This module provides self-adaptive concurrency control that automatically
 //! adjusts the number of concurrent operations based on resource availability,
 //! particularly file descriptor exhaustion.
+//!
+//! # Architecture
+//!
+//! Each module owns its configuration:
+//! - `ConcurrencyOptions` - Configuration for concurrency control (owned by this module)
+//! - `AdaptiveConcurrencyController` - Runtime controller that uses the options
 
 use crate::directory::SharedSemaphore;
 use crate::error::SyncError;
 use std::io::ErrorKind;
+use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 use tracing::warn;
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+/// Concurrency control configuration options
+///
+/// This struct contains all configuration for the adaptive concurrency controller.
+/// It's owned by this module and can be created from CLI args.
+///
+/// Uses `NonZeroUsize` to guarantee at compile-time that max_files_in_flight >= 1.
+#[derive(Debug, Clone)]
+pub struct ConcurrencyOptions {
+    /// Maximum number of concurrent operations (guaranteed >= 1)
+    max_files_in_flight: NonZeroUsize,
+    /// Minimum permits to maintain when adapting (never go below this, guaranteed >= 1)
+    min_permits: NonZeroUsize,
+    /// If true, fail immediately on resource exhaustion; if false, adapt automatically
+    fail_on_exhaustion: bool,
+}
+
+impl ConcurrencyOptions {
+    /// Create new concurrency options with validation
+    ///
+    /// # Arguments
+    ///
+    /// * `max_files_in_flight` - Maximum concurrent operations (will be clamped to >= 1)
+    /// * `fail_on_exhaustion` - If true, fail on EMFILE; if false, adapt
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if `max_files_in_flight` is 0 in debug builds.
+    /// In release builds, it will be clamped to 1.
+    #[must_use]
+    pub fn new(max_files_in_flight: usize, fail_on_exhaustion: bool) -> Self {
+        // Ensure max_files_in_flight is at least 1
+        let max_files_in_flight = NonZeroUsize::new(max_files_in_flight)
+            .unwrap_or_else(|| {
+                debug_assert!(false, "max_files_in_flight must be >= 1");
+                // SAFETY: 1 is non-zero
+                unsafe { NonZeroUsize::new_unchecked(1) }
+            });
+
+        // Compute minimum permits: never go below 10 or 10% of max
+        let min_value = std::cmp::max(10, max_files_in_flight.get() / 10);
+        // SAFETY: min_value is at least 10, which is non-zero
+        let min_permits = unsafe { NonZeroUsize::new_unchecked(min_value) };
+
+        Self {
+            max_files_in_flight,
+            min_permits,
+            fail_on_exhaustion,
+        }
+    }
+
+    /// Get the maximum files in flight
+    #[must_use]
+    pub const fn max_files_in_flight(&self) -> usize {
+        self.max_files_in_flight.get()
+    }
+
+    /// Get the minimum permits (floor for adaptive reduction)
+    #[must_use]
+    pub const fn min_permits(&self) -> usize {
+        self.min_permits.get()
+    }
+
+    /// Check if should fail on exhaustion
+    #[must_use]
+    pub const fn fail_on_exhaustion(&self) -> bool {
+        self.fail_on_exhaustion
+    }
+}
+
+// ============================================================================
+// CONTROLLER
+// ============================================================================
 
 /// Adaptive concurrency controller that responds to resource constraints
 ///
@@ -26,23 +110,24 @@ pub struct AdaptiveConcurrencyController {
     emfile_warned: Arc<AtomicBool>,
     /// Minimum permits to maintain
     min_permits: usize,
+    /// Whether to fail hard on exhaustion (true = fail, false = adapt)
+    fail_on_exhaustion: bool,
 }
 
 impl AdaptiveConcurrencyController {
-    /// Create a new adaptive controller
+    /// Create a new adaptive controller from options
     ///
     /// # Arguments
     ///
-    /// * `initial_permits` - Starting number of concurrent operations allowed
+    /// * `options` - Concurrency configuration options (validated and ready to use)
     #[must_use]
-    pub fn new(initial_permits: usize) -> Self {
-        let min_permits = std::cmp::max(10, initial_permits / 10); // Never go below 10 or 10%
-
+    pub fn new(options: &ConcurrencyOptions) -> Self {
         Self {
-            semaphore: SharedSemaphore::new(initial_permits),
+            semaphore: SharedSemaphore::new(options.max_files_in_flight()),
             emfile_errors: Arc::new(AtomicUsize::new(0)),
             emfile_warned: Arc::new(AtomicBool::new(false)),
-            min_permits,
+            min_permits: options.min_permits(),
+            fail_on_exhaustion: options.fail_on_exhaustion(),
         }
     }
 
@@ -51,22 +136,39 @@ impl AdaptiveConcurrencyController {
         self.semaphore.acquire().await
     }
 
-    /// Handle an error, checking if it's EMFILE and adapting if needed
+    /// Handle an error, checking if it's EMFILE and adapting or failing as configured
     ///
-    /// Returns true if this is an EMFILE error and concurrency was reduced
-    #[must_use]
-    pub fn handle_error(&self, error: &SyncError) -> bool {
+    /// If this is an EMFILE error:
+    /// - If `fail_on_exhaustion` is true: Returns error immediately
+    /// - If `fail_on_exhaustion` is false: Adapts concurrency and returns Ok
+    /// - If not an EMFILE error: Returns Ok
+    ///
+    /// # Errors
+    ///
+    /// Returns FdExhaustion error if EMFILE detected and fail_on_exhaustion is true
+    pub fn handle_error(&self, error: &SyncError) -> crate::error::Result<()> {
+        use crate::error::SyncError;
+        
         // Check if this is a file descriptor exhaustion error
         if Self::is_emfile_error(error) {
             let count = self.emfile_errors.fetch_add(1, Ordering::Relaxed) + 1;
 
-            // Only adapt every N errors to avoid over-reaction
+            // Check if we should fail hard
+            if self.fail_on_exhaustion {
+                return Err(SyncError::FdExhaustion(format!(
+                    "File descriptor exhaustion detected (--no-adaptive-concurrency is set). \
+                     Error: {}. \
+                     Either increase ulimit or remove --no-adaptive-concurrency flag.",
+                    error
+                )));
+            }
+
+            // Otherwise, adapt every N errors to avoid over-reaction
             if count % 5 == 1 {
                 self.adapt_to_fd_exhaustion();
-                return true;
             }
         }
-        false
+        Ok(())
     }
 
     /// Check if an error is EMFILE (too many open files)

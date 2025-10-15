@@ -261,7 +261,7 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
-    use std::time::{Duration, SystemTime};
+    use std::time::Duration;
     use tempfile::TempDir;
 
     /// Create a default Args struct for testing with archive mode enabled

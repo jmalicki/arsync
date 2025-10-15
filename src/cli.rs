@@ -106,6 +106,19 @@ pub struct ConcurrencyConfig {
     pub no_adaptive_concurrency: bool,
 }
 
+impl ConcurrencyConfig {
+    /// Convert to the options struct used by `AdaptiveConcurrencyController`
+    ///
+    /// Creates a validated `ConcurrencyOptions` with proper `NonZeroUsize` guarantees.
+    #[must_use]
+    pub fn to_options(&self) -> crate::adaptive_concurrency::ConcurrencyOptions {
+        crate::adaptive_concurrency::ConcurrencyOptions::new(
+            self.max_files_in_flight,
+            self.no_adaptive_concurrency,
+        )
+    }
+}
+
 /// Output and logging configuration
 ///
 /// Used by: `main()`, logging initialization, progress display
@@ -296,12 +309,6 @@ impl Args {
     #[must_use]
     pub const fn quiet(&self) -> bool {
         self.output.quiet
-    }
-
-    /// Check if adaptive concurrency is disabled (convenience method for backwards compatibility)
-    #[must_use]
-    pub const fn no_adaptive_concurrency(&self) -> bool {
-        self.concurrency.no_adaptive_concurrency
     }
 
     // ========== rsync-compatible helper methods ==========
