@@ -695,8 +695,11 @@ async fn traverse_and_copy_directory_iterative(
     // Create a dispatcher for async operations
     let dispatcher = Box::leak(Box::new(Dispatcher::new()?));
 
-    // Leak file_ops and args to give them static lifetimes (it's fine since they're just references)
-    let file_ops_static: &'static FileOperations = unsafe { std::mem::transmute(file_ops) };
+    // Create Arc-wrapped FileOperations for safe sharing across async tasks
+    // This avoids the unsafe transmute for FileOperations
+    let file_ops_arc = Arc::new(file_ops.clone());
+
+    // For Args, we still use transmute temporarily (will be refactored separately)
     let args_static: &'static Args = unsafe { std::mem::transmute(args) };
 
     // Wrap shared state in wrapper types for static lifetimes
@@ -725,7 +728,7 @@ async fn traverse_and_copy_directory_iterative(
         dispatcher,
         initial_src,
         initial_dst,
-        file_ops_static,
+        file_ops_arc,
         _copy_method,
         shared_stats.clone(),
         shared_hardlink_tracker.clone(),
@@ -790,7 +793,7 @@ async fn process_directory_entry_with_compio(
     dispatcher: &'static Dispatcher,
     src_path: PathBuf,
     dst_path: PathBuf,
-    file_ops: &'static FileOperations,
+    file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
     stats: SharedStats,
     hardlink_tracker: SharedHardlinkTracker,
@@ -867,13 +870,14 @@ async fn process_directory_entry_with_compio(
             let stats = stats.clone();
             let hardlink_tracker = hardlink_tracker.clone();
             let concurrency_controller = concurrency_controller.clone();
+            let file_ops_clone = Arc::clone(&file_ops);
             let receiver = dispatcher
                 .dispatch(move || {
                     process_directory_entry_with_compio(
                         dispatcher,
                         child_src_path,
                         child_dst_path,
-                        file_ops,
+                        file_ops_clone,
                         copy_method,
                         stats,
                         hardlink_tracker,
@@ -958,7 +962,7 @@ async fn process_file(
     src_path: PathBuf,
     dst_path: PathBuf,
     metadata: ExtendedMetadata,
-    _file_ops: &'static FileOperations,
+    _file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
     stats: SharedStats,
     hardlink_tracker: SharedHardlinkTracker,

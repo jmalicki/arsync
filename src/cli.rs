@@ -5,7 +5,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 /// High-performance bulk file copying utility using `io_uring`
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 #[allow(clippy::struct_excessive_bools)]
 pub struct Args {
