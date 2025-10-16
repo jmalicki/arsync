@@ -436,6 +436,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::panic)] // panic! is the correct way to fail tests
     fn test_all_translation_keys_have_pirate_translations() {
         // Test: EVERY translation key must have a pirate translation
         // This is linked to the requirement: Complete pirate translation coverage
