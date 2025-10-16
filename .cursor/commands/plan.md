@@ -114,6 +114,39 @@ For **complex** tasks (4-6 phases):
 - Phase 5: Comprehensive Testing
 - Phase 6: Documentation, Benchmarks & PR
 
+For **highly complex** projects (7+ phases, 1000+ lines of plan):
+Use a **two-level plan structure**:
+
+**Level 1**: `plan.md` - High-level phase checklist
+```markdown
+# Implementation Plan: [Project Name]
+
+## Phases
+- [ ] Phase 1: [Name] → [plan/phase-1-name.md](plan/phase-1-name.md)
+- [ ] Phase 2: [Name] → [plan/phase-2-name.md](plan/phase-2-name.md)
+- [ ] Phase 3: [Name] → [plan/phase-3-name.md](plan/phase-3-name.md)
+...
+```
+
+**Level 2**: `plan/` directory with detailed phase files
+```
+plan/
+├── README.md                  (index and overview)
+├── phase-1-name.md           (detailed task checklist)
+├── phase-2-name.md           (detailed task checklist)
+├── phase-3-name.md           (detailed task checklist)
+├── statistics.md             (implementation stats)
+├── testing.md                (test matrix)
+└── skipped.md                (decisions/rationale)
+```
+
+**Workflow**:
+1. Check high-level status in `plan.md`
+2. Use `/implement plan/phase-X.md` to work through detailed tasks
+3. When all tasks in phase-X.md are ✅, check off that phase in `plan.md`
+
+**Example**: See `docs/projects/rsync-wire/` for reference implementation
+
 ### Each Phase Must Include:
 
 1. **Clear objective** - What this phase accomplishes
