@@ -1,0 +1,12 @@
+# Ephemeral SSH keys generated at test runtime
+# These should NEVER be committed
+test_rsa*
+*.pem
+*.key
+*.pub
+id_*
+
+# Any other secrets
+*.secret
+*.password
+

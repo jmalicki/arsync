@@ -723,47 +723,128 @@ async fn test_remote_sync_via_localhost() {
 
 #### Test Infrastructure Design
 
+**Security Design**: Ephemeral SSH keys generated at runtime (never committed)
+
 **Container Setup**:
 ```dockerfile
 # tests/docker/Dockerfile
 FROM rust:latest
 
-# Install SSH server
-RUN apt-get update && apt-get install -y openssh-server
+# Install SSH server only (minimal install)
+RUN apt-get update && apt-get install -y openssh-server && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Create test user
-RUN useradd -m -s /bin/bash testuser && \
-    echo "testuser:testpass" | chpasswd
+# Create test user (no shell access except for arsync command)
+RUN useradd -m -s /usr/sbin/nologin testuser
 
-# Configure SSH
+# Hardened SSH configuration - ONLY what the test needs
 RUN mkdir /var/run/sshd && \
-    ssh-keygen -A && \
-    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+    ssh-keygen -A
+
+# Create hardened sshd_config
+RUN echo "# Hardened SSH config for arsync integration tests" > /etc/ssh/sshd_config && \
+    echo "# Only allow what's needed for arsync remote sync" >> /etc/ssh/sshd_config && \
+    echo "" >> /etc/ssh/sshd_config && \
+    echo "# Network" >> /etc/ssh/sshd_config && \
+    echo "Port 22" >> /etc/ssh/sshd_config && \
+    echo "AddressFamily inet" >> /etc/ssh/sshd_config && \
+    echo "ListenAddress 0.0.0.0" >> /etc/ssh/sshd_config && \
+    echo "" >> /etc/ssh/sshd_config && \
+    echo "# Authentication - Key-based ONLY" >> /etc/ssh/sshd_config && \
+    echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config && \
+    echo "PasswordAuthentication no" >> /etc/ssh/sshd_config && \
+    echo "ChallengeResponseAuthentication no" >> /etc/ssh/sshd_config && \
+    echo "PermitEmptyPasswords no" >> /etc/ssh/sshd_config && \
+    echo "PermitRootLogin no" >> /etc/ssh/sshd_config && \
+    echo "" >> /etc/ssh/sshd_config && \
+    echo "# Disable unnecessary features" >> /etc/ssh/sshd_config && \
+    echo "X11Forwarding no" >> /etc/ssh/sshd_config && \
+    echo "AllowTcpForwarding no" >> /etc/ssh/sshd_config && \
+    echo "AllowAgentForwarding no" >> /etc/ssh/sshd_config && \
+    echo "PermitTunnel no" >> /etc/ssh/sshd_config && \
+    echo "GatewayPorts no" >> /etc/ssh/sshd_config && \
+    echo "" >> /etc/ssh/sshd_config && \
+    echo "# Session limits" >> /etc/ssh/sshd_config && \
+    echo "MaxSessions 1" >> /etc/ssh/sshd_config && \
+    echo "MaxStartups 1:30:2" >> /etc/ssh/sshd_config && \
+    echo "LoginGraceTime 30" >> /etc/ssh/sshd_config && \
+    echo "" >> /etc/ssh/sshd_config && \
+    echo "# Only allow testuser" >> /etc/ssh/sshd_config && \
+    echo "AllowUsers testuser" >> /etc/ssh/sshd_config && \
+    echo "" >> /etc/ssh/sshd_config && \
+    echo "# Force command execution (only allow arsync)" >> /etc/ssh/sshd_config && \
+    echo "Match User testuser" >> /etc/ssh/sshd_config && \
+    echo "  ForceCommand /usr/local/bin/arsync --server" >> /etc/ssh/sshd_config && \
+    echo "  PermitOpen none" >> /etc/ssh/sshd_config
 
 # Copy arsync binary into container
 COPY target/debug/arsync /usr/local/bin/arsync
-RUN chmod +x /usr/local/bin/arsync
+RUN chmod +x /usr/local/bin/arsync && \
+    chown root:root /usr/local/bin/arsync
 
-# Setup test directories
+# Setup test directories (world-readable for testing)
 RUN mkdir -p /home/testuser/source /home/testuser/dest && \
-    chown -R testuser:testuser /home/testuser
+    chmod 755 /home/testuser/source /home/testuser/dest && \
+    chown -R testuser:testuser /home/testuser/source /home/testuser/dest
+
+# Create .ssh directory for authorized_keys (will be populated at runtime)
+RUN mkdir -p /home/testuser/.ssh && \
+    chmod 700 /home/testuser/.ssh && \
+    touch /home/testuser/.ssh/authorized_keys && \
+    chmod 600 /home/testuser/.ssh/authorized_keys && \
+    chown -R testuser:testuser /home/testuser/.ssh
 
 EXPOSE 22
 CMD ["/usr/sbin/sshd", "-D"]
 ```
 
+**Security Hardening**:
+1. **No shell access**: testuser has `/usr/sbin/nologin` shell
+2. **ForceCommand**: Can ONLY run `arsync --server` (nothing else)
+3. **No password auth**: Key-based authentication only
+4. **No tunneling**: TCP/agent forwarding disabled
+5. **No X11**: X11 forwarding disabled
+6. **Single user**: Only testuser allowed
+7. **Session limits**: Max 1 session
+8. **No port forwarding**: PermitOpen none
+9. **Root owned binary**: arsync binary owned by root (testuser can't modify it)
+10. **Minimal exposure**: Only what arsync needs, nothing more
+
 **Test Helper** (`tests/docker/mod.rs`):
 ```rust
 use std::process::Command;
+use std::fs;
+use std::path::PathBuf;
 use anyhow::Result;
+use tempfile::TempDir;
 
 pub struct DockerContainer {
     container_id: String,
     ssh_port: u16,
+    temp_dir: TempDir,  // Holds ephemeral SSH keys
+    ssh_key_path: PathBuf,
 }
 
 impl DockerContainer {
     pub async fn start() -> Result<Self> {
+        // Create temp directory for ephemeral SSH keys
+        let temp_dir = TempDir::new()?;
+        let ssh_key_path = temp_dir.path().join("test_rsa");
+        
+        // Generate ephemeral SSH key pair (runtime only, never committed)
+        Command::new("ssh-keygen")
+            .args(&[
+                "-t", "rsa",
+                "-b", "2048",
+                "-f", ssh_key_path.to_str().unwrap(),
+                "-N", "",  // No passphrase
+                "-C", "arsync-integration-test-ephemeral"
+            ])
+            .output()?;
+        
+        // Read public key for injection into container
+        let pubkey = fs::read_to_string(format!("{}.pub", ssh_key_path.display()))?;
+        
         // Build Docker image
         Command::new("docker")
             .args(&["build", "-t", "arsync-test", "tests/docker"])
@@ -775,6 +856,25 @@ impl DockerContainer {
             .output()?;
         
         let container_id = String::from_utf8(output.stdout)?.trim().to_string();
+        
+        // Inject public key into container's authorized_keys
+        Command::new("docker")
+            .args(&[
+                "exec",
+                &container_id,
+                "bash", "-c",
+                &format!("echo '{}' > /home/testuser/.ssh/authorized_keys", pubkey.trim())
+            ])
+            .status()?;
+        
+        // Fix permissions inside container
+        Command::new("docker")
+            .args(&[
+                "exec",
+                &container_id,
+                "chown", "-R", "testuser:testuser", "/home/testuser/.ssh"
+            ])
+            .status()?;
         
         // Get mapped SSH port
         let port_output = Command::new("docker")
@@ -788,58 +888,129 @@ impl DockerContainer {
             .and_then(|p| p.trim().parse().ok())
             .ok_or_else(|| anyhow::anyhow!("Failed to parse SSH port"))?;
         
-        Ok(Self { container_id, ssh_port })
+        // Wait for SSH to be ready
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        
+        Ok(Self { 
+            container_id, 
+            ssh_port,
+            temp_dir,
+            ssh_key_path,
+        })
     }
     
+    /// Get SSH connection string for testuser
     pub fn ssh_connection_string(&self) -> String {
-        format!("localhost:{}", self.ssh_port)
+        format!("testuser@localhost:{}", self.ssh_port)
+    }
+    
+    /// Get path to ephemeral SSH private key (for this test only)
+    pub fn ssh_key(&self) -> &Path {
+        &self.ssh_key_path
     }
 }
 
 impl Drop for DockerContainer {
     fn drop(&mut self) {
+        // Stop and remove container
         let _ = Command::new("docker")
             .args(&["rm", "-f", &self.container_id])
             .status();
+        
+        // temp_dir automatically cleaned up (TempDir Drop impl)
+        // This deletes the ephemeral SSH keys
     }
 }
 ```
+
+**Security Properties**:
+1. **Ephemeral keys**: Generated at runtime in temp directory
+2. **Never committed**: TempDir cleaned up automatically
+3. **Test-isolated**: Each test gets its own keys
+4. **No host pollution**: Container destroyed after test
+5. **No password auth**: Key-based only (more secure)
+6. **Unique per run**: New keys every test run
 
 **Integration Test** (`tests/docker_remote_sync_test.rs`):
 ```rust
 #![cfg(feature = "remote-sync")]
 
-use arsync::protocol::Location;
+use arsync::protocol::{Location, remote_sync};
+use arsync::cli::Args;
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 mod docker;
 
 #[compio::test]
 async fn test_push_via_docker_ssh() -> anyhow::Result<()> {
-    // Start Docker container with SSH
-    let container = docker::DockerContainer::start().await?;
+    // Skip if Docker not available
+    if !docker_available() {
+        println!("Skipping: Docker not available");
+        return Ok(());
+    }
     
-    // Wait for SSH to be ready
-    tokio::time::sleep(Duration::from_secs(2)).await;
+    // Start Docker container with SSH and ephemeral keys
+    let container = docker::DockerContainer::start().await?;
     
     // Create test data locally
     let temp_dir = tempfile::tempdir()?;
     let source = temp_dir.path().join("source");
     fs::create_dir(&source)?;
     fs::write(source.join("test.txt"), "Hello, Docker!")?;
+    fs::write(source.join("test2.txt"), "More data!")?;
+    
+    // Create Args with custom SSH command (use ephemeral key)
+    let mut args = create_test_args();
+    args.remote.remote_shell = format!(
+        "ssh -i {} -o StrictHostKeyChecking=no -p {}",
+        container.ssh_key().display(),
+        container.ssh_port
+    );
     
     // Push to container via SSH
-    let remote_path = format!("testuser@localhost:{}/dest", container.ssh_port);
     let source_loc = Location::Local(source.clone());
-    let dest_loc = Location::parse(&remote_path)?;
+    let dest_loc = Location::parse(&format!("testuser@localhost:/home/testuser/dest"))?;
     
-    // TODO: Call arsync with SSH
-    // This would test the full remote sync flow
+    // Execute remote sync (this tests the full flow!)
+    let stats = remote_sync(&args, &source_loc, &dest_loc).await?;
+    
+    // Verify files transferred
+    assert_eq!(stats.files_copied, 2);
+    assert!(stats.bytes_copied > 0);
+    
+    // Verify files exist in container
+    let output = Command::new("docker")
+        .args(&[
+            "exec",
+            &container.container_id,
+            "ls", "-la", "/home/testuser/dest"
+        ])
+        .output()?;
+    
+    let listing = String::from_utf8(output.stdout)?;
+    assert!(listing.contains("test.txt"));
+    assert!(listing.contains("test2.txt"));
     
     Ok(())
 }
+
+fn docker_available() -> bool {
+    Command::new("docker")
+        .arg("--version")
+        .output()
+        .is_ok()
+}
 ```
+
+**Key Security Features**:
+- Ephemeral SSH keys generated per test run
+- Keys stored in TempDir (auto-deleted after test)
+- No committed secrets in repository
+- Container uses `-o StrictHostKeyChecking=no` (safe for ephemeral test keys)
+- Port randomized by Docker (no conflicts)
+- Complete cleanup on test completion or failure
 
 **Benefits**:
 - ✅ **Isolated environment**: No pollution of developer's system
@@ -849,10 +1020,21 @@ async fn test_push_via_docker_ssh() -> anyhow::Result<()> {
 - ✅ **Realistic**: Uses actual SSH protocol
 - ✅ **Automated**: No manual setup required
 
+**Additional Security**:
+```gitignore
+# tests/.gitignore
+# Ensure ephemeral SSH keys are never committed
+docker/test_rsa*
+docker/*.pem
+docker/*.key
+*.pub
+```
+
 **Challenges**:
 - ⚠️ Requires Docker installed (document in test README)
 - ⚠️ May be slow in CI (can use Docker layer caching)
 - ⚠️ Need to build arsync binary first
+- ⚠️ Requires ssh-keygen on host (for key generation)
 
 **Decision**: Docker-only for integration tests (no localhost SSH dependency)
 

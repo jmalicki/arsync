@@ -58,7 +58,7 @@ See [plan/README.md](plan/README.md) for detailed overview and [architecture.md]
 - [x] Validated handshake compatibility
 - [x] compio::process integration proven
 
-**Commit**: 39da443  
+**Commit**: 39da443
 **Tests**: 3 tests passing
 
 ---
@@ -72,7 +72,7 @@ See [plan/README.md](plan/README.md) for detailed overview and [architecture.md]
 - [x] Bidirectional integration tests
 - [x] Edge cases (long paths, UTF-8, empty files, etc.)
 
-**Commits**: 91833f1, 77941a3  
+**Commits**: 91833f1, 77941a3
 **Tests**: 26 tests (7 varint + 14 format + 5 integration)
 
 ---
@@ -86,7 +86,7 @@ See [plan/README.md](plan/README.md) for detailed overview and [architecture.md]
 - [x] Block checksum exchange
 - [x] Integration tests with different seeds
 
-**Commit**: 07acdb6  
+**Commit**: 07acdb6
 **Tests**: 12 tests (7 unit + 5 integration)
 
 ---
@@ -100,7 +100,7 @@ See [plan/README.md](plan/README.md) for detailed overview and [architecture.md]
 - [x] Block match offset encoding
 - [x] Token roundtrip tests
 
-**Commit**: 6e933e9  
+**Commit**: 6e933e9
 **Tests**: 8 tests
 
 ---
@@ -114,7 +114,7 @@ See [plan/README.md](plan/README.md) for detailed overview and [architecture.md]
 - [x] Byte-for-byte file verification
 - [x] Bidirectional multiplex support
 
-**Commit**: 0d8faf4  
+**Commit**: 0d8faf4
 **Tests**: 2 tests (full end-to-end)
 
 ---
