@@ -1,6 +1,11 @@
-# Projects
+# Projects - Internal Development Documentation
 
-This directory contains project-specific documentation organized by project name. Each project contains its related design docs, implementation plans, and analyses.
+This directory contains **internal development documentation only**. Each project folder bundles related design docs, implementation plans, and analyses.
+
+**Important**: User-facing documentation stays in `docs/` root, NOT here.
+
+- ✅ **Goes in projects/**: Design docs, implementation plans, analyses, internal investigations
+- ❌ **Stays in docs/ root**: User guides, tutorials, API docs, CHANGELOG, README content
 
 ## Structure
 

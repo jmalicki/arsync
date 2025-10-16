@@ -4,9 +4,9 @@ This directory contains all project documentation organized **project-first** fo
 
 ## Directory Structure
 
-### 📦 `projects/` - **All project documentation**
+### 📦 `projects/` - **Internal development documentation only**
 
-Each project contains its related design docs, plans, and analyses bundled together:
+Each project contains its related design docs, plans, and analyses bundled together. **This is for development/internal use only, not user-facing documentation.**
 
 ```
 docs/projects/PROJECT_NAME/
@@ -29,13 +29,15 @@ docs/projects/PROJECT_NAME/
 See `projects/README.md` for detailed project listing.
 
 ### 🏴‍☠️ `pirate/`
-**Pirate-themed documentation**
+**Pirate-themed user documentation**
 
 Fun pirate translations of user-facing docs.
 
-## Root-Level Documents
+## Root-Level Documents (User-Facing & Reference)
 
-### User-Facing
+All user-facing documentation stays in `docs/` root, NOT in `projects/`.
+
+### User-Facing Guides
 - `BENCHMARK_QUICK_START.md` - How to run benchmarks
 - `CHANGELOG.md` - Version history and changes
 - `RSYNC_COMPARISON.md` - Comparison with rsync
@@ -101,6 +103,7 @@ docs/projects/feature-name/analysis.md  ← /debug
 
 ## Naming Conventions
 
+### Internal Development Docs (projects/)
 - **Projects**: `project-name/` directory (kebab-case)
 - **Within projects**:
   - `design.md` - Main design document
@@ -108,7 +111,12 @@ docs/projects/feature-name/analysis.md  ← /debug
   - `analysis.md` or `analysis-TOPIC.md` - Analysis documents
   - `design-ASPECT.md` - Additional designs
   - `plan-ASPECT.md` - Additional plans
-- **User docs**: Clear, descriptive names (any case)
+  - `README.md` - Project overview
+
+### User-Facing Docs (docs/ root)
+- Clear, descriptive names (SCREAMING_SNAKE_CASE for compatibility)
+- Examples: `BENCHMARK_QUICK_START.md`, `CHANGELOG.md`
+- Should be easily discoverable by end users
 
 ## See Also
 
