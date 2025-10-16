@@ -124,6 +124,65 @@ This approach ensures we “use kqueue” on macOS for the performance-critical 
 
 ---
 
+## Darwin kqueue capability catalog
+
+What kqueue is: a kernel event notification mechanism that signals readiness and state changes. You register kevents (ident + filter + flags), and the kernel enqueues events when conditions occur. It is not a replacement for syscalls like clone, preallocate, or xattr; it complements them by telling you when I/O can proceed without blocking.
+
+- EVFILT_READ / EVFILT_WRITE: readiness for reads/writes on fds (files, sockets, pipes). Used by `compio::fs` to drive async I/O.
+- EVFILT_VNODE: path changes on files/dirs (NOTE_DELETE, NOTE_WRITE, NOTE_EXTEND, NOTE_ATTRIB, NOTE_LINK, NOTE_RENAME, NOTE_REVOKE).
+- EVFILT_PROC: process events (NOTE_EXIT, NOTE_FORK, NOTE_EXEC, NOTE_TRACK, ...).
+- EVFILT_SIGNAL: POSIX signal notifications.
+- EVFILT_TIMER: timers (periodic/one-shot, incl. NOTE_USECONDS/NANOSECONDS variants).
+- EVFILT_USER: user-triggered events (manual post/clear).
+- EVFILT_AIO: legacy POSIX AIO completion notifications.
+- EVFILT_FS: global filesystem mount/unmount notifications.
+
+Applicability to compio-fs-extended operations:
+- Streaming copy fallback (read/write loops): yes, via EVFILT_READ/WRITE readiness (through `compio::fs`).
+- `fadvise`: no direct kqueue filter; it’s an advisory control (`fcntl`).
+- `fallocate`/preallocate/hole punching: no kqueue filter; use `fcntl(F_PREALLOCATE)`.
+- xattr get/set/list/remove: no kqueue filter for performing these; EVFILT_VNODE can notify NOTE_ATTRIB changes only.
+- symlink/hardlink create/readlink: no kqueue filter; EVFILT_VNODE may notify link count changes (NOTE_LINK), not perform them.
+- directory create/remove/read: no kqueue filter to perform these; EVFILT_VNODE can notify NOTE_WRITE/NOTE_LINK; directory entry enumeration is separate (getdents).
+- metadata/stat/time changes: no kqueue filter to fetch/apply; EVFILT_VNODE can notify NOTE_ATTRIB.
+- device files/ownership (chown): no kqueue filter; EVFILT_VNODE may notify NOTE_ATTRIB.
+
+Bottom line: on macOS, kqueue is ideal for readiness and change notifications. Use it (via `compio::fs`) for the data path; keep administrative one-shot syscalls for actions.
+
+---
+
+## macOS matrix: compio::fs vs kqueue support
+
+Legend
+- Implemented by compio::fs: compio exposes an async API we can use.
+- Supported by kqueue: the operation’s data path can be readiness-driven with kqueue; purely administrative syscalls are not “supported by kqueue”.
+
+1) Implemented by compio::fs AND NOT supported by kqueue
+- None (compio’s async file I/O on macOS is readiness-based and kqueue-backed by design).
+
+2) Implemented by compio::fs AND supported by kqueue
+- File reads/writes used in copy fallbacks (sequential or offset-based transfers via `read`/`write`/`read_at`/`write_at`).
+- Socket/pipe async I/O (if used by higher layers).
+
+3) NOT implemented by compio::fs AND NOT supported by kqueue
+- `fadvise` (fcntl advisory control)
+- `fallocate` / `F_PREALLOCATE` (fcntl)
+- xattr get/set/list/remove
+- symlink/hardlink creation and `readlink`
+- directory `mkdirat`/enumeration operations
+- metadata/stat fetch/update (`stat`, `futimens`, `utimensat`)
+- device file creation (`mknod`, `mkfifo`)
+- ownership change (`chown`, `fchown`)
+
+4) NOT implemented by compio::fs BUT supported by kqueue
+- File/dir change notifications: EVFILT_VNODE (NOTE_DELETE, NOTE_WRITE, NOTE_EXTEND, NOTE_ATTRIB, NOTE_LINK, NOTE_RENAME, NOTE_REVOKE)
+- Process/signal/timer/user events: EVFILT_PROC, EVFILT_SIGNAL, EVFILT_TIMER, EVFILT_USER
+- Global FS notifications: EVFILT_FS
+
+Note: These are event/notification capabilities. They do not perform filesystem actions but can complement them (e.g., watch a directory for NOTE_WRITE after creating files via syscalls).
+
+---
+
 ## Windows IOCP integration (how this works)
 
 On Windows, `compio` integrates with IOCP (I/O Completion Ports). We express streaming operations using `compio::fs` async file APIs so that reads/writes are issued as overlapped I/O, and completions are delivered by IOCP to the runtime.
