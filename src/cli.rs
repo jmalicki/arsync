@@ -173,6 +173,7 @@ pub struct OutputConfig {
 /// Used by: protocol module, remote sync operations
 #[derive(clap::Args, Debug, Clone)]
 #[command(next_help_heading = "Remote Sync Options")]
+#[allow(clippy::struct_excessive_bools)]
 pub struct RemoteConfig {
     /// Run in server mode (for remote sync)
     #[arg(long, hide = true)]
@@ -283,9 +284,8 @@ impl Args {
         }
 
         // Local sync mode - validate source exists
-        let source_path = match &source {
-            Location::Local(path) => path,
-            _ => unreachable!(),
+        let Location::Local(source_path) = &source else {
+            unreachable!("Non-local source should have been handled above")
         };
 
         // Check if source exists
@@ -392,28 +392,26 @@ impl Args {
 
     // ========== Convenience accessors for commonly used fields ==========
 
-    /// Get source as a PathBuf (for local sources only)
+    /// Get source as a `PathBuf` (for local sources only)
     ///
     /// For local sources, returns the path. For remote sources, returns the remote path component.
-    /// Use get_source() for full Location info including remote host/user.
+    /// Use `get_source()` for full `Location` info including remote host/user.
     #[must_use]
     pub fn source(&self) -> PathBuf {
         match Location::parse(&self.paths.source) {
-            Ok(Location::Local(path)) => path,
-            Ok(Location::Remote { path, .. }) => path,
+            Ok(Location::Local(path) | Location::Remote { path, .. }) => path,
             Err(_) => PathBuf::from(&self.paths.source),
         }
     }
 
-    /// Get destination as a PathBuf (for local destinations only)
+    /// Get destination as a `PathBuf` (for local destinations only)
     ///
     /// For local destinations, returns the path. For remote destinations, returns the remote path component.
-    /// Use get_destination() for full Location info including remote host/user.
+    /// Use `get_destination()` for full `Location` info including remote host/user.
     #[must_use]
     pub fn destination(&self) -> PathBuf {
         match Location::parse(&self.paths.destination) {
-            Ok(Location::Local(path)) => path,
-            Ok(Location::Remote { path, .. }) => path,
+            Ok(Location::Local(path) | Location::Remote { path, .. }) => path,
             Err(_) => PathBuf::from(&self.paths.destination),
         }
     }

@@ -10,9 +10,9 @@ This directory contains all documentation related to the rsync wire protocol imp
 
 ## Quick Start
 
-1. **Start here**: [RSYNC_PROTOCOL_IMPLEMENTATION.md](RSYNC_PROTOCOL_IMPLEMENTATION.md) - Implementation plan and status
-2. **For details**: [RSYNC_IMPLEMENTATION_CHECKLIST.md](RSYNC_IMPLEMENTATION_CHECKLIST.md) - Granular task checklist
-3. **For deep dive**: [RSYNC_WIRE_PROTOCOL_SPEC.md](RSYNC_WIRE_PROTOCOL_SPEC.md) - Protocol analysis
+1. **Start here**: [plan.md](plan.md) - Implementation plan and status
+2. **For details**: [implementation-checklist.md](implementation-checklist.md) - Granular task checklist
+3. **For deep dive**: [../../specs/rsync-wire-protocol.md](../../specs/rsync-wire-protocol.md) - Protocol analysis
 
 ---
 
@@ -20,63 +20,67 @@ This directory contains all documentation related to the rsync wire protocol imp
 
 ### Implementation & Planning
 
-- **[RSYNC_PROTOCOL_IMPLEMENTATION.md](RSYNC_PROTOCOL_IMPLEMENTATION.md)** - Main implementation plan
+- **[plan.md](plan.md)** - Main implementation plan
   - Executive summary
   - Completed phases (1-7)
   - Architecture overview
   - Timeline and estimates
   - **Start here for overview**
 
-- **[RSYNC_IMPLEMENTATION_CHECKLIST.md](RSYNC_IMPLEMENTATION_CHECKLIST.md)** - Detailed checklist
+- **[implementation-checklist.md](implementation-checklist.md)** - Detailed checklist
   - 600+ granular tasks
   - All phases with checkboxes
   - Acceptance criteria
   - What was skipped and why
   - **Most detailed tracking**
 
-### Technical Specifications
+### Design
 
-- **[RSYNC_WIRE_PROTOCOL_SPEC.md](RSYNC_WIRE_PROTOCOL_SPEC.md)** - Protocol specification
-  - Multiplexed I/O (tagged messages)
-  - Varint encoding (7-bit continuation)
-  - File list format
-  - Delta token format
-  - **Deep technical analysis**
-
-- **[RSYNC_COMPAT_DETAILED_DESIGN.md](RSYNC_COMPAT_DETAILED_DESIGN.md)** - Design document
+- **[design.md](design.md)** - Detailed design document
   - Handshake protocol design
   - compio/io_uring integration
   - Checksum exchange abstraction
   - Delta token handling
   - **80+ pages of design**
 
-### Architecture & Migration
+### Analysis
 
-- **[COMPIO_AUDIT.md](COMPIO_AUDIT.md)** - compio capability audit
+- **[analysis-compio.md](analysis-compio.md)** - compio capability audit
   - Why migrate from tokio to compio
   - compio 0.16 features
   - io_uring backend analysis
   - Migration strategy
   - **Phase 2 foundation**
 
-### Testing
+- **[analysis-comparison.md](analysis-comparison.md)** - rsync vs arsync comparison
+  - Feature comparison
+  - Performance analysis
+  - Protocol differences
 
-- **[PIPE_TESTING_STATUS.md](PIPE_TESTING_STATUS.md)** - Pipe testing status
+### Status & Testing
+
+- **[status-testing.md](status-testing.md)** - Pipe testing status
   - Test infrastructure
   - Bidirectional pipe tests
   - Integration test results
 
-### Research & Background
+- **[status-phases.md](status-phases.md)** - Phase status updates
+  - Timeline tracking
+  - Phase completion notes
 
-- **[RSYNC_PIPE_PROTOCOL.md](RSYNC_PIPE_PROTOCOL.md)** - Pipe-based testing design
+### Protocol Specifications (in `/docs/specs/`)
+
+- **[../../specs/rsync-wire-protocol.md](../../specs/rsync-wire-protocol.md)** - Wire protocol specification
+  - Multiplexed I/O (tagged messages)
+  - Varint encoding (7-bit continuation)
+  - File list format
+  - Delta token format
+  - **Deep technical analysis**
+
+- **[../../specs/rsync-pipe-protocol.md](../../specs/rsync-pipe-protocol.md)** - Pipe-based testing protocol
   - Why use pipes for testing
   - rsync's pipe mode
   - Test infrastructure design
-
-- **[RSYNC_COMPARISON.md](RSYNC_COMPARISON.md)** - rsync vs arsync comparison
-  - Feature comparison
-  - Performance analysis
-  - Protocol differences
 
 ---
 
