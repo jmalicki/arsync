@@ -1,9 +1,9 @@
 # Implementation Plan: DashMap for Concurrent HashMap Usage
 
-**Status**: Planning
+**Status**: In Progress
 **Complexity**: Medium
 **Estimated Duration**: 4-6 hours
-**Created On Branch**: dashmap/design-concurrent-hashmap
+**Created On Branch**: perf/use-dashmap
 **Implementation Branch**: perf/use-dashmap
 **Related Design**: [Design Document](design.md)
 
@@ -285,5 +285,5 @@ Key benefits:
 
 ---
 
-**Implementation starts on branch**: `perf/use-dashmap`
+**Implementation on branch**: `perf/use-dashmap`
 

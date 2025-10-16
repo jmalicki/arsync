@@ -4,7 +4,7 @@
 **Author**: AI Analysis
 **Created**: 2025-10-16
 **Last Updated**: 2025-10-16
-**Branch**: dashmap/design-concurrent-hashmap
+**Branch**: perf/use-dashmap
 **Implementation Branch**: perf/use-dashmap
 
 ## Overview
@@ -421,8 +421,7 @@ pub fn into_inner(self) -> Result<FilesystemTracker>
 ---
 
 **Next Steps**:
-1. Review this design for completeness
-2. Create implementation plan: `/plan`
-3. Create implementation branch: `/branch "perf/use-dashmap" main origin true`
-4. Execute the plan: `/implement`
+1. ~~Review this design for completeness~~ ✓
+2. ~~Create implementation plan: `/plan`~~ ✓
+3. Execute the plan: `/implement` (on same branch: perf/use-dashmap)
 
