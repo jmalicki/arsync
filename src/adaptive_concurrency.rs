@@ -131,7 +131,7 @@ impl AdaptiveConcurrencyController {
     }
 
     /// Acquire a permit
-    pub async fn acquire(&self) -> compio_sync::SemaphorePermit {
+    pub async fn acquire(&self) -> compio_sync::SemaphorePermit<'_> {
         self.semaphore.acquire().await
     }
 

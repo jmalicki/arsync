@@ -26,12 +26,11 @@
 //! # }
 //! ```
 
-use std::collections::VecDeque;
+use crate::waiter_queue::WaiterQueue;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll};
 
 /// A compio-compatible async semaphore for bounding concurrency
 ///
@@ -66,23 +65,32 @@ use std::task::{Context, Poll, Waker};
 /// }
 /// # }
 /// ```
-#[derive(Clone)]
 pub struct Semaphore {
-    /// Shared state between all clones of this semaphore
-    inner: Arc<SemaphoreInner>,
+    /// Internal state for the semaphore
+    /// Users should wrap in Arc<Semaphore> when sharing between tasks
+    inner: SemaphoreInner,
 }
 
 /// Internal shared state for the semaphore
 ///
 /// This structure contains the atomic permit counter and the queue of waiting tasks.
 /// It is wrapped in an Arc to allow the Semaphore to be cloned cheaply.
+///
+/// # Implementation Note
+///
+/// Currently uses `Mutex<VecDeque<Waker>>` for simplicity and maintainability.
+///
+/// **Future optimization**: Could use intrusive linked list (like tokio) to avoid
+/// allocations and improve cache locality. However, this requires unsafe code and
+/// is significantly more complex. The current VecDeque approach is proven and fast enough.
 struct SemaphoreInner {
     /// Available permits (atomic for lock-free operations)
     permits: AtomicUsize,
     /// Maximum permits (for metrics and debugging)
     max_permits: usize,
-    /// Queue of tasks waiting for permits
-    waiters: Mutex<VecDeque<Waker>>,
+    /// Waiter queue abstraction (handles mutex + wait/wake pattern)
+    /// See `waiter_queue.rs` for why mutex is safe in async code
+    waiters: WaiterQueue,
 }
 
 impl Semaphore {
@@ -108,11 +116,11 @@ impl Semaphore {
     pub fn new(permits: usize) -> Self {
         assert!(permits > 0, "Semaphore must have at least one permit");
         Self {
-            inner: Arc::new(SemaphoreInner {
+            inner: SemaphoreInner {
                 permits: AtomicUsize::new(permits),
                 max_permits: permits,
-                waiters: Mutex::new(VecDeque::new()),
-            }),
+                waiters: WaiterQueue::new(),
+            },
         }
     }
 
@@ -134,11 +142,8 @@ impl Semaphore {
     /// drop(permit);  // Release permit
     /// # }
     /// ```
-    pub async fn acquire(&self) -> SemaphorePermit {
-        AcquireFuture {
-            semaphore: self.clone(),
-        }
-        .await
+    pub async fn acquire(&self) -> SemaphorePermit<'_> {
+        AcquireFuture { semaphore: self }.await
     }
 
     /// Try to acquire a permit without waiting
@@ -160,7 +165,7 @@ impl Semaphore {
     /// assert!(permit2.is_none());  // No permits left
     /// ```
     #[must_use]
-    pub fn try_acquire(&self) -> Option<SemaphorePermit> {
+    pub fn try_acquire(&self) -> Option<SemaphorePermit<'_>> {
         // Fast path: atomic decrement if permits available
         let mut current = self.inner.permits.load(Ordering::Acquire);
 
@@ -176,11 +181,7 @@ impl Semaphore {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_) => {
-                    return Some(SemaphorePermit {
-                        semaphore: self.clone(),
-                    })
-                }
+                Ok(_) => return Some(SemaphorePermit { semaphore: self }),
                 Err(actual) => current = actual, // Retry with updated value
             }
         }
@@ -312,14 +313,9 @@ impl Semaphore {
         self.inner.permits.fetch_add(count, Ordering::Release);
 
         // Wake up waiters (up to count)
-        if let Ok(mut waiters) = self.inner.waiters.lock() {
-            for _ in 0..count {
-                if let Some(waker) = waiters.pop_front() {
-                    waker.wake();
-                } else {
-                    break;
-                }
-            }
+        // Note: This could be optimized with a wake_n() method on WaiterQueue
+        for _ in 0..count {
+            self.inner.waiters.wake_one();
         }
     }
 
@@ -328,19 +324,8 @@ impl Semaphore {
         // Increment available permits
         self.inner.permits.fetch_add(1, Ordering::Release);
 
-        // Wake one waiter if any exist
-        if let Ok(mut waiters) = self.inner.waiters.lock() {
-            if let Some(waker) = waiters.pop_front() {
-                waker.wake();
-            }
-        }
-    }
-
-    /// Add a waiter to the queue (called by `AcquireFuture`)
-    fn add_waiter(&self, waker: Waker) {
-        if let Ok(mut waiters) = self.inner.waiters.lock() {
-            waiters.push_back(waker);
-        }
+        // Wake one waiter (WaiterQueue handles lock-then-wake pattern)
+        self.inner.waiters.wake_one();
     }
 }
 
@@ -354,9 +339,10 @@ impl Semaphore {
 ///
 /// ```rust,no_run
 /// use compio_sync::Semaphore;
+/// use std::sync::Arc;
 ///
 /// # async fn example() {
-/// let sem = Semaphore::new(10);
+/// let sem = Arc::new(Semaphore::new(10));
 ///
 /// {
 ///     let permit = sem.acquire().await;
@@ -366,12 +352,12 @@ impl Semaphore {
 /// assert_eq!(sem.available_permits(), 10);
 /// # }
 /// ```
-pub struct SemaphorePermit {
+pub struct SemaphorePermit<'a> {
     /// Reference to the semaphore that issued this permit
-    semaphore: Semaphore,
+    semaphore: &'a Semaphore,
 }
 
-impl Drop for SemaphorePermit {
+impl<'a> Drop for SemaphorePermit<'a> {
     fn drop(&mut self) {
         self.semaphore.release();
     }
@@ -383,25 +369,44 @@ impl Drop for SemaphorePermit {
 /// 1. Try the fast path (atomic decrement if permits available)
 /// 2. If no permits, register the task's waker and return `Poll::Pending`
 /// 3. When a permit is released, the waker is called and the future retries
-struct AcquireFuture {
+struct AcquireFuture<'a> {
     /// The semaphore from which to acquire a permit
-    semaphore: Semaphore,
+    semaphore: &'a Semaphore,
 }
 
-impl Future for AcquireFuture {
-    type Output = SemaphorePermit;
+impl<'a> Future for AcquireFuture<'a> {
+    type Output = SemaphorePermit<'a>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Try fast path first (lock-free atomic operation)
+        // RACE-FREE PATTERN: Try-register-retry using WaiterQueue
+        //
+        // Unlike Condvar, we can't use atomic check-and-add because:
+        // - Permits are atomic (separate from waiter queue)
+        // - We want lock-free fast path for try_acquire()
+        //
+        // Solution: Try, then add to queue, then try again
+        // The second try catches permits released during queue registration
+        //
+        // Why this is safe for async code:
+        // - WaiterQueue mutex held for nanoseconds (just memory ops, no I/O)
+        // - No `.await` inside critical section
+        // - See `waiter_queue.rs` for detailed safety explanation
+
+        // First try (fast path, lock-free atomic)
         if let Some(permit) = self.semaphore.try_acquire() {
             return Poll::Ready(permit);
         }
 
-        // No permits available - register waker for notification
-        self.semaphore.add_waiter(cx.waker().clone());
+        // No permits - add ourselves to waiter queue (unconditionally)
+        // We can't use add_waiter_if here because permits are checked separately
+        let _added = self
+            .semaphore
+            .inner
+            .waiters
+            .add_waiter_if(|| false, cx.waker().clone());
 
-        // Try again immediately in case a permit became available
-        // while we were registering the waker (avoid missed wakeup)
+        // CRITICAL: Try again after registering
+        // Catches permits released during registration
         if let Some(permit) = self.semaphore.try_acquire() {
             return Poll::Ready(permit);
         }
@@ -414,6 +419,7 @@ impl Future for AcquireFuture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn test_semaphore_new() {

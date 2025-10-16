@@ -17,14 +17,13 @@ use dashmap::DashMap;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
 
-/// Wrapper for shared statistics tracking across async tasks
+/// Statistics tracking with interior mutability via atomics
 ///
-/// This struct uses lock-free atomic counters (`Arc<AtomicU64>`) for high-performance
-/// statistics tracking across multiple async tasks. All increment operations are
-/// lock-free using `fetch_add` with relaxed memory ordering.
+/// This struct uses `AtomicU64` fields for lock-free statistics tracking.
+/// The struct should be wrapped in `Arc<SharedStats>` when shared across tasks.
 ///
 /// # Thread Safety
 ///
@@ -34,39 +33,39 @@ use tracing::{debug, info, warn};
 /// # Usage
 ///
 /// ```rust,ignore
-/// let stats = SharedStats::new(DirectoryStats::default());
+/// let stats = Arc::new(SharedStats::new(&DirectoryStats::default()));
 /// stats.increment_files_copied();
 /// stats.increment_bytes_copied(1024);
-/// let final_stats = stats.into_inner();
+/// let final_stats = Arc::try_unwrap(stats).unwrap().into_inner();
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SharedStats {
     /// Files copied counter using atomics for lock-free operations
-    files_copied: Arc<AtomicU64>,
+    files_copied: AtomicU64,
     /// Directories created counter using atomics
-    directories_created: Arc<AtomicU64>,
+    directories_created: AtomicU64,
     /// Bytes copied counter using atomics
-    bytes_copied: Arc<AtomicU64>,
+    bytes_copied: AtomicU64,
     /// Symlinks processed counter using atomics
-    symlinks_processed: Arc<AtomicU64>,
+    symlinks_processed: AtomicU64,
     /// Errors counter using atomics
-    errors: Arc<AtomicU64>,
+    errors: AtomicU64,
 }
 
 impl SharedStats {
-    /// Create a new `SharedStats` wrapper with atomic counters
+    /// Create a new `SharedStats` with atomic counters
     ///
     /// # Arguments
     ///
-    /// * `stats` - The initial directory statistics to wrap
+    /// * `stats` - The initial directory statistics
     #[must_use]
-    pub fn new(stats: &DirectoryStats) -> Self {
+    pub const fn new(stats: &DirectoryStats) -> Self {
         Self {
-            files_copied: Arc::new(AtomicU64::new(stats.files_copied)),
-            directories_created: Arc::new(AtomicU64::new(stats.directories_created)),
-            bytes_copied: Arc::new(AtomicU64::new(stats.bytes_copied)),
-            symlinks_processed: Arc::new(AtomicU64::new(stats.symlinks_processed)),
-            errors: Arc::new(AtomicU64::new(stats.errors)),
+            files_copied: AtomicU64::new(stats.files_copied),
+            directories_created: AtomicU64::new(stats.directories_created),
+            bytes_copied: AtomicU64::new(stats.bytes_copied),
+            symlinks_processed: AtomicU64::new(stats.symlinks_processed),
+            errors: AtomicU64::new(stats.errors),
         }
     }
 
@@ -106,25 +105,13 @@ impl SharedStats {
     }
 
     /// Increment the number of files copied (lock-free atomic operation)
-    ///
-    /// # Errors
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn increment_files_copied(&self) -> Result<()> {
+    pub fn increment_files_copied(&self) {
         self.files_copied.fetch_add(1, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Increment the number of directories created (lock-free atomic operation)
-    ///
-    /// # Errors
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn increment_directories_created(&self) -> Result<()> {
+    pub fn increment_directories_created(&self) {
         self.directories_created.fetch_add(1, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Increment the number of bytes copied by a given amount (lock-free atomic operation)
@@ -132,54 +119,32 @@ impl SharedStats {
     /// # Arguments
     ///
     /// * `bytes` - The number of bytes to add to the counter
-    ///
-    #[allow(clippy::unnecessary_wraps)]
-    /// # Errors
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    pub fn increment_bytes_copied(&self, bytes: u64) -> Result<()> {
+    pub fn increment_bytes_copied(&self, bytes: u64) {
         self.bytes_copied.fetch_add(bytes, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Increment the number of symlinks processed (lock-free atomic operation)
-    ///
-    /// # Errors
-    #[allow(clippy::unnecessary_wraps)]
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    pub fn increment_symlinks_processed(&self) -> Result<()> {
+    pub fn increment_symlinks_processed(&self) {
         self.symlinks_processed.fetch_add(1, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Increment the number of errors encountered (lock-free atomic operation)
-    ///
-    /// # Errors
-    ///
-    #[allow(clippy::unnecessary_wraps)]
-    /// Never errors (kept for API compatibility, atomics never fail)
-    pub fn increment_errors(&self) -> Result<()> {
+    pub fn increment_errors(&self) {
         self.errors.fetch_add(1, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Extract the inner `DirectoryStats` from the shared wrapper
     ///
-    /// This is now a simple atomic load operation since we're using atomics.
-    ///
-    /// # Errors
-    #[allow(clippy::unnecessary_wraps)]
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    pub fn into_inner(self) -> Result<DirectoryStats> {
-        Ok(DirectoryStats {
+    /// Consumes self and returns a `DirectoryStats` snapshot.
+    #[must_use]
+    pub fn into_inner(self) -> DirectoryStats {
+        DirectoryStats {
             files_copied: self.files_copied.load(Ordering::Relaxed),
             directories_created: self.directories_created.load(Ordering::Relaxed),
             bytes_copied: self.bytes_copied.load(Ordering::Relaxed),
             symlinks_processed: self.symlinks_processed.load(Ordering::Relaxed),
             errors: self.errors.load(Ordering::Relaxed),
-        })
+        }
     }
 }
 
@@ -245,27 +210,30 @@ impl SharedHardlinkTracker {
         Self::new(tracker)
     }
 
-    /// Check if an inode has already been copied
-    #[must_use]
-    pub fn is_inode_copied(&self, inode: u64) -> bool {
-        self.inner.is_inode_copied(inode)
+    /// Signal that an inode's copy is complete
+    ///
+    /// This sets the destination path and wakes all tasks waiting to create hardlinks.
+    pub fn signal_copy_complete(&self, inode: u64, path: &Path) {
+        self.inner.signal_copy_complete(inode, path);
     }
 
-    /// Get the original path for an inode that has been copied
+    /// Get destination path for a copied inode (after waiting on condvar)
     #[must_use]
-    pub fn get_original_path_for_inode(&self, inode: u64) -> Option<PathBuf> {
-        self.inner.get_original_path_for_inode(inode)
+    pub fn get_dst_path_for_inode(&self, inode: u64) -> Option<PathBuf> {
+        self.inner.get_dst_path_for_inode(inode)
     }
 
-    /// Mark an inode as copied
-    pub fn mark_inode_copied(&self, inode: u64, path: &Path) {
-        self.inner.mark_inode_copied(inode, path);
-    }
-
-    #[allow(dead_code)]
-    /// Register a file with the hardlink tracker
+    /// Register a file with the hardlink tracker (race-free)
+    ///
+    /// Returns (`is_copier`, `optional_condvar`) to determine role and synchronization
     #[must_use]
-    pub fn register_file(&self, path: &Path, device_id: u64, inode: u64, link_count: u64) -> bool {
+    pub fn register_file(
+        &self,
+        path: &Path,
+        device_id: u64,
+        inode: u64,
+        link_count: u64,
+    ) -> (bool, Option<Arc<compio_sync::Condvar>>) {
         self.inner.register_file(path, device_id, inode, link_count)
     }
 
@@ -329,7 +297,7 @@ impl SharedSemaphore {
     /// Acquire a permit from the semaphore
     ///
     /// This will block until a permit is available.
-    pub async fn acquire(&self) -> compio_sync::SemaphorePermit {
+    pub async fn acquire(&self) -> compio_sync::SemaphorePermit<'_> {
         self.inner.acquire().await
     }
 
@@ -620,7 +588,7 @@ async fn traverse_and_copy_directory_iterative(
 
     // Wrap shared state in wrapper types for static lifetimes
     let stats_value = std::mem::take(stats);
-    let shared_stats = SharedStats::new(&stats_value);
+    let shared_stats = Arc::new(SharedStats::new(&stats_value));
     let shared_hardlink_tracker = SharedHardlinkTracker::new(std::mem::take(hardlink_tracker));
 
     // Check FD limits and warn if too low
@@ -641,6 +609,9 @@ async fn traverse_and_copy_directory_iterative(
     let concurrency_controller = Arc::new(AdaptiveConcurrencyController::new(&concurrency_options));
 
     // Process the directory
+    // Note: We clone Arc values here, but this is necessary because we need to
+    // unwrap them later to return the final stats. The clone increments ref count,
+    // but all child operations complete before we unwrap, so it's just +1/-1.
     let result = process_directory_entry_with_compio(
         dispatcher,
         initial_src,
@@ -655,7 +626,15 @@ async fn traverse_and_copy_directory_iterative(
     .await;
 
     // Restore the state
-    *stats = shared_stats.into_inner()?;
+    // This unwraps successfully because the function and all child operations have completed,
+    // so the only remaining reference is the one we kept above (from .clone())
+    *stats = Arc::try_unwrap(shared_stats)
+        .map_err(|_| {
+            SyncError::FileSystem(
+                "Failed to unwrap Arc<SharedStats> - multiple references exist".to_string(),
+            )
+        })?
+        .into_inner();
     *hardlink_tracker = shared_hardlink_tracker.into_inner()?;
 
     result
@@ -712,15 +691,18 @@ async fn process_directory_entry_with_compio(
     dst_path: PathBuf,
     file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
-    stats: SharedStats,
+    stats: Arc<SharedStats>,
     hardlink_tracker: SharedHardlinkTracker,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
 ) -> Result<()> {
+    // Clone controller before acquiring permit to avoid borrow/move conflict
+    let controller = Arc::clone(&concurrency_controller);
+
     // Acquire permit from adaptive concurrency controller
     // This prevents unbounded queue growth and adapts to resource constraints (e.g., FD exhaustion)
     // The permit is held for the entire operation (directory, file, or symlink)
-    let _permit = concurrency_controller.acquire().await;
+    let _permit = controller.acquire().await;
 
     // Get comprehensive metadata using compio's async operations
     let extended_metadata = ExtendedMetadata::new(&src_path).await?;
@@ -740,7 +722,7 @@ async fn process_directory_entry_with_compio(
                     e
                 ))
             })?;
-            stats.increment_directories_created()?;
+            stats.increment_directories_created();
 
             // Preserve directory metadata (permissions, ownership, timestamps) if requested
             preserve_directory_metadata(&src_path, &dst_path, &extended_metadata, &metadata_config)
@@ -787,7 +769,7 @@ async fn process_directory_entry_with_compio(
             let child_src_path = child_src_path.clone();
             let child_dst_path = child_dst_path.clone();
             let copy_method = copy_method.clone();
-            let stats = stats.clone();
+            let stats = Arc::clone(&stats);
             let hardlink_tracker = hardlink_tracker.clone();
             let concurrency_controller = concurrency_controller.clone();
             let file_ops_clone = Arc::clone(&file_ops);
@@ -802,7 +784,7 @@ async fn process_directory_entry_with_compio(
                         copy_method,
                         stats,
                         hardlink_tracker,
-                        concurrency_controller.clone(),
+                        concurrency_controller, // Move instead of clone - already cloned above
                         metadata_config_clone,
                     )
                 })
@@ -885,7 +867,7 @@ async fn process_file(
     metadata: ExtendedMetadata,
     _file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
-    stats: SharedStats,
+    stats: Arc<SharedStats>,
     hardlink_tracker: SharedHardlinkTracker,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
@@ -896,45 +878,90 @@ async fn process_file(
         metadata.link_count()
     );
 
-    let _device_id = metadata.device_id();
+    let device_id = metadata.device_id();
     let inode_number = metadata.inode_number();
     let link_count = metadata.link_count();
 
-    // Check if this inode has already been copied (for hardlinks)
-    if link_count > 1 && hardlink_tracker.is_inode_copied(inode_number) {
-        handle_existing_hardlink(
-            &dst_path,
-            &src_path,
-            inode_number,
-            &stats,
-            &hardlink_tracker,
-        )
-        .await?;
-    } else {
-        // First time seeing this inode - copy the file content normally
-        debug!("Copying file content: {}", src_path.display());
+    // RACE-FREE HARDLINK PATTERN: Atomically determine copier vs linker
+    let (is_copier, maybe_condvar) =
+        hardlink_tracker.register_file(&src_path, device_id, inode_number, link_count);
+
+    if is_copier {
+        // We're the copier - copy the file and signal completion
+        debug!("Copying file content (copier): {}", src_path.display());
 
         match copy_file(&src_path, &dst_path, &metadata_config).await {
             Ok(()) => {
-                stats.increment_files_copied()?;
-                stats.increment_bytes_copied(metadata.len())?;
-                hardlink_tracker.mark_inode_copied(inode_number, dst_path.as_path());
-                debug!("Copied file: {}", dst_path.display());
+                stats.increment_files_copied();
+                stats.increment_bytes_copied(metadata.len());
+
+                // Signal all waiting linkers that copy is complete
+                hardlink_tracker.signal_copy_complete(inode_number, dst_path.as_path());
+                debug!("Copied file and signaled linkers: {}", dst_path.display());
             }
             Err(e) => {
                 // Handle error - controller will either adapt or fail based on configuration
-                // If fail_on_exhaustion is true and this is EMFILE, this returns an error
-                // Otherwise, it adapts automatically and returns Ok
                 concurrency_controller.handle_error(&e)?;
 
-                // Log the error and continue
                 warn!(
                     "Failed to copy file {} -> {}: {}",
                     src_path.display(),
                     dst_path.display(),
                     e
                 );
-                stats.increment_errors()?;
+                stats.increment_errors();
+
+                // Still signal condvar even on error (with empty dst_path)
+                // This prevents linkers from waiting forever
+                hardlink_tracker.signal_copy_complete(inode_number, Path::new(""));
+            }
+        }
+    } else if let Some(condvar) = maybe_condvar {
+        // We're a linker - wait for copier to finish, then create hardlink
+        debug!(
+            "Waiting for copy to complete (linker): {}",
+            src_path.display()
+        );
+
+        // Wait for copier to signal completion
+        condvar.wait().await;
+
+        // Get the destination path from the copier
+        if let Some(original_dst) = hardlink_tracker.get_dst_path_for_inode(inode_number) {
+            if original_dst.as_os_str().is_empty() {
+                // Copier failed - we should also fail
+                warn!(
+                    "Original copy failed, skipping hardlink creation for {}",
+                    src_path.display()
+                );
+                stats.increment_errors();
+            } else {
+                handle_existing_hardlink(&dst_path, &original_dst, inode_number, &stats).await?;
+            }
+        }
+    } else {
+        // Not a hardlink (link_count == 1) - copy normally
+        debug!(
+            "Copying file content (non-hardlink): {}",
+            src_path.display()
+        );
+
+        match copy_file(&src_path, &dst_path, &metadata_config).await {
+            Ok(()) => {
+                stats.increment_files_copied();
+                stats.increment_bytes_copied(metadata.len());
+                debug!("Copied file: {}", dst_path.display());
+            }
+            Err(e) => {
+                concurrency_controller.handle_error(&e)?;
+
+                warn!(
+                    "Failed to copy file {} -> {}: {}",
+                    src_path.display(),
+                    dst_path.display(),
+                    e
+                );
+                stats.increment_errors();
             }
         }
     }
@@ -977,56 +1004,40 @@ async fn process_file(
 #[allow(clippy::future_not_send)]
 async fn handle_existing_hardlink(
     dst_path: &Path,
-    src_path: &Path,
+    original_dst: &Path,
     inode_number: u64,
-    stats: &SharedStats,
-    hardlink_tracker: &SharedHardlinkTracker,
+    stats: &Arc<SharedStats>,
 ) -> Result<()> {
-    // This is a hardlink - create a hardlink instead of copying content
-    debug!(
-        "Creating hardlink for {} (inode: {})",
-        src_path.display(),
-        inode_number
-    );
-
-    // Find the original file path for this inode
-    if let Some(original_path) = hardlink_tracker.get_original_path_for_inode(inode_number) {
-        // Create destination directory if needed
-        if let Some(parent) = dst_path.parent() {
-            if !parent.exists() {
-                compio::fs::create_dir_all(parent).await.map_err(|e| {
-                    SyncError::FileSystem(format!(
-                        "Failed to create parent directory {}: {}",
-                        parent.display(),
-                        e
-                    ))
-                })?;
-            }
-        }
-
-        // Create hardlink using compio-fs-extended for io_uring operations
-        match compio_fs_extended::hardlink::create_hardlink_at_path(&original_path, dst_path).await
-        {
-            Ok(()) => {
-                stats.increment_files_copied()?;
-                debug!(
-                    "Created hardlink: {} -> {}",
-                    dst_path.display(),
-                    original_path.display()
-                );
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to create hardlink for {}: {}",
-                    src_path.display(),
+    // Create destination directory if needed
+    if let Some(parent) = dst_path.parent() {
+        if !parent.exists() {
+            compio::fs::create_dir_all(parent).await.map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to create parent directory {}: {}",
+                    parent.display(),
                     e
-                );
-                stats.increment_errors()?;
-            }
+                ))
+            })?;
         }
-    } else {
-        warn!("Could not find original path for inode {}", inode_number);
-        stats.increment_errors()?;
+    }
+
+    // Create hardlink using compio-fs-extended for io_uring operations
+    match compio_fs_extended::hardlink::create_hardlink_at_path(original_dst, dst_path).await {
+        Ok(()) => {
+            stats.increment_files_copied();
+            debug!(
+                "Created hardlink: {} -> {}",
+                dst_path.display(),
+                original_dst.display()
+            );
+        }
+        Err(e) => {
+            warn!(
+                "Failed to create hardlink for inode {}: {}",
+                inode_number, e
+            );
+            stats.increment_errors();
+        }
     }
 
     Ok(())
@@ -1059,16 +1070,20 @@ async fn handle_existing_hardlink(
 /// - Symlink target reading fails
 /// - Symlink creation fails
 #[allow(clippy::future_not_send)]
-async fn process_symlink(src_path: PathBuf, dst_path: PathBuf, stats: SharedStats) -> Result<()> {
+async fn process_symlink(
+    src_path: PathBuf,
+    dst_path: PathBuf,
+    stats: Arc<SharedStats>,
+) -> Result<()> {
     debug!("Processing symlink: {}", src_path.display());
 
     match copy_symlink(&src_path, &dst_path).await {
         Ok(()) => {
-            stats.increment_symlinks_processed()?;
+            stats.increment_symlinks_processed();
             Ok(())
         }
         Err(e) => {
-            stats.increment_errors()?;
+            stats.increment_errors();
             warn!("Failed to copy symlink {}: {}", src_path.display(), e);
             Err(e)
         }
@@ -1226,20 +1241,36 @@ pub struct InodeInfo {
     pub ino: u64,
 }
 
-/// Hardlink tracking information
-#[derive(Debug, Clone)]
+/// Hardlink tracking information with concurrent synchronization
+///
+/// Uses `Condvar` to ensure race-free hardlink creation:
+/// - First task to register becomes the "copier" (inserts with `dst_path`)
+/// - Subsequent tasks wait on the condvar until copy completes
+/// - Copier signals condvar when destination file is created
 pub struct HardlinkInfo {
-    /// Original file path
+    /// Original file path (immutable after creation)
     #[allow(dead_code)]
     pub original_path: std::path::PathBuf,
-    /// Inode number
+    /// Inode number (immutable after creation)
     pub inode_number: u64,
-    /// Number of hardlinks found
-    pub link_count: u64,
-    /// Whether this inode has been copied to destination
-    pub is_copied: bool,
-    /// Destination path where this inode was copied (for hardlink creation)
-    pub dst_path: Option<std::path::PathBuf>,
+    /// Number of hardlinks found (incremented atomically)
+    pub link_count: AtomicU64,
+    /// Destination path set by copier task (written once, read many)
+    pub dst_path: Mutex<Option<std::path::PathBuf>>,
+    /// Condition variable signaled when copy completes
+    /// Linker tasks wait on this before creating hardlinks
+    pub copy_complete: Arc<compio_sync::Condvar>,
+}
+
+impl std::fmt::Debug for HardlinkInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HardlinkInfo")
+            .field("original_path", &self.original_path)
+            .field("inode_number", &self.inode_number)
+            .field("link_count", &self.link_count.load(Ordering::Relaxed))
+            .field("dst_path", &self.dst_path.lock().ok())
+            .finish_non_exhaustive() // Omitting copy_complete condvar
+    }
 }
 
 /// Filesystem boundary and hardlink tracker
@@ -1289,111 +1320,136 @@ impl FilesystemTracker {
 
     /// Register a file for hardlink tracking
     ///
-    /// This should be called for each file encountered during traversal.
-    /// Files with `link_count` == 1 are skipped since they're not hardlinks.
-    /// Returns true if this is a new hardlink, false if it's a duplicate or skipped.
-    pub fn register_file(&self, path: &Path, dev: u64, ino: u64, link_count: u64) -> bool {
+    /// This atomically determines if this task should be the "copier" or a "linker":
+    /// - If this is the first registration: returns `(true, None)` - caller is copier
+    /// - If already registered: returns `(false, Some(condvar))` - caller is linker, must wait
+    ///
+    /// # Arguments
+    /// * `path` - Path to the file being registered
+    /// * `dev` - Device ID
+    /// * `ino` - Inode number
+    /// * `link_count` - Number of hardlinks (from stat)
+    ///
+    /// # Returns
+    /// * `(true, None)` - First registration, caller should copy file
+    /// * `(false, Some(condvar))` - Already registered, caller should wait on condvar then link
+    /// * `(false, None)` - Not a hardlink (`link_count` == 1), caller should copy normally
+    pub fn register_file(
+        &self,
+        path: &Path,
+        dev: u64,
+        ino: u64,
+        link_count: u64,
+    ) -> (bool, Option<Arc<compio_sync::Condvar>>) {
         // Skip files with link count of 1 - they're not hardlinks
         if link_count == 1 {
-            return false;
+            return (false, None);
         }
+
         let inode_info = InodeInfo { dev, ino };
 
-        // Use DashMap's entry API for concurrent-safe insert/update
+        // ATOMIC PATTERN: Try to insert, get back whether we won the race
         match self.hardlinks.entry(inode_info) {
-            dashmap::mapref::entry::Entry::Occupied(mut entry) => {
-                // This is an existing hardlink
-                let hardlink_info = entry.get_mut();
-                hardlink_info.link_count += 1;
+            dashmap::mapref::entry::Entry::Occupied(entry) => {
+                // This inode is already registered - we're a linker
+                let hardlink_info = entry.get();
+                hardlink_info.link_count.fetch_add(1, Ordering::Relaxed);
                 debug!(
-                    "Found hardlink #{} for inode ({}, {}): {}",
-                    hardlink_info.link_count,
+                    "Found hardlink #{} for inode ({}, {}): {} (will wait for copy)",
+                    hardlink_info.link_count.load(Ordering::Relaxed),
                     dev,
                     ino,
                     path.display()
                 );
-                false
+                (false, Some(Arc::clone(&hardlink_info.copy_complete)))
             }
             dashmap::mapref::entry::Entry::Vacant(entry) => {
-                // This is a new file
+                // We're the first - we're the copier
                 entry.insert(HardlinkInfo {
                     original_path: path.to_path_buf(),
                     inode_number: ino,
-                    link_count: 1,
-                    is_copied: false,
-                    dst_path: None,
+                    link_count: AtomicU64::new(1),
+                    dst_path: Mutex::new(None),
+                    copy_complete: Arc::new(compio_sync::Condvar::new()),
                 });
                 debug!(
-                    "Registered new file inode ({}, {}): {}",
+                    "Registered new hardlink inode ({}, {}): {} (will copy)",
                     dev,
                     ino,
                     path.display()
                 );
-                true
+                (true, None)
             }
         }
-    }
-
-    /// Get hardlink information for a given inode
-    ///
-    /// Returns the hardlink information if this inode has been seen before.
-    #[must_use]
-    pub fn get_hardlink_info(&self, dev: u64, ino: u64) -> Option<HardlinkInfo> {
-        let inode_info = InodeInfo { dev, ino };
-        self.hardlinks
-            .get(&inode_info)
-            .map(|entry| entry.value().clone())
     }
 
     /// Get all hardlink groups that have multiple links
     ///
-    /// Returns a vector of hardlink groups that contain multiple files.
+    /// Returns a vector of (`inode_number`, `link_count`) tuples for inodes with multiple hardlinks.
     #[must_use]
-    pub fn get_hardlink_groups(&self) -> Vec<HardlinkInfo> {
+    pub fn get_hardlink_groups(&self) -> Vec<(u64, u64)> {
         self.hardlinks
             .iter()
-            .map(|entry| entry.value().clone())
-            .filter(|info| info.link_count > 1)
+            .filter(|entry| entry.value().link_count.load(Ordering::Relaxed) > 1)
+            .map(|entry| {
+                let val = entry.value();
+                (val.inode_number, val.link_count.load(Ordering::Relaxed))
+            })
             .collect()
     }
 
-    /// Check if an inode has already been copied (for hardlink creation)
+    /// Signal that an inode's copy is complete and store its destination path
     ///
-    /// Returns true if this inode has been processed and copied to the destination.
-    /// This is used to determine whether to copy file content or create a hardlink.
-    #[must_use]
-    pub fn is_inode_copied(&self, ino: u64) -> bool {
-        self.hardlinks
+    /// This should be called by the copier task after successfully creating the destination file.
+    /// It sets the destination path and signals all waiting linker tasks via the condvar.
+    ///
+    /// # Arguments
+    /// * `ino` - Inode number that was copied
+    /// * `dst_path` - Path where the file was copied to
+    pub fn signal_copy_complete(&self, ino: u64, dst_path: &Path) {
+        // Find the hardlink info for this inode (drop iterator before accessing)
+        let entry_opt = self
+            .hardlinks
             .iter()
-            .any(|entry| entry.value().inode_number == ino && entry.value().is_copied)
-    }
+            .find(|e| e.value().inode_number == ino)
+            .map(|e| (*e.key(), Arc::clone(&e.value().copy_complete)));
 
-    /// Mark an inode as copied and store its destination path
-    ///
-    /// This should be called after successfully copying a file's content,
-    /// so that subsequent hardlinks to the same inode can be created instead of copied.
-    pub fn mark_inode_copied(&self, ino: u64, dst_path: &Path) {
-        for mut entry in self.hardlinks.iter_mut() {
-            let hardlink_info = entry.value_mut();
-            if hardlink_info.inode_number == ino {
-                hardlink_info.is_copied = true;
-                hardlink_info.dst_path = Some(dst_path.to_path_buf());
-                debug!("Marked inode {} as copied to {}", ino, dst_path.display());
-                break;
-            }
+        if let Some((_key, condvar)) = entry_opt {
+            // Set destination path (re-lookup and drop iterator quickly)
+            {
+                let found = self
+                    .hardlinks
+                    .iter()
+                    .find(|e| e.value().inode_number == ino);
+                if let Some(entry) = found {
+                    let hardlink_info = entry.value();
+                    if let Ok(mut dst) = hardlink_info.dst_path.lock() {
+                        *dst = Some(dst_path.to_path_buf());
+                    }
+                }
+            } // Iterator dropped here
+
+            // Signal all waiting linker tasks (iterator is dropped)
+            condvar.notify_all();
+
+            debug!(
+                "Signaled copy complete for inode {} at {}",
+                ino,
+                dst_path.display()
+            );
         }
     }
 
-    /// Get the original destination path for an inode that has been copied
+    /// Get the destination path where an inode was copied
     ///
-    /// Returns the destination path where this inode's content was first copied.
-    /// This is used to create hardlinks pointing to the original copied file.
+    /// Returns the destination path if it has been set by the copier task.
+    /// This should only be called after waiting on the condvar.
     #[must_use]
-    pub fn get_original_path_for_inode(&self, ino: u64) -> Option<PathBuf> {
+    pub fn get_dst_path_for_inode(&self, ino: u64) -> Option<PathBuf> {
         self.hardlinks
             .iter()
-            .find(|entry| entry.value().inode_number == ino && entry.value().is_copied)
-            .and_then(|entry| entry.value().dst_path.clone())
+            .find(|entry| entry.value().inode_number == ino)
+            .and_then(|entry| entry.value().dst_path.lock().ok()?.clone())
     }
 
     /// Get statistics about the filesystem tracking
@@ -1404,7 +1460,7 @@ impl FilesystemTracker {
         let total_hardlinks: u64 = self
             .hardlinks
             .iter()
-            .map(|entry| entry.value().link_count)
+            .map(|entry| entry.value().link_count.load(Ordering::Relaxed))
             .sum();
 
         FilesystemStats {
@@ -1710,7 +1766,7 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
-            SharedStats::new(&stats),
+            Arc::new(SharedStats::new(&stats)),
         )
         .await;
 
@@ -1742,7 +1798,7 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
-            SharedStats::new(&stats),
+            Arc::new(SharedStats::new(&stats)),
         )
         .await;
 
@@ -1786,13 +1842,15 @@ mod tests {
         // Create hardlink
         std::fs::hard_link(&file1, &file2).expect("Failed to create hardlink");
 
-        // Register first file
-        let registered = tracker.register_file(&file1, 1, 100, 2);
-        assert!(registered); // Should register as new file
+        // Register first file (should be copier)
+        let (is_copier, condvar) = tracker.register_file(&file1, 1, 100, 2);
+        assert!(is_copier); // Should be copier (first registration)
+        assert!(condvar.is_none()); // Copier doesn't get condvar
 
-        // Register hardlink
-        let registered = tracker.register_file(&file2, 1, 100, 2);
-        assert!(!registered); // Should not register as new (it's a hardlink)
+        // Register hardlink (should be linker)
+        let (is_copier, condvar) = tracker.register_file(&file2, 1, 100, 2);
+        assert!(!is_copier); // Should not be copier (it's a hardlink)
+        assert!(condvar.is_some()); // Linker gets condvar to wait on
 
         // Check stats
         let stats = tracker.get_stats();
