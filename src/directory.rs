@@ -20,11 +20,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-/// Wrapper for shared statistics tracking across async tasks
+/// Statistics tracking with interior mutability via atomics
 ///
-/// This struct uses lock-free atomic counters (`Arc<AtomicU64>`) for high-performance
-/// statistics tracking across multiple async tasks. All increment operations are
-/// lock-free using `fetch_add` with relaxed memory ordering.
+/// This struct uses `AtomicU64` fields for lock-free statistics tracking.
+/// The struct should be wrapped in `Arc<SharedStats>` when shared across tasks.
 ///
 /// # Thread Safety
 ///
@@ -34,39 +33,39 @@ use tracing::{debug, info, warn};
 /// # Usage
 ///
 /// ```rust,ignore
-/// let stats = SharedStats::new(DirectoryStats::default());
+/// let stats = Arc::new(SharedStats::new(&DirectoryStats::default()));
 /// stats.increment_files_copied();
 /// stats.increment_bytes_copied(1024);
-/// let final_stats = stats.into_inner();
+/// let final_stats = Arc::try_unwrap(stats).unwrap().into_inner();
 /// ```
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct SharedStats {
     /// Files copied counter using atomics for lock-free operations
-    files_copied: Arc<AtomicU64>,
+    files_copied: AtomicU64,
     /// Directories created counter using atomics
-    directories_created: Arc<AtomicU64>,
+    directories_created: AtomicU64,
     /// Bytes copied counter using atomics
-    bytes_copied: Arc<AtomicU64>,
+    bytes_copied: AtomicU64,
     /// Symlinks processed counter using atomics
-    symlinks_processed: Arc<AtomicU64>,
+    symlinks_processed: AtomicU64,
     /// Errors counter using atomics
-    errors: Arc<AtomicU64>,
+    errors: AtomicU64,
 }
 
 impl SharedStats {
-    /// Create a new `SharedStats` wrapper with atomic counters
+    /// Create a new `SharedStats` with atomic counters
     ///
     /// # Arguments
     ///
-    /// * `stats` - The initial directory statistics to wrap
+    /// * `stats` - The initial directory statistics
     #[must_use]
-    pub fn new(stats: &DirectoryStats) -> Self {
+    pub const fn new(stats: &DirectoryStats) -> Self {
         Self {
-            files_copied: Arc::new(AtomicU64::new(stats.files_copied)),
-            directories_created: Arc::new(AtomicU64::new(stats.directories_created)),
-            bytes_copied: Arc::new(AtomicU64::new(stats.bytes_copied)),
-            symlinks_processed: Arc::new(AtomicU64::new(stats.symlinks_processed)),
-            errors: Arc::new(AtomicU64::new(stats.errors)),
+            files_copied: AtomicU64::new(stats.files_copied),
+            directories_created: AtomicU64::new(stats.directories_created),
+            bytes_copied: AtomicU64::new(stats.bytes_copied),
+            symlinks_processed: AtomicU64::new(stats.symlinks_processed),
+            errors: AtomicU64::new(stats.errors),
         }
     }
 
@@ -106,25 +105,13 @@ impl SharedStats {
     }
 
     /// Increment the number of files copied (lock-free atomic operation)
-    ///
-    /// # Errors
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn increment_files_copied(&self) -> Result<()> {
+    pub fn increment_files_copied(&self) {
         self.files_copied.fetch_add(1, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Increment the number of directories created (lock-free atomic operation)
-    ///
-    /// # Errors
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    #[allow(clippy::unnecessary_wraps)]
-    pub fn increment_directories_created(&self) -> Result<()> {
+    pub fn increment_directories_created(&self) {
         self.directories_created.fetch_add(1, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Increment the number of bytes copied by a given amount (lock-free atomic operation)
@@ -132,54 +119,32 @@ impl SharedStats {
     /// # Arguments
     ///
     /// * `bytes` - The number of bytes to add to the counter
-    ///
-    #[allow(clippy::unnecessary_wraps)]
-    /// # Errors
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    pub fn increment_bytes_copied(&self, bytes: u64) -> Result<()> {
+    pub fn increment_bytes_copied(&self, bytes: u64) {
         self.bytes_copied.fetch_add(bytes, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Increment the number of symlinks processed (lock-free atomic operation)
-    ///
-    /// # Errors
-    #[allow(clippy::unnecessary_wraps)]
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    pub fn increment_symlinks_processed(&self) -> Result<()> {
+    pub fn increment_symlinks_processed(&self) {
         self.symlinks_processed.fetch_add(1, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Increment the number of errors encountered (lock-free atomic operation)
-    ///
-    /// # Errors
-    ///
-    #[allow(clippy::unnecessary_wraps)]
-    /// Never errors (kept for API compatibility, atomics never fail)
-    pub fn increment_errors(&self) -> Result<()> {
+    pub fn increment_errors(&self) {
         self.errors.fetch_add(1, Ordering::Relaxed);
-        Ok(())
     }
 
     /// Extract the inner `DirectoryStats` from the shared wrapper
     ///
-    /// This is now a simple atomic load operation since we're using atomics.
-    ///
-    /// # Errors
-    #[allow(clippy::unnecessary_wraps)]
-    ///
-    /// Never errors (kept for API compatibility, atomics never fail)
-    pub fn into_inner(self) -> Result<DirectoryStats> {
-        Ok(DirectoryStats {
+    /// Consumes self and returns a `DirectoryStats` snapshot.
+    #[must_use]
+    pub fn into_inner(self) -> DirectoryStats {
+        DirectoryStats {
             files_copied: self.files_copied.load(Ordering::Relaxed),
             directories_created: self.directories_created.load(Ordering::Relaxed),
             bytes_copied: self.bytes_copied.load(Ordering::Relaxed),
             symlinks_processed: self.symlinks_processed.load(Ordering::Relaxed),
             errors: self.errors.load(Ordering::Relaxed),
-        })
+        }
     }
 }
 
@@ -620,7 +585,7 @@ async fn traverse_and_copy_directory_iterative(
 
     // Wrap shared state in wrapper types for static lifetimes
     let stats_value = std::mem::take(stats);
-    let shared_stats = SharedStats::new(&stats_value);
+    let shared_stats = Arc::new(SharedStats::new(&stats_value));
     let shared_hardlink_tracker = SharedHardlinkTracker::new(std::mem::take(hardlink_tracker));
 
     // Check FD limits and warn if too low
@@ -655,7 +620,13 @@ async fn traverse_and_copy_directory_iterative(
     .await;
 
     // Restore the state
-    *stats = shared_stats.into_inner()?;
+    *stats = Arc::try_unwrap(shared_stats)
+        .map_err(|_| {
+            SyncError::FileSystem(
+                "Failed to unwrap Arc<SharedStats> - multiple references exist".to_string(),
+            )
+        })?
+        .into_inner();
     *hardlink_tracker = shared_hardlink_tracker.into_inner()?;
 
     result
@@ -712,7 +683,7 @@ async fn process_directory_entry_with_compio(
     dst_path: PathBuf,
     file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
-    stats: SharedStats,
+    stats: Arc<SharedStats>,
     hardlink_tracker: SharedHardlinkTracker,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
@@ -740,7 +711,7 @@ async fn process_directory_entry_with_compio(
                     e
                 ))
             })?;
-            stats.increment_directories_created()?;
+            stats.increment_directories_created();
 
             // Preserve directory metadata (permissions, ownership, timestamps) if requested
             preserve_directory_metadata(&src_path, &dst_path, &extended_metadata, &metadata_config)
@@ -787,7 +758,7 @@ async fn process_directory_entry_with_compio(
             let child_src_path = child_src_path.clone();
             let child_dst_path = child_dst_path.clone();
             let copy_method = copy_method.clone();
-            let stats = stats.clone();
+            let stats = Arc::clone(&stats);
             let hardlink_tracker = hardlink_tracker.clone();
             let concurrency_controller = concurrency_controller.clone();
             let file_ops_clone = Arc::clone(&file_ops);
@@ -885,7 +856,7 @@ async fn process_file(
     metadata: ExtendedMetadata,
     _file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
-    stats: SharedStats,
+    stats: Arc<SharedStats>,
     hardlink_tracker: SharedHardlinkTracker,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
@@ -916,8 +887,8 @@ async fn process_file(
 
         match copy_file(&src_path, &dst_path, &metadata_config).await {
             Ok(()) => {
-                stats.increment_files_copied()?;
-                stats.increment_bytes_copied(metadata.len())?;
+                stats.increment_files_copied();
+                stats.increment_bytes_copied(metadata.len());
                 hardlink_tracker.mark_inode_copied(inode_number, dst_path.as_path());
                 debug!("Copied file: {}", dst_path.display());
             }
@@ -934,7 +905,7 @@ async fn process_file(
                     dst_path.display(),
                     e
                 );
-                stats.increment_errors()?;
+                stats.increment_errors();
             }
         }
     }
@@ -1008,7 +979,7 @@ async fn handle_existing_hardlink(
         match compio_fs_extended::hardlink::create_hardlink_at_path(&original_path, dst_path).await
         {
             Ok(()) => {
-                stats.increment_files_copied()?;
+                stats.increment_files_copied();
                 debug!(
                     "Created hardlink: {} -> {}",
                     dst_path.display(),
@@ -1021,12 +992,12 @@ async fn handle_existing_hardlink(
                     src_path.display(),
                     e
                 );
-                stats.increment_errors()?;
+                stats.increment_errors();
             }
         }
     } else {
         warn!("Could not find original path for inode {}", inode_number);
-        stats.increment_errors()?;
+        stats.increment_errors();
     }
 
     Ok(())
@@ -1059,16 +1030,20 @@ async fn handle_existing_hardlink(
 /// - Symlink target reading fails
 /// - Symlink creation fails
 #[allow(clippy::future_not_send)]
-async fn process_symlink(src_path: PathBuf, dst_path: PathBuf, stats: SharedStats) -> Result<()> {
+async fn process_symlink(
+    src_path: PathBuf,
+    dst_path: PathBuf,
+    stats: Arc<SharedStats>,
+) -> Result<()> {
     debug!("Processing symlink: {}", src_path.display());
 
     match copy_symlink(&src_path, &dst_path).await {
         Ok(()) => {
-            stats.increment_symlinks_processed()?;
+            stats.increment_symlinks_processed();
             Ok(())
         }
         Err(e) => {
-            stats.increment_errors()?;
+            stats.increment_errors();
             warn!("Failed to copy symlink {}: {}", src_path.display(), e);
             Err(e)
         }
@@ -1710,7 +1685,7 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
-            SharedStats::new(&stats),
+            Arc::new(SharedStats::new(&stats)),
         )
         .await;
 
@@ -1742,7 +1717,7 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
-            SharedStats::new(&stats),
+            Arc::new(SharedStats::new(&stats)),
         )
         .await;
 
