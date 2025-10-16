@@ -173,15 +173,17 @@ impl FileOperations {
         src_file: &compio::fs::File,
         dst_file: &mut compio::fs::File,
     ) -> Result<u64> {
-        // Create managed buffer using compio's buffer traits
+        // Create managed buffer once - it will be reused throughout the entire copy
+        // compio's read_at/write_at take ownership and return the buffer in the result tuple
         let mut buffer = vec![0u8; self.buffer_size];
         let mut offset = 0u64;
+        let mut total_bytes = 0u64;
 
         loop {
-            // Read chunk from source using managed buffer
-            let result = src_file.read_at(buffer, offset).await;
+            // Read chunk from source - buffer ownership transferred to compio
+            let read_result = src_file.read_at(buffer, offset).await;
 
-            let bytes_read = match result.0 {
+            let bytes_read = match read_result.0 {
                 Ok(n) => n,
                 Err(e) => {
                     return Err(SyncError::FileSystem(format!(
@@ -190,16 +192,22 @@ impl FileOperations {
                 }
             };
 
+            // Get buffer back from read operation
+            buffer = read_result.1;
+
             // If we read 0 bytes, we've reached end of file
             if bytes_read == 0 {
                 break;
             }
 
-            // Create write buffer from the read data using compio's managed buffer
-            let write_buffer = result.1[..bytes_read].to_vec();
+            // Truncate buffer to only the bytes read (avoids writing garbage)
+            // This doesn't allocate, just changes the length
+            buffer.truncate(bytes_read);
 
-            // Write chunk to destination using managed buffer
-            let write_result = dst_file.write_all_at(write_buffer, offset).await;
+            // Write chunk to destination - write_all_at takes ownership and returns the buffer
+            // This way we reuse the same allocation for both read and write
+            let write_result = dst_file.write_all_at(buffer, offset).await;
+
             match write_result.0 {
                 Ok(()) => {
                     // write_all_at returns () on success
@@ -211,15 +219,22 @@ impl FileOperations {
                 }
             }
 
+            // Get the buffer back from write operation and resize it for the next read
+            // resize() reuses the existing capacity when possible (no new allocation!)
+            buffer = write_result.1;
+            buffer.resize(self.buffer_size, 0);
             offset += bytes_read as u64;
-            buffer = result.1; // Reuse managed buffer for next iteration
+            total_bytes += bytes_read as u64;
         }
 
         // Note: sync_all() removed for performance - data will be synced by the OS
         // when the file is closed or when the OS decides to flush buffers
 
-        debug!("Copied {} bytes using compio managed buffers", offset);
-        Ok(offset)
+        debug!(
+            "Copied {} bytes using single reused buffer (no allocations)",
+            total_bytes
+        );
+        Ok(total_bytes)
     }
 
     /// Get file size

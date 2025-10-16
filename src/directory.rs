@@ -17,19 +17,20 @@ use compio_sync::Semaphore;
 use std::collections::HashMap;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
 
 /// Wrapper for shared statistics tracking across async tasks
 ///
-/// This struct wraps `DirectoryStats` in `Arc<Mutex<>>` to allow shared access
-/// across multiple async tasks dispatched by compio's dispatcher. It provides
-/// a clean API for updating statistics from concurrent operations.
+/// This struct uses lock-free atomic counters (`Arc<AtomicU64>`) for high-performance
+/// statistics tracking across multiple async tasks. All increment operations are
+/// lock-free using `fetch_add` with relaxed memory ordering.
 ///
 /// # Thread Safety
 ///
-/// All methods are thread-safe and can be called concurrently from different
-/// async tasks without additional synchronization.
+/// All methods are thread-safe and lock-free. Atomic operations use `Ordering::Relaxed`
+/// since statistics counters don't require synchronization (eventual consistency is fine).
 ///
 /// # Usage
 ///
@@ -39,173 +40,146 @@ use tracing::{debug, info, warn};
 /// stats.increment_bytes_copied(1024);
 /// let final_stats = stats.into_inner();
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SharedStats {
-    /// Inner stats wrapped in Arc<Mutex<>> for thread-safe access
-    inner: Arc<Mutex<DirectoryStats>>,
+    /// Files copied counter using atomics for lock-free operations
+    files_copied: Arc<AtomicU64>,
+    /// Directories created counter using atomics
+    directories_created: Arc<AtomicU64>,
+    /// Bytes copied counter using atomics
+    bytes_copied: Arc<AtomicU64>,
+    /// Symlinks processed counter using atomics
+    symlinks_processed: Arc<AtomicU64>,
+    /// Errors counter using atomics
+    errors: Arc<AtomicU64>,
 }
 
 impl SharedStats {
-    /// Create a new `SharedStats` wrapper
+    /// Create a new `SharedStats` wrapper with atomic counters
     ///
     /// # Arguments
     ///
     /// * `stats` - The initial directory statistics to wrap
     #[must_use]
-    pub fn new(stats: DirectoryStats) -> Self {
+    pub fn new(stats: &DirectoryStats) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(stats)),
+            files_copied: Arc::new(AtomicU64::new(stats.files_copied)),
+            directories_created: Arc::new(AtomicU64::new(stats.directories_created)),
+            bytes_copied: Arc::new(AtomicU64::new(stats.bytes_copied)),
+            symlinks_processed: Arc::new(AtomicU64::new(stats.symlinks_processed)),
+            errors: Arc::new(AtomicU64::new(stats.errors)),
         }
     }
 
     #[allow(dead_code)]
-    /// Get the number of files copied
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn files_copied(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .files_copied)
+    /// Get the number of files copied (lock-free atomic read)
+    #[must_use]
+    pub fn files_copied(&self) -> u64 {
+        self.files_copied.load(Ordering::Relaxed)
     }
 
     #[allow(dead_code)]
-    /// Get the number of directories created
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn directories_created(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .directories_created)
+    /// Get the number of directories created (lock-free atomic read)
+    #[must_use]
+    pub fn directories_created(&self) -> u64 {
+        self.directories_created.load(Ordering::Relaxed)
     }
 
     #[allow(dead_code)]
-    /// Get the number of bytes copied
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn bytes_copied(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .bytes_copied)
+    /// Get the number of bytes copied (lock-free atomic read)
+    #[must_use]
+    pub fn bytes_copied(&self) -> u64 {
+        self.bytes_copied.load(Ordering::Relaxed)
     }
 
     #[allow(dead_code)]
-    /// Get the number of symlinks processed
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn symlinks_processed(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .symlinks_processed)
+    /// Get the number of symlinks processed (lock-free atomic read)
+    #[must_use]
+    pub fn symlinks_processed(&self) -> u64 {
+        self.symlinks_processed.load(Ordering::Relaxed)
     }
 
     #[allow(dead_code)]
-    /// Get the number of errors encountered
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn errors(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .errors)
+    /// Get the number of errors encountered (lock-free atomic read)
+    #[must_use]
+    pub fn errors(&self) -> u64 {
+        self.errors.load(Ordering::Relaxed)
     }
 
-    /// Increment the number of files copied
+    /// Increment the number of files copied (lock-free atomic operation)
     ///
     /// # Errors
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    /// Never errors (kept for API compatibility, atomics never fail)
+    #[allow(clippy::unnecessary_wraps)]
     pub fn increment_files_copied(&self) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .files_copied += 1;
+        self.files_copied.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
-    /// Increment the number of directories created
+    /// Increment the number of directories created (lock-free atomic operation)
     ///
     /// # Errors
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    /// Never errors (kept for API compatibility, atomics never fail)
+    #[allow(clippy::unnecessary_wraps)]
     pub fn increment_directories_created(&self) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .directories_created += 1;
+        self.directories_created.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
-    /// Increment the number of bytes copied
+    /// Increment the number of bytes copied by a given amount (lock-free atomic operation)
     ///
+    /// # Arguments
+    ///
+    /// * `bytes` - The number of bytes to add to the counter
+    ///
+    #[allow(clippy::unnecessary_wraps)]
     /// # Errors
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    /// Never errors (kept for API compatibility, atomics never fail)
     pub fn increment_bytes_copied(&self, bytes: u64) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .bytes_copied += bytes;
+        self.bytes_copied.fetch_add(bytes, Ordering::Relaxed);
         Ok(())
     }
 
-    /// Increment the number of symlinks processed
+    /// Increment the number of symlinks processed (lock-free atomic operation)
     ///
     /// # Errors
+    #[allow(clippy::unnecessary_wraps)]
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    /// Never errors (kept for API compatibility, atomics never fail)
     pub fn increment_symlinks_processed(&self) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .symlinks_processed += 1;
+        self.symlinks_processed.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
-    /// Increment the number of errors encountered
+    /// Increment the number of errors encountered (lock-free atomic operation)
     ///
     /// # Errors
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    #[allow(clippy::unnecessary_wraps)]
+    /// Never errors (kept for API compatibility, atomics never fail)
     pub fn increment_errors(&self) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .errors += 1;
+        self.errors.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
     /// Extract the inner `DirectoryStats` from the shared wrapper
     ///
-    /// # Errors
+    /// This is now a simple atomic load operation since we're using atomics.
     ///
-    /// This function will return an error if:
-    /// - Multiple references to the Arc exist (cannot unwrap)
-    /// - The internal mutex is poisoned
+    /// # Errors
+    #[allow(clippy::unnecessary_wraps)]
+    ///
+    /// Never errors (kept for API compatibility, atomics never fail)
     pub fn into_inner(self) -> Result<DirectoryStats> {
-        let inner = Arc::try_unwrap(self.inner).map_err(|_| {
-            SyncError::FileSystem("Failed to unwrap Arc - multiple references exist".to_string())
-        })?;
-        inner.into_inner().map_err(|_| {
-            SyncError::FileSystem("Failed to unwrap Mutex - mutex is poisoned".to_string())
+        Ok(DirectoryStats {
+            files_copied: self.files_copied.load(Ordering::Relaxed),
+            directories_created: self.directories_created.load(Ordering::Relaxed),
+            bytes_copied: self.bytes_copied.load(Ordering::Relaxed),
+            symlinks_processed: self.symlinks_processed.load(Ordering::Relaxed),
+            errors: self.errors.load(Ordering::Relaxed),
         })
     }
 }
@@ -704,7 +678,8 @@ async fn traverse_and_copy_directory_iterative(
     let metadata_config_arc = Arc::new(metadata_config.clone());
 
     // Wrap shared state in wrapper types for static lifetimes
-    let shared_stats = SharedStats::new(std::mem::take(stats));
+    let stats_value = std::mem::take(stats);
+    let shared_stats = SharedStats::new(&stats_value);
     let shared_hardlink_tracker = SharedHardlinkTracker::new(std::mem::take(hardlink_tracker));
 
     // Check FD limits and warn if too low
@@ -1786,7 +1761,7 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
-            SharedStats::new(stats),
+            SharedStats::new(&stats),
         )
         .await;
 
@@ -1818,7 +1793,7 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
-            SharedStats::new(stats),
+            SharedStats::new(&stats),
         )
         .await;
 

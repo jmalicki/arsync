@@ -179,37 +179,44 @@ async fn copy_read_write(src: &Path, dst: &Path, metadata_config: &MetadataConfi
             })?;
     }
 
-    // Use compio's async read_at/write_at operations
+    // Use compio's async read_at/write_at operations with buffer reuse
+    // Create buffer once and reuse it throughout the copy (no allocations!)
+    let mut buffer = vec![0u8; BUFFER_SIZE];
     let mut offset = 0u64;
     let mut total_copied = 0u64;
 
     while total_copied < file_size {
-        // Create a new buffer for each read operation
-        let buffer = vec![0u8; BUFFER_SIZE];
+        // Read data from source file - buffer ownership transferred to compio
+        let read_result = src_file.read_at(buffer, offset).await;
 
-        // Read data from source file using compio
-        let buf_result = src_file.read_at(buffer, offset).await;
-
-        let bytes_read = buf_result
+        let bytes_read = read_result
             .0
             .map_err(|e| SyncError::IoUring(format!("compio read_at operation failed: {e}")))?;
 
-        let read_buffer = buf_result.1;
+        // Get buffer back from read operation
+        buffer = read_result.1;
 
         if bytes_read == 0 {
             // End of file
             break;
         }
 
-        // Truncate the buffer to the actual bytes read
-        let write_buffer = read_buffer[..bytes_read].to_vec();
+        // Truncate buffer to only the bytes read (avoids writing garbage)
+        // This doesn't allocate, just changes the length
+        buffer.truncate(bytes_read);
 
-        // Write data to destination file using compio
-        let write_buf_result = dst_file.write_at(write_buffer, offset).await;
+        // Write data to destination file - write_at takes ownership and returns the buffer
+        // This way we reuse the same allocation for both read and write
+        let write_result = dst_file.write_at(buffer, offset).await;
 
-        let bytes_written = write_buf_result
+        let bytes_written = write_result
             .0
             .map_err(|e| SyncError::IoUring(format!("compio write_at operation failed: {e}")))?;
+
+        // Get the buffer back from write operation and resize it for the next read
+        // resize() reuses the existing capacity when possible (no new allocation!)
+        buffer = write_result.1;
+        buffer.resize(BUFFER_SIZE, 0);
 
         // Ensure we wrote the expected number of bytes
         if bytes_written != bytes_read {
@@ -222,7 +229,7 @@ async fn copy_read_write(src: &Path, dst: &Path, metadata_config: &MetadataConfi
         offset += bytes_written as u64;
 
         tracing::debug!(
-            "compio read_at/write_at: copied {} bytes, total: {}/{}",
+            "compio read_at/write_at: copied {} bytes, total: {}/{} (buffer reused)",
             bytes_written,
             total_copied,
             file_size
