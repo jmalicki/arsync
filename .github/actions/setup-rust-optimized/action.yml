@@ -1,0 +1,51 @@
+name: Setup Rust Environment (Optimized)
+description: Sets up Rust toolchain with sccache and optimized caching for io_uring_sync4 project
+branding:
+  icon: package
+  color: orange
+
+inputs:
+  toolchain:
+    description: Rust toolchain version
+    required: false
+    default: '1.90.0'
+  components:
+    description: Additional components to install
+    required: false
+    default: 'rustfmt, clippy'
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+      with:
+        toolchain: ${{ inputs.toolchain }}
+        components: ${{ inputs.components }}
+    
+    # Setup sccache for faster compilation
+    - name: Setup sccache
+      uses: mozilla-actions/sccache-action@v0.0.4
+      with:
+        version: '0.8.0'
+    
+    # Enhanced caching strategy
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "v2-io-uring-sync-optimized"
+        shared-key: "${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}"
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        cache-bin: "true"
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+    
+    # Cache sccache artifacts
+    - name: Cache sccache artifacts
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.cache/sccache
+        key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          sccache-${{ runner.os }}-
