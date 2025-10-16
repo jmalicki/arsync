@@ -11,8 +11,9 @@ This directory contains all documentation related to the rsync wire protocol imp
 ## Quick Start
 
 1. **Start here**: [architecture.md](architecture.md) - High-level overview and architecture
-2. **For details**: [plan/](plan/) - Detailed implementation plan organized by phase
-3. **For deep dive**: [../../specs/rsync-wire-protocol.md](../../specs/rsync-wire-protocol.md) - Protocol specification
+2. **Check status**: [plan.md](plan.md) - High-level plan with phase checklist
+3. **For details**: [plan/](plan/) - Detailed task checklists for each phase
+4. **For deep dive**: [../../specs/rsync-wire-protocol.md](../../specs/rsync-wire-protocol.md) - Protocol specification
 
 ---
 
@@ -29,12 +30,18 @@ This directory contains all documentation related to the rsync wire protocol imp
 
 ### Implementation Plan
 
-- **[plan/](plan/)** - Detailed implementation plan organized by phase
-  - Each phase in its own file for easy navigation
+- **[plan.md](plan.md)** - High-level implementation plan
+  - One checkbox per phase (7 phases total)
+  - Links to detailed phase files
+  - Overall status and statistics
+  - **Start here for quick overview**
+
+- **[plan/](plan/)** - Detailed phase-by-phase task checklists
+  - Each phase in its own file (`phase-1-handshake.md`, etc.)
   - 600+ granular tasks with checkboxes
-  - All phases with acceptance criteria
-  - What was implemented/skipped and why
+  - Acceptance criteria and commit references
   - Implementation statistics and test matrix
+  - **Use `/implement plan/phase-X.md` to work through details**
   - **See [plan/README.md](plan/README.md) for index**
 
 ### Design
