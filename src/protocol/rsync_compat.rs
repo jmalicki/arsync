@@ -552,6 +552,10 @@ pub struct RsyncBlockChecksum {
 /// rsync format:
 /// - Header: [block_count][block_size][remainder][checksum2_length]
 /// - Then each block: [weak][strong] (no offset/index - implicit!)
+///
+/// # Errors
+///
+/// Returns an error if writing to the transport fails.
 pub async fn send_block_checksums_rsync<T: Transport>(
     writer: &mut MultiplexWriter<T>,
     data: &[u8],
@@ -608,6 +612,13 @@ pub async fn send_block_checksums_rsync<T: Transport>(
 }
 
 /// Receive block checksums in rsync wire format
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Reading from the transport fails
+/// - Invalid message tag received (expected MSG_DATA)
+/// - Malformed checksum data
 pub async fn receive_block_checksums_rsync<T: Transport>(
     reader: &mut MultiplexReader<T>,
 ) -> Result<(Vec<RsyncBlockChecksum>, usize)> {
@@ -672,6 +683,7 @@ use crate::protocol::rsync::DeltaInstruction;
 /// - 0: End of data marker
 /// - 1-96: Literal run (N bytes of data follow)
 /// - 97-255: Block match with offset encoding
+#[must_use]
 pub fn delta_to_tokens(delta: &[DeltaInstruction]) -> Vec<u8> {
     let mut tokens = Vec::new();
     let mut last_block_index: i64 = -1;
@@ -729,7 +741,11 @@ pub fn delta_to_tokens(delta: &[DeltaInstruction]) -> Vec<u8> {
 
 /// Parse rsync token stream back to delta instructions
 ///
-/// Returns (instructions, bytes_consumed)
+/// # Errors
+///
+/// Returns an error if:
+/// - Literal data is truncated (insufficient bytes in token stream)
+/// - Block offset data is truncated
 pub fn tokens_to_delta(
     tokens: &[u8],
     block_checksums: &[RsyncBlockChecksum],
@@ -803,6 +819,10 @@ pub fn tokens_to_delta(
 }
 
 /// Send delta in rsync token format
+///
+/// # Errors
+///
+/// Returns an error if writing to the transport fails.
 pub async fn send_delta_rsync<T: Transport>(
     writer: &mut MultiplexWriter<T>,
     delta: &[DeltaInstruction],
@@ -814,6 +834,13 @@ pub async fn send_delta_rsync<T: Transport>(
 }
 
 /// Receive delta in rsync token format
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Reading from the transport fails
+/// - Invalid message tag received (expected MSG_DATA)
+/// - Token parsing fails (malformed delta)
 pub async fn receive_delta_rsync<T: Transport>(
     reader: &mut MultiplexReader<T>,
     checksums: &[RsyncBlockChecksum],
@@ -835,6 +862,13 @@ pub async fn receive_delta_rsync<T: Transport>(
 /// Receive files from rsync sender (file list only - minimal implementation)
 ///
 /// Generic over any Transport implementation (SSH, pipes, etc.)
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Transport operations fail
+/// - File list decoding fails
+/// - File system operations fail (creating directories/files)
 pub async fn rsync_receive<T: Transport>(
     _args: &Args,
     transport: T,
@@ -900,6 +934,13 @@ pub async fn rsync_receive<T: Transport>(
 /// Send files to rsync receiver (file list only - minimal implementation)
 ///
 /// Generic over any Transport implementation (SSH, pipes, etc.)
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - File system operations fail (reading source files)
+/// - File list encoding fails
+/// - Transport write operations fail
 pub async fn rsync_send<T: Transport>(
     args: &Args,
     source_path: &Path,

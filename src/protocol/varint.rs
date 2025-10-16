@@ -49,6 +49,12 @@ pub fn encode_varint_into(mut value: u64, buffer: &mut Vec<u8>) {
 /// Decode a varint from transport
 ///
 /// Reads bytes until continuation bit is clear
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Reading from transport fails
+/// - Varint overflow (more than 64 bits encoded)
 pub async fn decode_varint<T: Transport>(transport: &mut T) -> Result<u64> {
     let mut result = 0u64;
     let mut shift = 0;
@@ -89,6 +95,10 @@ pub fn encode_varint_signed(value: i64) -> Vec<u8> {
 }
 
 /// Decode signed varint (zigzag decoding)
+///
+/// # Errors
+///
+/// Returns an error if reading or decoding the underlying varint fails.
 pub async fn decode_varint_signed<T: Transport>(transport: &mut T) -> Result<i64> {
     let zigzag = decode_varint(transport).await?;
 

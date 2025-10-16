@@ -109,6 +109,10 @@ impl SshConnection {
     }
 
     /// Start remote server (send initial protocol negotiation)
+    ///
+    /// # Errors
+    ///
+    /// Currently always succeeds. Will return errors in future when protocol negotiation is implemented.
     pub async fn start_server(&mut self, _path: &Path) -> Result<()> {
         // For now, just verify connection is alive
         // TODO: Implement protocol negotiation
