@@ -1,12 +1,12 @@
-# /design-doc
+# /design
 
 Create a comprehensive design document based on current conversation and context.
 
 - feature_name (string, optional): Override the inferred feature name for the design doc filename
 
 ```bash
-/design-doc                           # Infer everything from context
-/design-doc "sparse-file-support"     # Override feature name
+/design                           # Infer everything from context
+/design "sparse-file-support"     # Override feature name
 ```
 
 ## Context Inference
@@ -308,7 +308,7 @@ pub enum NewError {
 1. Review this design with team
 2. Address open questions
 3. Update based on feedback
-4. Create implementation plan: `/implementation-plan @docs/designs/THIS_FILE.md`
+4. Create implementation plan: `/plan @docs/designs/THIS_FILE.md`
 5. Execute the plan: `/implement @docs/implementation-plans/THIS_FILE.md`
 ```
 
@@ -354,22 +354,22 @@ When invoked, the agent should:
    - Display path to user
 
 6. **Suggest next steps**
-   - Mention creating implementation plan: `/implementation-plan @docs/designs/FEATURE_NAME.md`
+   - Mention creating implementation plan: `/plan @docs/designs/FEATURE_NAME.md`
    - Note any open questions needing discussion
    - Suggest code review if relevant
    - Recommend who to discuss with if complex
 
-## Integration with /implementation-plan
+## Integration with /plan
 
 After creating a design doc:
 
 ```bash
 # Create the design
-/design-doc "sparse-file-support"
+/design "sparse-file-support"
 # Output: docs/designs/sparse-file-support.md
 
 # Create implementation plan from design
-/implementation-plan @docs/designs/sparse-file-support.md
+/plan @docs/designs/sparse-file-support.md
 # Output: docs/implementation-plans/sparse-file-support.md
 ```
 
@@ -380,7 +380,7 @@ After creating a design doc:
 # User: "I want to add support for sparse files to optimize disk usage"
 # [Discussion about approach, trade-offs, etc.]
 # Agent has enough context to extract problem and solution
-/design-doc
+/design
 # Infers: Feature is "sparse file support"
 # Creates: docs/designs/sparse-file-support.md
 ```
@@ -389,7 +389,7 @@ After creating a design doc:
 ```bash
 # User: "We should refactor the buffer management to be adaptive"
 # [Discussion about current issues and proposed solution]
-/design-doc "adaptive-buffer-management"
+/design "adaptive-buffer-management"
 # Creates: docs/designs/adaptive-buffer-management.md
 ```
 
@@ -397,7 +397,7 @@ After creating a design doc:
 ```bash
 # User: "There's a race condition in metadata handling that causes corruption"
 # [Analysis of root cause and solution approach]
-/design-doc
+/design
 # Infers: This is about "metadata race condition"
 # Creates: docs/designs/metadata-race-fix.md
 ```
@@ -406,7 +406,7 @@ After creating a design doc:
 ```bash
 # User has src/copy.rs open
 # Discussion about improving performance with zero-copy
-/design-doc
+/design
 # Infers: Feature from discussion and open file context
 # Creates: docs/designs/zero-copy-optimization.md
 ```
@@ -416,7 +416,7 @@ After creating a design doc:
 # User: "I have an idea to add compression support"
 # Agent: "Tell me more about the use case and approach"
 # [Brief discussion]
-/design-doc
+/design
 # Creates: docs/designs/compression-support.md
 # May have more open questions, less implementation detail
 ```

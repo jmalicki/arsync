@@ -109,8 +109,8 @@ This project includes comprehensive Cursor AI slash commands to streamline devel
 
 The Cursor workflow provides an AI-assisted development cycle:
 
-1. **`/design-doc`** - Create design documents from conversations
-2. **`/implementation-plan`** - Generate phased implementation plans with checkboxes
+1. **`/design`** - Create design documents from conversations
+2. **`/plan`** - Generate phased implementation plans with checkboxes
 3. **`/implement`** - Execute plans step-by-step with automatic quality checks
 4. Complete with commits and PRs using workflow commands
 
@@ -122,12 +122,12 @@ The Cursor workflow provides an AI-assisted development cycle:
 # "I want to add support for sparse files to optimize disk usage"
 # [Discuss approach, trade-offs, constraints...]
 
-/design-doc
+/design
 # Creates: docs/designs/sparse-file-support.md
 # Extracts: problem, solution, alternatives, complexity from conversation
 
 # 2. CREATE IMPLEMENTATION PLAN
-/implementation-plan @docs/designs/sparse-file-support.md
+/plan @docs/designs/sparse-file-support.md
 # Creates: docs/implementation-plans/sparse-file-support.md
 # Generates: phases with checkboxes, quality checks, test requirements
 
@@ -158,12 +158,12 @@ The Cursor workflow provides an AI-assisted development cycle:
 ### Available Slash Commands
 
 #### Planning & Design
-- **`/design-doc`** - Generate design document from conversation
+- **`/design`** - Generate design document from conversation
   - Auto-infers feature name and content from context
   - Creates `docs/designs/FEATURE_NAME.md`
   - Includes: problem statement, architecture, testing strategy, complexity
 
-- **`/implementation-plan`** - Create phased implementation plan
+- **`/plan`** - Create phased implementation plan
   - Can reference design doc or infer from context
   - Creates `docs/implementation-plans/FEATURE_NAME.md`
   - Generates phases with checkboxes, quality checks, test items
@@ -248,8 +248,8 @@ Example progress tracking:
 #### New Feature
 ```bash
 # Discuss idea in conversation
-/design-doc                    # Document design
-/implementation-plan           # Create plan
+/design                        # Document design
+/plan                          # Create plan
 /branch "area/feat-name"       # Create branch
 /implement                     # Start implementing
 /implement                     # Continue (run multiple times)
@@ -259,8 +259,8 @@ Example progress tracking:
 #### Bug Fix
 ```bash
 # Analyze bug in conversation
-/design-doc "bug-fix-name"     # Document root cause and solution
-/implementation-plan           # Plan the fix
+/design "bug-fix-name"         # Document root cause and solution
+/plan                          # Plan the fix
 /branch "area/fix-name"        # Create branch
 /implement                     # Execute fix
 /test "affected_module"        # Verify fix
@@ -270,8 +270,8 @@ Example progress tracking:
 #### Refactoring
 ```bash
 # Discuss refactoring goals
-/design-doc                    # Document approach
-/implementation-plan           # Break into phases
+/design                        # Document approach
+/plan                          # Break into phases
 /branch "area/refactor-name"   # Create branch
 /implement                     # Refactor step by step
 /bench true false              # Verify no regression
@@ -338,8 +338,8 @@ pre-commit install
 **Preferred (with Cursor):**
 ```bash
 # Use the Cursor workflow (see section above)
-/design-doc              # Design first
-/implementation-plan     # Plan the work
+/design                  # Design first
+/plan                    # Plan the work
 /branch "area/type-name" # Create branch
 /implement               # Execute plan
 /pr-ready "type: desc"   # Create PR

@@ -4,11 +4,11 @@ This directory contains design documents for features and significant changes to
 
 ## Creating Design Documents
 
-Use the `/design-doc` command to generate a design document from your current conversation:
+Use the `/design` command to generate a design document from your current conversation:
 
 ```bash
-/design-doc                    # Infer feature name from conversation
-/design-doc "feature-name"     # Specify feature name explicitly
+/design                    # Infer feature name from conversation
+/design "feature-name"     # Specify feature name explicitly
 ```
 
 Design documents are saved as: `FEATURE_NAME.md` (kebab-case)
@@ -25,7 +25,7 @@ Design documents are saved as: `FEATURE_NAME.md` (kebab-case)
 After creating a design doc, generate an implementation plan:
 
 ```bash
-/implementation-plan @docs/designs/FEATURE_NAME.md
+/plan @docs/designs/FEATURE_NAME.md
 ```
 
 This creates: `docs/implementation-plans/FEATURE_NAME.md`

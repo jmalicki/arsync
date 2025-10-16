@@ -183,7 +183,7 @@ After each execution, report:
 ### Scenario 2: Start implementing a plan
 ```bash
 # Just created implementation plan
-/implementation-plan @docs/designs/feature.md
+/plan @docs/designs/feature.md
 # Creates: docs/implementation-plans/feature.md
 
 # Start implementing

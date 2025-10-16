@@ -1,4 +1,4 @@
-# /implementation-plan
+# /plan
 
 Create a comprehensive, phase-based implementation plan based on current context or a given design document.
 
@@ -8,9 +8,9 @@ Create a comprehensive, phase-based implementation plan based on current context
   - Cursor expands @-mentions automatically
 
 ```bash
-/implementation-plan
-/implementation-plan "docs/designs/adaptive-buffers.md"
-/implementation-plan @docs/designs/sparse-files.md
+/plan
+/plan "docs/designs/adaptive-buffers.md"
+/plan @docs/designs/sparse-files.md
 ```
 
 ## Context Inference
@@ -273,13 +273,13 @@ The plan can be:
 ```bash
 # User has been discussing adaptive buffer sizing
 # Agent infers feature from conversation
-/implementation-plan
+/plan
 ```
 
 ### Scenario 2: With design document (file path)
 ```bash
 # User has a design doc: docs/designs/sparse-file-support.md
-/implementation-plan "docs/designs/sparse-file-support.md"
+/plan "docs/designs/sparse-file-support.md"
 # Creates: docs/implementation-plans/sparse-file-support.md
 # Links to: ../designs/sparse-file-support.md
 ```
@@ -287,7 +287,7 @@ The plan can be:
 ### Scenario 2b: With design document (@-mention)
 ```bash
 # Using Cursor's @-mention syntax (recommended)
-/implementation-plan @docs/designs/sparse-file-support.md
+/plan @docs/designs/sparse-file-support.md
 # Creates: docs/implementation-plans/sparse-file-support.md
 # Includes reference to design doc at top
 ```
@@ -296,21 +296,21 @@ The plan can be:
 ```bash
 # User has src/copy.rs open with cursor on buffer allocation
 # Agent infers this is about buffer management and determines complexity
-/implementation-plan
+/plan
 ```
 
 ### Scenario 4: From git diff
 ```bash
 # User has WIP changes in sync.rs
 # Agent analyzes diff to understand intent
-/implementation-plan
+/plan
 ```
 
 ### Scenario 5: Complex feature with design doc
 ```bash
 # Design doc: docs/designs/distributed-sync.md
 # Agent parses doc and determines appropriate complexity
-/implementation-plan @docs/designs/distributed-sync.md
+/plan @docs/designs/distributed-sync.md
 # Creates: docs/implementation-plans/distributed-sync.md
 # Header includes: **Related Design**: [../designs/distributed-sync.md](../designs/distributed-sync.md)
 ```

@@ -29,11 +29,11 @@ This directory contains custom slash commands for Cursor AI to streamline common
 
 ### Planning & Design
 
-- **`/design-doc`** - Create comprehensive design document from context or conversation
-  - Example: `/design-doc` (auto-infer) or `/design-doc "feature-name"`
+- **`/design`** - Create comprehensive design document from context or conversation
+  - Example: `/design` (auto-infer) or `/design "feature-name"`
 
-- **`/implementation-plan`** - Create detailed phase-based implementation plan from context
-  - Example: `/implementation-plan` or `/implementation-plan @docs/design.md`
+- **`/plan`** - Create detailed phase-based implementation plan from context
+  - Example: `/plan` or `/plan @docs/design.md`
 
 - **`/implement`** - Execute implementation plan step-by-step, tracking progress
   - Example: `/implement` or `/implement @docs/implementation-plans/feature.md`
@@ -147,11 +147,11 @@ Before committing or opening a PR:
 ### Design and implement a new feature:
 ```bash
 # 1. Create design document from conversation
-/design-doc "new-feature"
+/design "new-feature"
 # Creates: docs/designs/new-feature.md
 
 # 2. Create implementation plan from design
-/implementation-plan @docs/designs/new-feature.md
+/plan @docs/designs/new-feature.md
 # Creates: docs/implementation-plans/new-feature.md
 
 # 3. Create feature branch
@@ -221,8 +221,8 @@ Commands added:
 - `/clean` - Clean artifacts
 - `/docs` - Documentation building
 - `/release-check` - Release verification
-- `/design-doc` - Generate design documents from conversation
-- `/implementation-plan` - Generate structured implementation plans
+- `/design` - Generate design documents from conversation
+- `/plan` - Generate structured implementation plans
 - `/implement` - Execute implementation plans step-by-step
 - `/debug` - Systematic debugging with iterative approach
 
