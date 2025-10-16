@@ -6,10 +6,8 @@ on:
   pull_request:
     branches: [ main, develop ]
   schedule:
-    # Run security audit weekly on Mondays at midnight UTC
     - cron: '0 0 * * 1'
 
-# Cancel in-progress runs when a new run is triggered
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -17,17 +15,15 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # Enable sccache for faster compilation
   RUSTC_WRAPPER: sccache
   SCCACHE_GHA: true
 
 permissions:
   contents: read
   checks: write
-  actions: read  # For sccache
+  actions: read
 
 jobs:
-  # Quick checks run first for fast feedback
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
@@ -41,7 +37,7 @@ jobs:
     - name: Check formatting
       run: cargo fmt --all -- --check
     
-    - name: Run clippy (strict documentation standards)
+    - name: Run clippy
       run: |
         cargo clippy --all-targets --all-features -- \
           -D warnings \
@@ -56,7 +52,6 @@ jobs:
           -D clippy::unimplemented \
           -D clippy::unreachable
 
-  # Dependency checks using marketplace actions
   dependencies:
     name: Dependency Check
     runs-on: ubuntu-latest
@@ -67,21 +62,23 @@ jobs:
     - name: Setup Rust
       uses: ./.github/actions/setup-rust-optimized
     
-    # Use marketplace action for cargo-deny
-    - name: Run cargo-deny
-      uses: EmbarkStudios/cargo-deny-action@v1
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@v2
       with:
-        command: check
-        args: --all-features
+        tool: cargo-deny@0.17.0
+
+    - name: Install cargo-outdated
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-outdated@0.17
     
-    # Use marketplace action for cargo-outdated
+    - name: Check dependencies with cargo-deny
+      run: cargo deny check
+    
     - name: Check for outdated dependencies
-      uses: taiki-e/cargo-outdated-action@v1
-      with:
-        args: --depth 1 --color always --exit-code 1 --ignore cargo-deny
+      run: cargo outdated --depth 1 --color always --exit-code 1 --ignore cargo-deny
       continue-on-error: ${{ github.event_name == 'pull_request' }}
 
-  # Test on multiple Rust versions
   test:
     name: Test (${{ matrix.rust }})
     runs-on: ubuntu-latest
@@ -113,25 +110,25 @@ jobs:
     - name: Build release binary
       run: cargo build --release
 
-  # Coverage using marketplace action
   coverage:
     name: Code Coverage
     runs-on: ubuntu-latest
     needs: [code-quality, test]
     permissions:
-      contents: write  # Needed for GitHub Pages deployment
+      contents: write
     steps:
     - uses: actions/checkout@v4
     
     - name: Setup Rust
       uses: ./.github/actions/setup-rust-optimized
   
-    # Use marketplace action for tarpaulin
-    - name: Generate coverage report
-      uses: actions-rs/tarpaulin@v0.1
+    - name: Install tarpaulin
+      uses: taiki-e/install-action@v2
       with:
-        version: '0.32.8'
-        args: '--all-features --out Html --output-dir coverage'
+        tool: cargo-tarpaulin@0.32.8
+          
+    - name: Generate coverage report
+      run: cargo tarpaulin --all-features --out Html --output-dir coverage
     
     - name: Upload coverage artifact
       uses: actions/upload-artifact@v4
@@ -140,7 +137,6 @@ jobs:
         path: coverage/
         retention-days: 30
 
-  # Security audit using marketplace action
   security:
     name: Security Audit
     runs-on: ubuntu-latest
@@ -150,15 +146,15 @@ jobs:
     - name: Setup Rust
       uses: ./.github/actions/setup-rust-optimized
     
-    # Use marketplace action for cargo-audit
-    - name: Run security audit
-      uses: actions-rs/audit-check@v1
+    - name: Install cargo-audit
+      uses: taiki-e/install-action@v2
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        args: --deny warnings
+        tool: cargo-audit@0.21
+    
+    - name: Run security audit
+      run: cargo audit --deny warnings
       continue-on-error: ${{ github.event.schedule != '' }}
 
-  # Benchmarks run on main and PRs for comparison
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
@@ -167,7 +163,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       with:
-        fetch-depth: 0  # Need history for comparison
+        fetch-depth: 0
     
     - name: Setup Rust
       uses: ./.github/actions/setup-rust-optimized
@@ -182,7 +178,6 @@ jobs:
         path: target/criterion/
         retention-days: 30
 
-  # Documentation
   docs:
     name: Documentation
     runs-on: ubuntu-latest
@@ -200,126 +195,6 @@ jobs:
       env:
         RUSTDOCFLAGS: -D warnings
     
-    - name: Download coverage report
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-      uses: actions/download-artifact@v4
-      with:
-        name: coverage-report
-        path: coverage-temp
-      continue-on-error: true
-    
-    - name: Create documentation index with links
-      run: |
-        cat > target/doc/index.html << 'EOF'
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <title>io_uring_sync4 - Documentation & Reports</title>
-          <style>
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-              margin: 0;
-              padding: 40px;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              min-height: 100vh;
-            }
-            .container {
-              max-width: 900px;
-              margin: 0 auto;
-              background: white;
-              border-radius: 12px;
-              padding: 40px;
-              box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            }
-            h1 {
-              color: #333;
-              margin-bottom: 10px;
-            }
-            .subtitle {
-              color: #666;
-              margin-bottom: 40px;
-            }
-            .cards {
-              display: grid;
-              grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-              gap: 20px;
-              margin-top: 30px;
-            }
-            .card {
-              padding: 30px;
-              background: #f8f9fa;
-              border-radius: 8px;
-              text-decoration: none;
-              color: inherit;
-              transition: transform 0.2s, box-shadow 0.2s;
-            }
-            .card:hover {
-              transform: translateY(-4px);
-              box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-            }
-            .card-icon {
-              font-size: 48px;
-              margin-bottom: 15px;
-            }
-            .card-title {
-              font-size: 20px;
-              font-weight: 600;
-              color: #333;
-              margin-bottom: 10px;
-            }
-            .card-desc {
-              color: #666;
-              font-size: 14px;
-            }
-            .footer {
-              margin-top: 40px;
-              padding-top: 20px;
-              border-top: 1px solid #e0e0e0;
-              text-align: center;
-              color: #888;
-              font-size: 14px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <h1>🚀 io_uring_sync4</h1>
-            <p class="subtitle">High-performance async I/O synchronization library</p>
-            
-            <div class="cards">
-              <a href="io_uring_sync4/index.html" class="card">
-                <div class="card-icon">📚</div>
-                <div class="card-title">API Documentation</div>
-                <div class="card-desc">Browse the complete API documentation</div>
-              </a>
-              
-              <a href="coverage/index.html" class="card">
-                <div class="card-icon">📊</div>
-                <div class="card-title">Code Coverage</div>
-                <div class="card-desc">View test coverage reports</div>
-              </a>
-              
-              <a href="https://github.com/${{ github.repository }}" class="card">
-                <div class="card-icon">💻</div>
-                <div class="card-title">Source Code</div>
-                <div class="card-desc">View on GitHub</div>
-              </a>
-            </div>
-            
-            <div class="footer">
-              Last updated: $(date -u +"%Y-%m-%d %H:%M UTC") | Commit: ${GITHUB_SHA:0:8}
-            </div>
-          </div>
-        </body>
-        </html>
-        EOF
-        
-        # Move coverage into docs directory for combined deployment
-        if [ -d coverage-temp ]; then
-          mv coverage-temp target/doc/coverage
-        fi
-    
     - name: Deploy to GitHub Pages
       if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       uses: peaceiris/actions-gh-pages@v4
@@ -328,7 +203,6 @@ jobs:
         publish_dir: ./target/doc
         force_orphan: true
 
-  # Final status check for branch protection
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
