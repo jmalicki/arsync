@@ -401,11 +401,75 @@ Below: current Linux approach and proposed macOS/Windows designs. Where an opera
 
 ---
 
-## Testing & CI
-- Add GitHub Actions matrix:
-  - OS: ubuntu-latest, macos-latest, windows-latest
-  - Jobs: format, clippy, unit tests, doc build
-- Gate tests with `#[cfg]` to avoid compiling Unix-only code on Windows.
+## Testing strategy & CI
+
+Test structure
+- Cross-platform core tests (always-on):
+  - API wiring, error types, feature flags, trait method existence.
+  - Generic copy fallback using async reads/writes (small files), gated to skip Linux-only paths.
+- Linux-only tests (cfg(target_os = "linux")):
+  - io_uring ops: `copy_file_range_impl`, `fadvise` opcode, `fallocate` opcode, `statx`.
+  - xattr via io_uring FGET/FSET.
+- macOS-only tests (cfg(target_os = "macos")):
+  - APFS clone fast-path (`fclonefileat`) when available; else fallback path.
+  - Preallocation via `F_PREALLOCATE` (verify allocated/extended size semantics).
+  - xattr via libc/xattr (get/set/list/remove); EVFILT_VNODE notification tests can live in separate watcher crate if needed.
+- Windows-only tests (cfg(target_os = "windows")):
+  - IOCP-driven copy fallback via async reads/writes; ensure performance path works and file contents match.
+  - NotSupported assertions for xattr/ownership/device ops.
+  - Preallocation using `FILE_ALLOCATION_INFO` + `SetEndOfFile` (validate size and truncation behavior).
+
+Gatekeeping & organization
+- Place tests under `tests/common/` (portable), `tests/unix/` (unix), `tests/linux/`, `tests/macos/`, `tests/windows/`.
+- Prefer `#[cfg(unix)]` for code sharing across Linux/macOS; add `#[cfg(target_os = "linux")]` and `#[cfg(target_os = "macos")]` for specifics.
+- Use `#[cfg(all(windows, feature = "windows-tests"))]` to initially opt-in Windows tests if needed.
+
+CI plan (GitHub Actions)
+- Code quality (ubuntu-latest): fmt, clippy (all targets with cfg-gated code building on default OS).
+- Dependency checks (ubuntu-latest): cargo-deny, outdated.
+- Test matrix:
+  - linux: ubuntu-latest — full test suite (unit + integration).
+  - mac: macos-latest — macOS-only + common tests (skip Linux-specific and Windows NotSupported bits via cfg).
+  - windows: windows-latest — initially build-only; after cfg gating and Windows tests exist, run Windows test subset.
+- Coverage (tarpaulin) remains Linux-only (ubuntu-latest).
+- Docs build (ubuntu-latest).
+
+Example job snippets (to be added once cfg-gating lands):
+```yaml
+jobs:
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+        with: { toolchain: 1.90.0, components: rustfmt, clippy }
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+
+  test-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+        with: { toolchain: 1.90.0 }
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features
+
+  build-windows:
+    runs-on: windows-latest
+    continue-on-error: true  # until Windows cfg-gating is complete
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+        with: { toolchain: 1.90.0 }
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --workspace --all-features
+```
+
+Notes
+- Keep Windows job build-only at first to avoid failing CI before stubs/cfg are merged.
+- Once Windows tests are implemented/gated, switch to `cargo test` on windows-latest and remove `continue-on-error`.
+- Coverage tools like tarpaulin are Linux-only; retain on ubuntu.
 
 ---
 
