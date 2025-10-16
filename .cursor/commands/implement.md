@@ -15,13 +15,20 @@ Execute the next steps in an implementation plan, tracking progress via checkbox
 The command automatically:
 
 1. **Locates the plan**
-   - If path provided: Use that plan
+   - If path provided: Use that plan (can be plan.md or plan/phase-X.md)
    - If name provided: Look for `docs/projects/NAME/plan.md`
    - If nothing provided: Infer from:
      - Current project context (most recent project discussed)
      - Open files matching a project folder
      - Most recent plan.md accessed
      - Current conversation context
+
+   **Two-Level Plan Support**:
+   - For highly complex projects with `plan.md` + `plan/` directory structure:
+     - `/implement` → Works on high-level plan.md (finds next unchecked phase)
+     - `/implement plan/phase-X.md` → Works on specific phase's detailed tasks
+     - When all tasks in phase-X.md are ✅, checks off that phase in plan.md
+   - See "Two-Level Plan Structure" section below for details
 
 2. **Verifies branch**
    - Read "Implementation Branch" from plan.md header
@@ -277,6 +284,47 @@ git checkout area/feat-feature-name
 # Resumes with next unchecked item
 ```
 
+### Scenario 6: Two-level plan for complex project
+```bash
+# Working on highly complex project with 7 phases
+# Structure:
+#   docs/projects/rsync-wire/plan.md
+#   docs/projects/rsync-wire/plan/phase-1-handshake.md
+#   docs/projects/rsync-wire/plan/phase-2-compio.md
+#   ...
+
+# Start with overview
+cat docs/projects/rsync-wire/plan.md
+# See: Phase 1 is unchecked, Phase 2-7 are unchecked
+
+# Work on Phase 1 details
+/implement plan/phase-1-handshake.md
+# Executes tasks from phase-1-handshake.md
+# Checks boxes in that file
+# Commits at milestones
+
+# Continue Phase 1
+/implement plan/phase-1-handshake.md
+# Resumes from next unchecked task
+
+# After completing all Phase 1 tasks (all ✅ in phase-1-handshake.md)
+/implement
+# Agent reads plan.md
+# Sees Phase 1 details are complete
+# Checks off: [x] Phase 1: Handshake Protocol
+# Updates stats in plan.md
+# Suggests: /implement plan/phase-2-compio.md
+
+# Move to Phase 2
+/implement plan/phase-2-compio.md
+# Works through Phase 2 detailed tasks
+...
+
+# Check overall status anytime
+cat docs/projects/rsync-wire/plan.md
+# See: [x] Phase 1 ✅, [x] Phase 2 ✅, [ ] Phase 3, ...
+```
+
 ## Integration with Other Commands
 
 The implementation command uses other slash commands:
@@ -454,6 +502,148 @@ Phase 2 of 4 complete."
   Fixed: Switched to DashMap. Performance now 3x target.
   See commits: instrumentation (abc123), benchmark (def456), fix (ghi789).
 ```
+
+## Two-Level Plan Structure
+
+For highly complex projects (7+ phases, 1000+ lines of plan), use a two-level structure:
+
+### Structure
+
+```
+docs/projects/PROJECT/
+├── plan.md                    ← High-level phase checklist
+└── plan/                      ← Detailed task directory
+    ├── README.md              (index)
+    ├── phase-1-name.md        (detailed tasks)
+    ├── phase-2-name.md        (detailed tasks)
+    ├── phase-3-name.md        (detailed tasks)
+    ├── statistics.md          (stats)
+    ├── testing.md             (test matrix)
+    └── skipped.md             (decisions)
+```
+
+### plan.md Format (High-Level)
+
+```markdown
+# Implementation Plan: [Project Name]
+
+## Phases
+- [ ] Phase 1: Handshake Protocol → [plan/phase-1-handshake.md](plan/phase-1-handshake.md)
+  - Core data structures, state machine, API
+  - Commits: TBD | Tests: 19 expected
+  
+- [ ] Phase 2: compio Migration → [plan/phase-2-compio.md](plan/phase-2-compio.md)
+  - Transport trait redesign, migration to io_uring
+  - Commits: TBD | Tests: Update all existing
+
+- [ ] Phase 3: Integration → [plan/phase-3-integration.md](plan/phase-3-integration.md)
+  - Integration testing with external systems
+  - Commits: TBD | Tests: 5 expected
+...
+```
+
+### plan/phase-X.md Format (Detailed)
+
+Each phase file contains detailed task checklists:
+
+```markdown
+# Phase 1: Handshake Protocol
+
+**Status**: In Progress
+**Commits**: 37451a4, d25e02a, e7bc831
+
+## 1.1: Core Data Structures
+- [ ] Create src/protocol/handshake.rs
+- [ ] Define HandshakeState enum (9 states)
+- [ ] Define ProtocolCapabilities struct
+- [ ] Add unit tests (7 expected)
+...
+
+## 1.2: State Machine
+- [ ] Implement HandshakeState::advance()
+- [ ] Handle all 9 state transitions
+- [ ] Add error handling
+...
+
+## Acceptance Criteria
+- [ ] 14 unit tests passing
+- [ ] All state transitions tested
+- [ ] Code formatted and clippy clean
+```
+
+### Workflow
+
+**Starting a new phase:**
+```bash
+# Check high-level status
+cat docs/projects/PROJECT/plan.md
+# See: Phase 1 is unchecked
+
+# Work on that phase's details
+/implement plan/phase-1-handshake.md
+# Works through detailed tasks in phase-1-handshake.md
+# Checks boxes as tasks complete
+
+# Continue working on phase
+/implement plan/phase-1-handshake.md
+# Resumes from next unchecked task
+```
+
+**When phase complete:**
+```bash
+# All tasks in plan/phase-1-handshake.md are ✅
+
+# The agent automatically:
+# 1. Marks Phase 1 as complete in plan.md
+# 2. Updates stats (commits, tests)
+# 3. Suggests next phase
+
+# Or manually:
+/implement
+# Agent sees Phase 1 is complete
+# Moves to Phase 2, suggests: /implement plan/phase-2-compio.md
+```
+
+**Working at high level:**
+```bash
+# From plan.md level
+/implement
+# Agent checks plan.md
+# Finds first unchecked phase (e.g., Phase 2)
+# Suggests: "/implement plan/phase-2-compio.md to work on details"
+# Or can auto-start if clear
+```
+
+### Benefits
+
+**Two-level structure advantages**:
+- ✅ Quick overview: `plan.md` shows all phases at a glance
+- ✅ Deep dive: `plan/phase-X.md` has 100+ detailed tasks
+- ✅ Focused work: Implement one phase file at a time
+- ✅ Easy navigation: 7 high-level items → 11 focused files
+- ✅ Scalable: Add phases without making plan.md unwieldy
+- ✅ Clear progress: Check off phases as major milestones
+
+**Reference Implementation**: `docs/projects/rsync-wire/`
+- Successfully used for 7-phase protocol implementation
+- Kept 3000-line plan manageable
+- Easy to track progress across multiple sessions
+
+### When to Use
+
+Use two-level structure for:
+- 7+ implementation phases
+- 1000+ lines of detailed tasks
+- Multi-week projects
+- Complex protocols or systems
+- Multiple subsystems/components
+- Extensive testing matrices
+
+Use single plan.md for:
+- 1-6 phases
+- <500 lines of tasks
+- Single-week projects
+- Straightforward features
 
 ## Completion
 
