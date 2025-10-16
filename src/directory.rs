@@ -422,11 +422,10 @@ impl SharedSemaphore {
     }
 }
 
-/// Extended metadata using `std::fs` metadata support
-#[derive(Debug)]
+/// Extended metadata using `compio::fs` metadata support
 pub struct ExtendedMetadata {
-    /// The underlying filesystem metadata
-    pub metadata: std::fs::Metadata,
+    /// The underlying filesystem metadata (from `compio::fs`)
+    pub metadata: compio::fs::Metadata,
 }
 
 impl ExtendedMetadata {
@@ -438,9 +437,10 @@ impl ExtendedMetadata {
     /// - The path does not exist
     /// - Permission is denied to read the path
     /// - The path is not accessible
-    #[allow(clippy::unused_async)]
+    #[allow(clippy::future_not_send)]
     pub async fn new(path: &Path) -> Result<Self> {
-        let metadata = std::fs::symlink_metadata(path).map_err(|e| {
+        // Use compio::fs::symlink_metadata for async metadata retrieval
+        let metadata = compio::fs::symlink_metadata(path).await.map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to get metadata for {}: {}",
                 path.display(),
@@ -567,7 +567,7 @@ pub async fn copy_directory(
         let root_metadata = ExtendedMetadata::new(src).await?;
         hardlink_tracker.set_source_filesystem(root_metadata.device_id());
     } else {
-        std::fs::create_dir_all(dst).map_err(|e| {
+        compio::fs::create_dir_all(dst).await.map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to create destination directory {}: {}",
                 dst.display(),
@@ -806,16 +806,18 @@ async fn process_directory_entry_with_compio(
                 .await?;
         }
 
-        // Read directory entries using std::fs::read_dir
-        // Note: compio doesn't have read_dir yet, but we use compio's dispatcher
-        // for async scheduling of the actual processing operations
-        let entries = std::fs::read_dir(&src_path).map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to read directory {}: {}",
-                src_path.display(),
-                e
-            ))
-        })?;
+        // Read directory entries using compio-fs-extended wrapper
+        // This abstracts whether read_dir is blocking or uses io_uring (currently blocking due to kernel limitation)
+        // See: compio_fs_extended::directory::read_dir for implementation details and kernel status
+        let entries = compio_fs_extended::directory::read_dir(&src_path)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to read directory {}: {}",
+                    src_path.display(),
+                    e
+                ))
+            })?;
 
         // ========================================================================
         // CONCURRENT PROCESSING: Dispatch all child entries concurrently
@@ -965,7 +967,8 @@ async fn process_file(
             inode_number,
             &stats,
             &hardlink_tracker,
-        )?;
+        )
+        .await?;
     } else {
         // First time seeing this inode - copy the file content normally
         debug!("Copying file content: {}", src_path.display());
@@ -1030,7 +1033,8 @@ async fn process_file(
 ///
 /// - Increments the files-copied counter on successful hardlink creation
 /// - Increments the error counter on failures
-fn handle_existing_hardlink(
+#[allow(clippy::future_not_send)]
+async fn handle_existing_hardlink(
     dst_path: &Path,
     src_path: &Path,
     inode_number: u64,
@@ -1049,7 +1053,7 @@ fn handle_existing_hardlink(
         // Create destination directory if needed
         if let Some(parent) = dst_path.parent() {
             if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(|e| {
+                compio::fs::create_dir_all(parent).await.map_err(|e| {
                     SyncError::FileSystem(format!(
                         "Failed to create parent directory {}: {}",
                         parent.display(),
@@ -1059,8 +1063,9 @@ fn handle_existing_hardlink(
             }
         }
 
-        // Create hardlink using std filesystem operations (compio has Send issues)
-        match std::fs::hard_link(&original_path, dst_path) {
+        // Create hardlink using compio-fs-extended for io_uring operations
+        match compio_fs_extended::hardlink::create_hardlink_at_path(&original_path, dst_path).await
+        {
             Ok(()) => {
                 stats.increment_files_copied()?;
                 debug!(
@@ -1112,6 +1117,7 @@ fn handle_existing_hardlink(
 /// This function will return an error if:
 /// - Symlink target reading fails
 /// - Symlink creation fails
+#[allow(clippy::future_not_send)]
 async fn process_symlink(src_path: PathBuf, dst_path: PathBuf, stats: SharedStats) -> Result<()> {
     debug!("Processing symlink: {}", src_path.display());
 
@@ -1129,19 +1135,66 @@ async fn process_symlink(src_path: PathBuf, dst_path: PathBuf, stats: SharedStat
 }
 
 /// Copy a symlink preserving its target
-#[allow(clippy::unused_async)]
+#[allow(clippy::future_not_send)]
 async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
-    let target = std::fs::read_link(src).map_err(|e| {
+    use compio_fs_extended::directory::DirectoryFd;
+    use compio_fs_extended::symlink::{create_symlink_at_dirfd, read_symlink_at_dirfd};
+
+    // Extract parent directory and filename for DirectoryFd operations
+    let src_parent = src.parent().ok_or_else(|| {
+        SyncError::FileSystem(format!("Source path has no parent: {}", src.display()))
+    })?;
+    let src_name = src
+        .file_name()
+        .ok_or_else(|| {
+            SyncError::FileSystem(format!("Source path has no filename: {}", src.display()))
+        })?
+        .to_string_lossy();
+
+    let dst_parent = dst.parent().ok_or_else(|| {
+        SyncError::FileSystem(format!("Destination path has no parent: {}", dst.display()))
+    })?;
+    let dst_name = dst
+        .file_name()
+        .ok_or_else(|| {
+            SyncError::FileSystem(format!(
+                "Destination path has no filename: {}",
+                dst.display()
+            ))
+        })?
+        .to_string_lossy();
+
+    // Open DirectoryFd for source and destination parents
+    let src_dir_fd = DirectoryFd::open(src_parent).await.map_err(|e| {
         SyncError::FileSystem(format!(
-            "Failed to read symlink target for {}: {}",
-            src.display(),
+            "Failed to open source directory {}: {}",
+            src_parent.display(),
             e
         ))
     })?;
 
+    let dst_dir_fd = DirectoryFd::open(dst_parent).await.map_err(|e| {
+        SyncError::FileSystem(format!(
+            "Failed to open destination directory {}: {}",
+            dst_parent.display(),
+            e
+        ))
+    })?;
+
+    // Read symlink target using io_uring DirectoryFd operations
+    let target = read_symlink_at_dirfd(&src_dir_fd, &src_name)
+        .await
+        .map_err(|e| {
+            SyncError::FileSystem(format!(
+                "Failed to read symlink target for {}: {}",
+                src.display(),
+                e
+            ))
+        })?;
+
     // Remove destination if it exists
     if dst.exists() {
-        std::fs::remove_file(dst).map_err(|e| {
+        compio::fs::remove_file(dst).await.map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to remove existing destination {}: {}",
                 dst.display(),
@@ -1150,10 +1203,11 @@ async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
         })?;
     }
 
-    // Create symlink with same target
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(&target, dst).map_err(|e| {
+    // Create symlink with same target using io_uring DirectoryFd operations
+    let target_str = target.to_string_lossy();
+    create_symlink_at_dirfd(&dst_dir_fd, &target_str, &dst_name)
+        .await
+        .map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to create symlink {} -> {}: {}",
                 dst.display(),
@@ -1161,14 +1215,6 @@ async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
                 e
             ))
         })?;
-    }
-
-    #[cfg(not(unix))]
-    {
-        return Err(SyncError::FileSystem(
-            "Symlink creation not supported on this platform".to_string(),
-        ));
-    }
 
     debug!("Copied symlink {} -> {}", dst.display(), target.display());
     Ok(())
