@@ -8,7 +8,7 @@ Owner: investigate/compi-fs-extended-cross-platform
 - Enable this crate to compile and provide a coherent API on Linux, macOS, and Windows.
 - Keep the public API stable where possible (`ExtendedFile`, traits like `CopyFileRange`, `Fadvise`, `Fallocate`, `XattrOps`, `OwnershipOps`).
 - Use the best native mechanism per OS where feasible; otherwise provide safe fallbacks or return NotSupported.
-- Maintain good async ergonomics with `compio` backends (io_uring on Linux, kqueue on macOS, IOCP on Windows).
+- Maintain good async ergonomics with `compio` backends: io_uring on Linux, kqueue on macOS, IOCP on Windows. On macOS specifically, ensure heavy I/O paths (e.g., copy fallbacks) are expressed through `compio::fs` async reads/writes so they are driven by kqueue rather than blocking threads.
 
 ## Non-goals (initial phase)
 - Feature-parity for every operation across all OSes (some are inherently Linux-only).
@@ -42,14 +42,14 @@ Key implication: As-is, macOS may compile for some Unix paths with tweaks, but W
 ---
 
 ## High-Level Architecture Proposal
-Mirror compio's strategy: keep a stable public API while routing to per-OS backends.
+Mirror compio's strategy: keep a stable public API while routing to per-OS backends. On macOS, leverage the kqueue-backed `compio` runtime by implementing I/O-heavy code paths via `compio::fs` asynchronous APIs (read/write/open), which the runtime schedules on kqueue.
 
 - Directory layout
   - `src/` (public API: traits, wrappers, re-exports)
-  - `src/sys/`
-    - `linux/` — io_uring + Linux syscalls
-    - `darwin/` — kqueue runtime, Darwin libc (`fcntl`, `copyfile`, `f(clone)fileat`, xattr)
-    - `windows/` — IOCP runtime, Win32 APIs (`CopyFileExW`, `SetFileInformationByHandle`, etc.)
+- `src/sys/`
+  - `linux/` — io_uring + Linux syscalls
+  - `darwin/` — kqueue-backed implementations using `compio::fs` async operations for read/write paths, plus Darwin libc (`fcntl`, `copyfile`, `fclonefileat`, xattr) invoked via lightweight `spawn` when not representable as readiness-driven I/O
+  - `windows/` — IOCP runtime, Win32 APIs (`CopyFileExW`, `SetFileInformationByHandle`, etc.)
 
 - Dependency gating
   - Move Linux-only deps under target cfg:
@@ -79,10 +79,45 @@ Mirror compio's strategy: keep a stable public API while routing to per-OS backe
   - In `lib.rs`, expose traits/types and `pub(crate)` route to `sys::*` via `#[cfg]`:
     ```rust
     #[cfg(target_os = "linux")] mod sys; // re-export linux impls
-    #[cfg(target_os = "macos")] mod sys; // darwin impls
+    #[cfg(target_os = "macos")] mod sys; // darwin impls (kqueue-backed)
     #[cfg(target_os = "windows")] mod sys; // windows impls
     ```
   - Keep trait methods the same. Implementations delegate into `sys::<op>::impl_*`.
+  - On macOS, avoid io_uring-specific `submit` opcodes; use `compio::fs` async operations so the runtime naturally utilizes kqueue.
+
+---
+
+## macOS kqueue integration (how this works)
+
+`compio` uses kqueue on macOS to drive readiness-based I/O. We will structure Darwin implementations so that:
+
+- I/O-heavy paths (copy fallbacks, chunked transfers, any looping reads/writes) are expressed with `compio::fs::File::{read_at, write_at, read, write}`. The runtime polls these via kqueue; no blocking threads are involved on the hot path.
+- One-shot syscalls that don’t map to readiness (e.g., `fcntl(F_PREALLOCATE)`, `getxattr`, `setxattr`, `copyfile`, `fclonefileat`) are quick administrative calls. We invoke them via `compio::runtime::spawn` to keep the async contract without stalling the reactor. These aren’t kqueue events, but they are short-lived and not part of data transfer loops.
+
+Example (Darwin ranged copy fallback, kqueue-driven):
+```rust
+// Pseudocode (Darwin): use compio::fs async read/write, scheduled on kqueue
+let mut offset = src_offset;
+let mut remaining = len;
+let mut buf = vec![0u8; 1 << 20]; // 1 MiB
+while remaining > 0 {
+    let to_read = remaining.min(buf.len() as u64) as usize;
+    let n = src.read_at(&mut buf[..to_read], offset).await?; // kqueue-driven
+    if n == 0 { break; }
+    dst.write_at(&buf[..n], offset).await?; // kqueue-driven
+    offset += n as u64;
+    remaining -= n as u64;
+}
+```
+
+Administrative ops example (Darwin preallocate with `F_PREALLOCATE`):
+```rust
+compio::runtime::spawn(async move {
+    // Call fcntl(F_PREALLOCATE) via libc/nix here
+}).await?;
+```
+
+This approach ensures we “use kqueue” on macOS for the performance-critical streaming parts while keeping overall APIs async and cross-platform.
 
 ---
 
@@ -93,10 +128,10 @@ Below: current Linux approach and proposed macOS/Windows designs. Where an opera
 - Linux (current): `libc::copy_file_range` (fd-to-fd) with offsets; best-effort; fallback TBD.
 - macOS (Darwin):
   - Prefer APFS clone when possible: `fclonefileat` (fd/dirfd). If unavailable or cross-FS, fallback.
-  - Fallbacks: `copyfile(3)` for whole-file copies; for ranged copies, use `sendfile` or buffered read/write via compio.
+  - Fallbacks: `copyfile(3)` for whole-file copies; for ranged copies, use kqueue-driven `compio::fs::File::{read_at, write_at}` loop (see pseudocode above). This ensures the data path is scheduled via kqueue.
   - Strategy:
-    - If length == 0 (probe): try `fclonefileat` with zero range or perform metadata-based fast-path; otherwise return support bool.
-    - Provide read/write fallback using `compio::fs::File::{read_at, write_at}` if clone not possible.
+    - If length == 0 (probe): try `fclonefileat` or return capability boolean.
+    - Otherwise, attempt clone, else kqueue-driven read/write fallback.
 - Windows:
   - Whole-file: `CopyFileExW` (fast path, system optimized) when copying entire file with offsets 0..EOF.
   - Ranged copies: No direct `copy_file_range` equivalent. Use overlapped I/O with compio (IOCP) `read_at`/`write_at` loop.
@@ -105,8 +140,8 @@ Below: current Linux approach and proposed macOS/Windows designs. Where an opera
 ### 2) fadvise (access pattern hints)
 - Linux (current): io_uring `Fadvise` opcode.
 - macOS:
-  - `posix_fadvise` exists but may be a stub; better: `fcntl(F_RDADVISE, radvisory)` for read-ahead hints.
-  - If unavailable/unsupported, return Ok(()) as a no-op (hint only).
+  - `posix_fadvise` exists but may be a stub; prefer `fcntl(F_RDADVISE, radvisory)` for read-ahead hints.
+  - Invoke via `spawn` (administrative), while the actual data path remains kqueue-driven where relevant.
 - Windows:
   - No direct equivalent. Hints are typically provided at open (`FILE_FLAG_SEQUENTIAL_SCAN`/`FILE_FLAG_RANDOM_ACCESS`).
   - Design: best-effort no-op; document that callers should choose open flags for Windows.
