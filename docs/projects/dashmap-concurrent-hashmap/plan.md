@@ -25,11 +25,11 @@ Replace HashMap with DashMap in `FilesystemTracker` and simplify `SharedHardlink
 
 ## Prerequisites
 
-- [ ] Review `src/directory.rs` lines 17, 217, 1309-1468 (FilesystemTracker implementation)
-- [ ] Review SharedHardlinkTracker methods (lines 220-348)
-- [ ] Understand current mutex-based error handling
-- [ ] Check existing tests in `src/directory.rs` (lines 1668-1854)
-- [ ] Read design doc: [design.md](design.md)
+- [x] Review `src/directory.rs` lines 17, 217, 1309-1468 (FilesystemTracker implementation)
+- [x] Review SharedHardlinkTracker methods (lines 220-348)
+- [x] Understand current mutex-based error handling
+- [x] Check existing tests in `src/directory.rs` (lines 1668-1854)
+- [x] Read design doc: [design.md](design.md)
 
 ## Phase 1: Add Dependency & Replace HashMap
 
@@ -37,50 +37,56 @@ Replace HashMap with DashMap in `FilesystemTracker` and simplify `SharedHardlink
 
 ### Steps
 
-- [ ] Add dashmap dependency to `Cargo.toml`
+- [x] Add dashmap dependency to `Cargo.toml`
   ```toml
   [dependencies]
   dashmap = "6.1"
   ```
 
-- [ ] Update imports in `src/directory.rs` (line 17)
+- [x] Update imports in `src/directory.rs` (line 17)
   - Remove: `#[allow(clippy::disallowed_types)]`
   - Remove: `use std::collections::HashMap;`
   - Add: `use dashmap::DashMap;`
 
-- [ ] Update `FilesystemTracker` struct (lines 1304-1313)
+- [x] Update `FilesystemTracker` struct (lines 1304-1313)
   - Replace `HashMap<InodeInfo, HardlinkInfo>` with `DashMap<InodeInfo, HardlinkInfo>`
   - Remove `#[allow(clippy::disallowed_types)]` from hardlinks field
   - Consider: Replace `Option<u64>` with `AtomicU64` for source_filesystem
+  **Note**: Kept `Option<u64>` for source_filesystem for simplicity in Phase 1. Can revisit in Phase 2 if needed.
 
-- [ ] Update `FilesystemTracker::new()` (lines 1318-1325)
+- [x] Update `FilesystemTracker::new()` (lines 1318-1325)
   - Change `HashMap::new()` to `DashMap::new()`
 
-- [ ] Update `FilesystemTracker::register_file()` (lines 1356-1394)
+- [x] Update `FilesystemTracker::register_file()` (lines 1356-1394)
   - Use `entry()` API for concurrent insert/update
   - Replace `get_mut()` with DashMap's `entry()` pattern
+  **Note**: Used `dashmap::mapref::entry::Entry` pattern for concurrent-safe insert/update.
 
-- [ ] Update `FilesystemTracker::get_hardlink_info()` (lines 1400-1403)
+- [x] Update `FilesystemTracker::get_hardlink_info()` (lines 1400-1403)
   - Use `get()` which returns `Option<Ref<K, V>>`
+  **Note**: Changed return type to `Option<HardlinkInfo>` (clones value) for simpler API.
 
-- [ ] Update `FilesystemTracker::get_hardlink_groups()` (lines 1409-1414)
+- [x] Update `FilesystemTracker::get_hardlink_groups()` (lines 1409-1414)
   - Iteration works similarly, may need to collect values differently
+  **Note**: Changed to use `iter().map(|entry| entry.value().clone())` pattern. Return type now `Vec<HardlinkInfo>`.
 
-- [ ] Update `FilesystemTracker::is_inode_copied()` (lines 1421-1425)
+- [x] Update `FilesystemTracker::is_inode_copied()` (lines 1421-1425)
   - Use `iter()` which is concurrent-safe
 
-- [ ] Update `FilesystemTracker::mark_inode_copied()` (lines 1431-1440)
+- [x] Update `FilesystemTracker::mark_inode_copied()` (lines 1431-1440)
   - Iterate and modify values using DashMap API
+  **Note**: Used `iter_mut()` with `entry.value_mut()` for mutable access.
 
-- [ ] Update `FilesystemTracker::get_original_path_for_inode()` (lines 1447-1452)
+- [x] Update `FilesystemTracker::get_original_path_for_inode()` (lines 1447-1452)
   - Use DashMap's `iter()` for concurrent-safe iteration
+  **Note**: Changed return type to `Option<PathBuf>` (clones path) for simpler API.
 
 ### Quality Checks
 
-- [ ] `/fmt false true` - Format code
-- [ ] `/clippy false false` - Check for warnings
-- [ ] `/build "debug" "all" false` - Verify compilation
-- [ ] `/test "directory"` - Run directory module tests
+- [x] `/fmt false true` - Format code
+- [x] `/clippy false false` - Check for warnings
+- [x] `/build "debug" "all" false` - Verify compilation
+- [x] `/test "directory"` - Run directory module tests
 
 ### Files Modified
 - `Cargo.toml` - Add dependency
