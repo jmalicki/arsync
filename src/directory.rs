@@ -606,6 +606,9 @@ async fn traverse_and_copy_directory_iterative(
     let concurrency_controller = Arc::new(AdaptiveConcurrencyController::new(&concurrency_options));
 
     // Process the directory
+    // Note: We clone Arc values here, but this is necessary because we need to
+    // unwrap them later to return the final stats. The clone increments ref count,
+    // but all child operations complete before we unwrap, so it's just +1/-1.
     let result = process_directory_entry_with_compio(
         dispatcher,
         initial_src,
@@ -620,6 +623,8 @@ async fn traverse_and_copy_directory_iterative(
     .await;
 
     // Restore the state
+    // This unwraps successfully because the function and all child operations have completed,
+    // so the only remaining reference is the one we kept above (from .clone())
     *stats = Arc::try_unwrap(shared_stats)
         .map_err(|_| {
             SyncError::FileSystem(
@@ -773,7 +778,7 @@ async fn process_directory_entry_with_compio(
                         copy_method,
                         stats,
                         hardlink_tracker,
-                        concurrency_controller.clone(),
+                        concurrency_controller, // Move instead of clone - already cloned above
                         metadata_config_clone,
                     )
                 })
