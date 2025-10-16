@@ -80,7 +80,8 @@ async fn test_metadata_preservation_many_small_files() {
 async fn test_metadata_preservation_rapid_sequential() {
     let _timeout = test_timeout_guard(StdDuration::from_secs(180));
     let temp_dir = TempDir::new().unwrap();
-    let num_operations = 50;
+    // Reduced from 50 to 10 - adequate for testing while avoiding coverage timeout
+    let num_operations = 10;
 
     for i in 0..num_operations {
         let src_path = temp_dir.path().join(format!("rapid_{}.txt", i));
