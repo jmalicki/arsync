@@ -49,18 +49,21 @@ use tracing::{debug, info, warn};
 /// Current protocol version supported by arsync
 ///
 /// This corresponds to rsync protocol version 31, which is used by rsync 3.2+
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const PROTOCOL_VERSION: u8 = 31;
 
 /// Minimum protocol version we can negotiate with
 ///
 /// Protocol version 27 introduced multiplexed I/O, which is required for
 /// our implementation. Older versions are not supported.
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const MIN_PROTOCOL_VERSION: u8 = 27;
 
 /// Maximum protocol version we understand
 ///
 /// This is a safety check to ensure we don't try to speak protocols we
 /// don't understand. Modern rsync uses versions 27-32.
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const MAX_PROTOCOL_VERSION: u8 = 40;
 
 // ============================================================================
@@ -68,33 +71,43 @@ pub const MAX_PROTOCOL_VERSION: u8 = 40;
 // ============================================================================
 
 /// File uses checksums (weak + strong) for delta algorithm
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_CHECKSUMS: u32 = 1 << 0;
 
 /// Hard links are preserved
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_HARDLINKS: u32 = 1 << 1;
 
 /// Symbolic links are preserved
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_SYMLINKS: u32 = 1 << 2;
 
 /// Device files and special files are preserved
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_DEVICES: u32 = 1 << 3;
 
 /// Extended attributes are preserved
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_XATTRS: u32 = 1 << 4;
 
 /// POSIX ACLs are preserved
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_ACLS: u32 = 1 << 5;
 
 /// Sparse file optimization (holes not transferred)
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_SPARSE: u32 = 1 << 6;
 
 /// Use random seed for checksums (security)
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_CHECKSUM_SEED: u32 = 1 << 7;
 
 /// File permissions are preserved
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_PROTECTION: u32 = 1 << 8;
 
 /// File timestamps are preserved
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub const XMIT_TIMES: u32 = 1 << 9;
 
 // ============================================================================
@@ -108,6 +121,7 @@ pub const XMIT_TIMES: u32 = 1 << 9;
 /// - **Receiver**: Receives files from the sender
 ///
 /// Some protocol messages are role-specific (e.g., seed exchange direction).
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
     /// This side is sending files
@@ -208,6 +222,7 @@ impl ChecksumSeed {
     /// assert_eq!(bytes, [0x01, 0x02, 0x03, 0x04]);
     /// ```
     #[must_use]
+    #[allow(clippy::wrong_self_convention)] // to_bytes is standard for wire protocol serialization
     pub const fn to_bytes(&self) -> [u8; 4] {
         self.seed.to_le_bytes()
     }
@@ -248,6 +263,8 @@ pub struct ProtocolCapabilities {
     pub checksum_seed: Option<u32>,
 }
 
+// Part of protocol spec, not yet fully used
+#[allow(dead_code)]
 impl ProtocolCapabilities {
     /// Create new capabilities with default flags
     ///
@@ -408,6 +425,7 @@ impl ProtocolCapabilities {
 /// # Ok(())
 /// # }
 /// ```
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 #[derive(Debug, Clone)]
 pub enum HandshakeState {
     /// Initial state - handshake not started
@@ -472,6 +490,8 @@ pub enum HandshakeState {
     },
 }
 
+// Part of protocol spec, not yet fully used
+#[allow(dead_code)]
 impl HandshakeState {
     /// Check if handshake is complete
     ///
@@ -802,6 +822,7 @@ impl HandshakeState {
 /// # Ok(())
 /// # }
 /// ```
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub async fn handshake_sender<T: Transport>(transport: &mut T) -> Result<ProtocolCapabilities> {
     info!("Starting handshake as sender");
 
@@ -849,6 +870,7 @@ pub async fn handshake_sender<T: Transport>(transport: &mut T) -> Result<Protoco
 /// # Ok(())
 /// # }
 /// ```
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub async fn handshake_receiver<T: Transport>(transport: &mut T) -> Result<ProtocolCapabilities> {
     info!("Starting handshake as receiver");
 
@@ -897,6 +919,7 @@ pub async fn handshake_receiver<T: Transport>(transport: &mut T) -> Result<Proto
 /// # Ok(())
 /// # }
 /// ```
+#[allow(dead_code)] // Part of protocol spec, not yet fully used
 pub async fn handshake<T: Transport>(
     transport: &mut T,
     role: Role,
