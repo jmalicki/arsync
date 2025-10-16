@@ -32,6 +32,8 @@ This directory contains all documentation related to the rsync wire protocol imp
   - All phases with checkboxes
   - Acceptance criteria
   - What was skipped and why
+  - Phase status updates
+  - Test matrix and results
   - **Most detailed tracking**
 
 ### Design
@@ -57,16 +59,6 @@ This directory contains all documentation related to the rsync wire protocol imp
   - Performance analysis
   - Protocol differences
 
-### Status & Testing
-
-- **[status-testing.md](status-testing.md)** - Pipe testing status
-  - Test infrastructure
-  - Bidirectional pipe tests
-  - Integration test results
-
-- **[status-phases.md](status-phases.md)** - Phase status updates
-  - Timeline tracking
-  - Phase completion notes
 
 ### Protocol Specifications (in `/docs/specs/`)
 
