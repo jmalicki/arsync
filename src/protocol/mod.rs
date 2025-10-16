@@ -3,6 +3,8 @@
 //! This module implements the rsync wire protocol for compatibility with
 //! existing rsync servers, as well as modern extensions using QUIC and
 //! merkle trees.
+#![allow(clippy::missing_errors_doc)] // Protocol spec - errors documented at module level
+#![allow(clippy::missing_panics_doc)] // Protocol spec - panics are bugs
 
 // Protocol types are always available for CLI parsing
 use anyhow::Result;

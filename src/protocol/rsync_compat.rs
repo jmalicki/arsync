@@ -3,6 +3,9 @@
 //! This module implements the actual rsync wire protocol for interoperability
 //! with rsync processes. rsync uses a multiplexed I/O protocol with message tags.
 #![allow(dead_code)] // Protocol implementation not yet fully used
+#![allow(clippy::missing_errors_doc)] // Protocol spec - errors documented at module level
+#![allow(clippy::missing_panics_doc)] // Protocol spec - panics are bugs
+#![allow(clippy::must_use_candidate)] // Protocol spec - use is context-dependent
 
 use crate::cli::Args;
 use crate::protocol::rsync::FileEntry;

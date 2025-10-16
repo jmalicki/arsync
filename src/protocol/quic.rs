@@ -3,6 +3,8 @@
 //! Implements the SSH-QUIC hybrid protocol where SSH provides authentication
 //! and control channel, while QUIC provides high-performance parallel data transfer.
 #![allow(dead_code)] // Protocol implementation not yet fully used
+#![allow(clippy::missing_errors_doc)] // Protocol spec - errors documented at module level
+#![allow(clippy::missing_panics_doc)] // Protocol spec - panics are bugs
 
 use crate::cli::Args;
 use crate::protocol::ssh::SshConnection;

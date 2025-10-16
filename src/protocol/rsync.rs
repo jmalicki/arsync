@@ -2,6 +2,10 @@
 //!
 //! Implements the rsync wire protocol for compatibility with rsync servers.
 //! Based on the rsync technical report and protocol specification.
+#![allow(dead_code)] // Protocol implementation not yet fully used
+#![allow(clippy::missing_errors_doc)] // Protocol spec - errors documented at module level
+#![allow(clippy::missing_panics_doc)] // Protocol spec - panics are bugs
+#![allow(clippy::must_use_candidate)] // Protocol spec - use is context-dependent
 
 use crate::cli::Args;
 use crate::protocol::checksum::{rolling_checksum, strong_checksum};

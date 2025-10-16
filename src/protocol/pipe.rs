@@ -5,6 +5,10 @@
 //!
 //! This implementation uses **compio::fs::AsyncFd** with **io_uring backend** for
 //! true async stream I/O. All operations go through the kernel's io_uring interface.
+#![allow(dead_code)] // Protocol implementation not yet fully used
+#![allow(clippy::missing_errors_doc)] // Protocol spec - errors documented at module level
+#![allow(clippy::missing_panics_doc)] // Protocol spec - panics are bugs
+
 //!
 //! # Architecture
 //!
@@ -17,7 +21,6 @@
 //!     ↓
 //! io_uring operations
 //! ```
-#![allow(dead_code)] // Protocol implementation not yet fully used
 
 use super::transport::Transport;
 use compio::fs::AsyncFd;
