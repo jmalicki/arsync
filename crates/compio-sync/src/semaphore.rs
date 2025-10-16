@@ -76,12 +76,21 @@ pub struct Semaphore {
 ///
 /// This structure contains the atomic permit counter and the queue of waiting tasks.
 /// It is wrapped in an Arc to allow the Semaphore to be cloned cheaply.
+///
+/// # Implementation Note
+///
+/// Currently uses `Mutex<VecDeque<Waker>>` for simplicity and maintainability.
+///
+/// **Future optimization**: Could use intrusive linked list (like tokio) to avoid
+/// allocations and improve cache locality. However, this requires unsafe code and
+/// is significantly more complex. The current VecDeque approach is proven and fast enough.
 struct SemaphoreInner {
     /// Available permits (atomic for lock-free operations)
     permits: AtomicUsize,
     /// Maximum permits (for metrics and debugging)
     max_permits: usize,
     /// Queue of tasks waiting for permits
+    /// TODO: Consider intrusive linked list for zero-allocation waiting
     waiters: Mutex<VecDeque<Waker>>,
 }
 

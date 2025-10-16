@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```rust,no_run
-//! use compio_sync::CondVar;
+//! use compio_sync::Condvar;
 //! use std::sync::Arc;
 //!
 //! #[compio::main]
@@ -34,7 +34,7 @@ use std::task::{Context, Poll, Waker};
 
 /// A compio-compatible async condition variable for task notification
 ///
-/// `CondVar` allows one or more tasks to wait for a notification from another task.
+/// `Condvar` allows one or more tasks to wait for a notification from another task.
 /// This is useful for coordinating async operations where one task needs to signal
 /// completion to others.
 ///
@@ -81,20 +81,35 @@ use std::task::{Context, Poll, Waker};
 /// # }
 /// ```
 #[derive(Clone)]
-pub struct CondVar {
+pub struct Condvar {
     /// Shared state between all clones
-    inner: Arc<CondVarInner>,
+    inner: Arc<CondvarInner>,
 }
 
 /// Internal shared state for the condition variable
-struct CondVarInner {
+///
+/// # Implementation Note
+///
+/// Currently uses `Mutex<VecDeque<Waker>>` for simplicity and maintainability.
+/// This is correct and performant for our use case.
+///
+/// **Future optimization**: Could use intrusive linked list (like tokio does) to:
+/// - Avoid VecDeque allocations
+/// - Avoid Waker cloning
+/// - Better cache locality
+/// - Improved cancellation handling
+///
+/// However, intrusive lists require unsafe code and are significantly more complex.
+/// The current VecDeque approach is proven, simple, and fast enough.
+struct CondvarInner {
     /// Whether notification has been signaled (one-shot flag)
     notified: AtomicBool,
     /// Queue of tasks waiting for notification (FIFO)
+    /// TODO: Consider intrusive linked list for zero-allocation waiting
     waiters: Mutex<VecDeque<Waker>>,
 }
 
-impl CondVar {
+impl Condvar {
     /// Create a new condition variable in "not notified" state
     ///
     /// Tasks calling `wait()` will block until `notify_one()` or `notify_all()` is called.
@@ -109,7 +124,7 @@ impl CondVar {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(CondVarInner {
+            inner: Arc::new(CondvarInner {
                 notified: AtomicBool::new(false),
                 waiters: Mutex::new(VecDeque::new()),
             }),
@@ -207,7 +222,7 @@ impl CondVar {
     }
 }
 
-impl Default for CondVar {
+impl Default for Condvar {
     fn default() -> Self {
         Self::new()
     }
@@ -221,7 +236,7 @@ impl Default for CondVar {
 /// 3. When notified, the waker is called and the future returns `Poll::Ready`
 struct WaitFuture {
     /// The condition variable to wait on
-    condvar: CondVar,
+    condvar: Condvar,
 }
 
 impl Future for WaitFuture {
@@ -256,7 +271,7 @@ mod tests {
 
     #[compio::test]
     async fn test_condvar_basic() {
-        let cv = Arc::new(CondVar::new());
+        let cv = Arc::new(Condvar::new());
         let cv_clone = cv.clone();
 
         // Spawn a waiter
@@ -274,7 +289,7 @@ mod tests {
 
     #[compio::test]
     async fn test_condvar_multiple_waiters() {
-        let cv = Arc::new(CondVar::new());
+        let cv = Arc::new(Condvar::new());
         let mut handles = Vec::new();
 
         // Spawn 10 waiters
@@ -298,7 +313,7 @@ mod tests {
 
     #[compio::test]
     async fn test_condvar_notify_one() {
-        let cv = Arc::new(CondVar::new());
+        let cv = Arc::new(Condvar::new());
         let mut handles = Vec::new();
 
         // Spawn 3 waiters
@@ -326,7 +341,7 @@ mod tests {
 
     #[compio::test]
     async fn test_condvar_no_waiters() {
-        let cv = CondVar::new();
+        let cv = Condvar::new();
 
         // Notify with no waiters - should not panic
         cv.notify_all();
@@ -335,7 +350,7 @@ mod tests {
 
     #[compio::test]
     async fn test_condvar_already_notified() {
-        let cv = Arc::new(CondVar::new());
+        let cv = Arc::new(Condvar::new());
 
         // Notify before any waiters
         cv.notify_all();

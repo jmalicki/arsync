@@ -827,10 +827,17 @@ while !is_copied.load(Ordering::Acquire) {
 
 ## Future Work
 
-- Consider using CondVar elsewhere for async coordination
-- Benchmark CondVar overhead vs alternatives
+- Consider using Condvar elsewhere for async coordination
+- Benchmark Condvar overhead vs alternatives
 - Add timeout support if deadlocks occur
 - Explore using compio's Event if available
+- **Optimize waiter queue**: Replace `Mutex<VecDeque<Waker>>` with intrusive linked list
+  - Similar to tokio's implementation
+  - Avoids VecDeque allocations
+  - Avoids Waker cloning
+  - Better cache locality
+  - Requires unsafe code (defer until proven bottleneck)
+  - Would be shared abstraction between Semaphore and Condvar
 
 ---
 

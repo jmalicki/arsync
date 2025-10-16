@@ -6,7 +6,7 @@
 //! # Primitives
 //!
 //! - [`Semaphore`] - Async semaphore for bounding concurrency
-//! - [`CondVar`] - Async condition variable for task notification
+//! - [`Condvar`] - Async condition variable for task notification
 //!
 //! # Example
 //!
@@ -32,5 +32,5 @@
 mod condvar;
 mod semaphore;
 
-pub use condvar::CondVar;
+pub use condvar::Condvar;
 pub use semaphore::{Semaphore, SemaphorePermit};
