@@ -213,29 +213,4 @@ Before committing or opening a PR:
 git tag -a v1.0.0 -m "Release v1.0.0"
 ```
 
-## Integration
-
-These commands were adapted from the [EconGraph project](https://github.com/EconGraph/econ-graph/tree/main/.cursor/commands) and customized for Rust development workflows specific to io_uring_sync.
-
-Commands removed from the original:
-- All Kubernetes commands (k8s-*)
-- Database migration commands
-- Docker-specific commands
-- TypeScript/frontend commands
-- Backend debugging commands specific to their architecture
-
-Commands added:
-- `/test` - Rust testing patterns
-- `/bench` - Benchmark execution
-- `/build` - Cargo build configurations
-- `/smoke` - Quick smoke tests
-- `/fmt` - Code formatting
-- `/clippy` - Linting
-- `/clean` - Clean artifacts
-- `/docs` - Documentation building
-- `/release-check` - Release verification
-- `/design` - Generate design documents from conversation
-- `/plan` - Generate structured implementation plans
-- `/implement` - Execute implementation plans step-by-step
-- `/debug` - Systematic debugging with iterative approach
 
