@@ -1,3 +1,35 @@
+#!/bin/bash
+
+# Script to optimize GitHub Actions CI setup
+# This script will:
+# 1. Disable old CI workflows
+# 2. Enable the optimized CI workflow
+# 3. Clean up redundant files
+
+set -e
+
+echo "🔧 Optimizing GitHub Actions CI setup..."
+
+# Backup old workflows
+echo "📦 Creating backup of old workflows..."
+mkdir -p .github/workflows/backup
+cp .github/workflows/ci.yml .github/workflows/backup/ci.yml.backup
+cp .github/workflows/ci-improved.yml .github/workflows/backup/ci-improved.yml.backup
+cp .github/workflows/release.yml .github/workflows/backup/release.yml.backup
+cp .github/workflows/release-improved.yml .github/workflows/backup/release-improved.yml.backup
+
+# Disable old workflows by renaming them
+echo "🚫 Disabling old CI workflows..."
+mv .github/workflows/ci.yml .github/workflows/ci.yml.disabled
+mv .github/workflows/ci-improved.yml .github/workflows/ci-improved.yml.disabled
+
+# Enable optimized workflow
+echo "✅ Enabling optimized CI workflow..."
+mv .github/workflows/ci-optimized.yml .github/workflows/ci.yml
+
+# Create optimized release workflow
+echo "📦 Creating optimized release workflow..."
+cat > .github/workflows/release.yml << 'EOF'
 name: Release (Optimized)
 
 on:
@@ -166,3 +198,26 @@ jobs:
         uses: actions/attest-build-provenance@v1
         with:
           subject-path: 'release-assets/*.tar.gz'
+EOF
+
+echo "🎉 CI optimization complete!"
+echo ""
+echo "📋 Summary of changes:"
+echo "  ✅ Disabled old ci.yml and ci-improved.yml workflows"
+echo "  ✅ Enabled optimized ci.yml workflow with sccache"
+echo "  ✅ Created optimized release.yml workflow"
+echo "  ✅ Added sccache for faster compilation"
+echo "  ✅ Replaced tool compilation with marketplace actions"
+echo "  ✅ Enhanced caching strategy"
+echo ""
+echo "🚀 Next steps:"
+echo "  1. Commit these changes"
+echo "  2. Push to trigger the new optimized CI"
+echo "  3. Monitor build times and performance"
+echo "  4. Remove backup files after confirming everything works"
+echo ""
+echo "📊 Expected improvements:"
+echo "  • 30-50% faster compilation with sccache"
+echo "  • Reduced CI time by using pre-built tools"
+echo "  • Better caching for dependencies and build artifacts"
+echo "  • Eliminated duplicate CI runs"

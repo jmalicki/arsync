@@ -1,4 +1,4 @@
-name: Release (Optimized)
+name: Release (Improved)
 
 on:
   push:
@@ -11,8 +11,6 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTC_WRAPPER: sccache
-  SCCACHE_GHA: true
 
 jobs:
   # Validate the release before building
@@ -40,6 +38,53 @@ jobs:
             exit 1
           fi
           echo "✓ Version validation passed"
+
+  # Generate changelog
+  changelog:
+    name: Generate Changelog
+    runs-on: ubuntu-latest
+    needs: validate
+    outputs:
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get commits since last tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "First release - including all commits"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --reverse)
+          else
+            echo "Changes since $PREVIOUS_TAG"
+            COMMITS=$(git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s (%h)" --reverse)
+          fi
+          
+          # Create changelog content
+          CHANGELOG="## What's Changed
+          
+          $COMMITS
+          
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...v${{ needs.validate.outputs.version }}"
+          
+          # Save to output (escape for GitHub Actions)
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Save changelog to file
+        run: |
+          echo "${{ steps.changelog.outputs.changelog }}" > RELEASE_CHANGELOG.md
+      
+      - name: Upload changelog artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: changelog
+          path: RELEASE_CHANGELOG.md
 
   # Build binaries for multiple platforms
   build:
@@ -69,7 +114,7 @@ jobs:
     - uses: actions/checkout@v4
     
     - name: Setup Rust
-      uses: ./.github/actions/setup-rust-optimized
+      uses: ./.github/actions/setup-rust
       with:
         toolchain: stable
     
@@ -136,7 +181,7 @@ jobs:
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [validate, build]
+    needs: [validate, changelog, build]
     steps:
       - uses: actions/checkout@v4
       
@@ -151,14 +196,22 @@ jobs:
           find artifacts -name '*.tar.gz*' -exec cp {} release-assets/ \;
           ls -la release-assets/
       
+      - name: Download changelog
+        uses: actions/download-artifact@v4
+        with:
+          name: changelog
+          path: .
+      
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: Release v${{ needs.validate.outputs.version }}
+          body_path: RELEASE_CHANGELOG.md
           files: release-assets/*
           draft: false
           prerelease: ${{ contains(needs.validate.outputs.version, '-') }}
-          generate_release_notes: true
+          generate_release_notes: false
+          discussion_category_name: Releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
@@ -166,3 +219,20 @@ jobs:
         uses: actions/attest-build-provenance@v1
         with:
           subject-path: 'release-assets/*.tar.gz'
+
+  # Optional: Publish to crates.io
+  publish-crate:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: [release]
+    if: "!contains(needs.validate.outputs.version, '-')"  # Only for stable releases
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Rust
+        uses: ./.github/actions/setup-rust
+      
+      - name: Publish to crates.io
+        run: cargo publish --token ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        continue-on-error: true  # Don't fail if already published
+
