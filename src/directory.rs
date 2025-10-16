@@ -148,116 +148,6 @@ impl SharedStats {
     }
 }
 
-/// Wrapper for shared hardlink tracking across async tasks
-///
-/// This struct wraps `FilesystemTracker` in `Arc<Mutex<>>` to allow shared access
-/// across multiple async tasks dispatched by compio's dispatcher. It provides
-/// thread-safe hardlink detection and tracking for efficient file copying.
-///
-/// # Hardlink Detection
-///
-/// The tracker maintains a mapping of inodes to file paths, allowing it to:
-/// - Detect when multiple files share the same content (hardlinks)
-/// - Create hardlinks instead of copying the same content multiple times
-/// - Track which inodes have already been copied
-///
-/// # Thread Safety
-///
-/// All methods are thread-safe and can be called concurrently from different
-/// async tasks without additional synchronization.
-///
-/// # Usage
-///
-/// ```rust,ignore
-/// let tracker = SharedHardlinkTracker::new(FilesystemTracker::new());
-/// tracker.register_file(path, device_id, inode, link_count);
-/// if tracker.is_inode_copied(inode) {
-///     // Create hardlink instead of copying
-/// }
-/// ```
-#[derive(Clone)]
-pub struct SharedHardlinkTracker {
-    /// Inner tracker wrapped in Arc for thread-safe shared access
-    /// No Mutex needed - `DashMap` provides interior mutability
-    inner: Arc<FilesystemTracker>,
-}
-
-impl SharedHardlinkTracker {
-    /// Create a new `SharedHardlinkTracker` wrapper
-    ///
-    /// # Arguments
-    ///
-    /// * `tracker` - The initial filesystem tracker to wrap
-    #[must_use]
-    pub fn new(tracker: FilesystemTracker) -> Self {
-        Self {
-            inner: Arc::new(tracker),
-        }
-    }
-
-    /// Create a new `SharedHardlinkTracker` with source filesystem set
-    ///
-    /// # Arguments
-    ///
-    /// * `source_filesystem` - Optional source filesystem device ID
-    #[allow(dead_code)]
-    #[must_use]
-    pub fn with_source_filesystem(source_filesystem: Option<u64>) -> Self {
-        let mut tracker = FilesystemTracker::new();
-        if let Some(dev) = source_filesystem {
-            tracker.set_source_filesystem(dev);
-        }
-        Self::new(tracker)
-    }
-
-    /// Signal that an inode's copy is complete
-    ///
-    /// This sets the destination path and wakes all tasks waiting to create hardlinks.
-    pub fn signal_copy_complete(&self, inode: u64, path: &Path) {
-        self.inner.signal_copy_complete(inode, path);
-    }
-
-    /// Get destination path for a copied inode (after waiting on condvar)
-    #[must_use]
-    pub fn get_dst_path_for_inode(&self, inode: u64) -> Option<PathBuf> {
-        self.inner.get_dst_path_for_inode(inode)
-    }
-
-    /// Register a file with the hardlink tracker (race-free)
-    ///
-    /// Returns (`is_copier`, `optional_condvar`):
-    /// - For hardlinks: condvar is always returned (copier signals it, linker waits on it)
-    /// - For regular files: condvar is None
-    #[must_use]
-    pub fn register_file(
-        &self,
-        path: &Path,
-        device_id: u64,
-        inode: u64,
-        link_count: u64,
-    ) -> (bool, Option<Arc<compio_sync::Condvar>>) {
-        self.inner.register_file(path, device_id, inode, link_count)
-    }
-
-    #[allow(dead_code)]
-    /// Get filesystem tracking statistics
-    #[must_use]
-    pub fn get_stats(&self) -> FilesystemStats {
-        self.inner.get_stats()
-    }
-
-    /// Extract the inner `FilesystemTracker` from the shared wrapper
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if multiple references to the Arc exist.
-    pub fn into_inner(self) -> Result<FilesystemTracker> {
-        Arc::try_unwrap(self.inner).map_err(|_| {
-            SyncError::FileSystem("Failed to unwrap Arc - multiple references exist".to_string())
-        })
-    }
-}
-
 /// Wrapper for shared semaphore to limit concurrent operations
 ///
 /// This struct wraps a `Semaphore` in an `Arc` to allow shared access
@@ -591,7 +481,7 @@ async fn traverse_and_copy_directory_iterative(
     // Wrap shared state in wrapper types for static lifetimes
     let stats_value = std::mem::take(stats);
     let shared_stats = Arc::new(SharedStats::new(&stats_value));
-    let shared_hardlink_tracker = SharedHardlinkTracker::new(std::mem::take(hardlink_tracker));
+    let shared_hardlink_tracker = Arc::new(std::mem::take(hardlink_tracker));
 
     // Check FD limits and warn if too low
     if let Ok(fd_limit) = check_fd_limits() {
@@ -637,7 +527,11 @@ async fn traverse_and_copy_directory_iterative(
             )
         })?
         .into_inner();
-    *hardlink_tracker = shared_hardlink_tracker.into_inner()?;
+    *hardlink_tracker = Arc::try_unwrap(shared_hardlink_tracker).map_err(|_| {
+        SyncError::FileSystem(
+            "Failed to unwrap Arc<FilesystemTracker> - multiple references exist".to_string(),
+        )
+    })?;
 
     result
 }
@@ -694,7 +588,7 @@ async fn process_directory_entry_with_compio(
     file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
     stats: Arc<SharedStats>,
-    hardlink_tracker: SharedHardlinkTracker,
+    hardlink_tracker: Arc<FilesystemTracker>,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
 ) -> Result<()> {
@@ -870,7 +764,7 @@ async fn process_file(
     _file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
     stats: Arc<SharedStats>,
-    hardlink_tracker: SharedHardlinkTracker,
+    hardlink_tracker: Arc<FilesystemTracker>,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
 ) -> Result<()> {
@@ -1906,8 +1800,7 @@ mod tests {
         std::fs::hard_link(&file1, &file2).expect("Failed to create hardlink");
 
         let meta1 = std::fs::metadata(&file1).expect("Failed to get metadata");
-        let tracker = FilesystemTracker::new();
-        let shared_tracker = SharedHardlinkTracker::new(tracker);
+        let shared_tracker = Arc::new(FilesystemTracker::new());
 
         // Register both files
         let (is_copier, copier_cv) = shared_tracker.register_file(&file1, 1, meta1.ino(), 2);
