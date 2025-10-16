@@ -51,6 +51,9 @@ jobs:
           -D clippy::todo \
           -D clippy::unimplemented \
           -D clippy::unreachable
+    
+    - name: Validate translation completeness
+      run: cargo run --bin validate-translations
 
   dependencies:
     name: Dependency Check
