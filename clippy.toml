@@ -6,7 +6,11 @@ doc-valid-idents = ["self", "Self", "super", "crate", "Self", "T", "E", "Ok", "E
 
 # Performance and correctness
 disallowed-names = ["foo", "bar", "baz", "tmp", "temp"]
-disallowed-types = ["std::collections::HashMap", "std::collections::BTreeMap"]
+# Explicitly NOT disallowing HashMap/BTreeMap - they are fine to use when appropriate.
+# Previous rule required #[allow(clippy::disallowed_types)] everywhere, which is
+# unnecessarily verbose and doesn't provide real value. Use the right data structure
+# for your use case without artificial restrictions.
+# disallowed-types = ["std::collections::HashMap", "std::collections::BTreeMap"]
 disallowed-methods = ["std::panic::panic_any"]
 
 # Complexity limits

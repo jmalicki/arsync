@@ -35,9 +35,9 @@ async fn main() -> Result<()> {
     }
 
     // Initialize logging based on verbosity and quiet mode
-    // Note: In pipe mode, logs go to stderr (FD 2) so they don't interfere with protocol (FD 0/1)
-    if args.remote.pipe || args.quiet() {
-        // In quiet or pipe mode, only log errors (to stderr)
+    // Note: In server/pipe mode, logs go to stderr (FD 2) so they don't interfere with protocol (FD 0/1)
+    if args.remote.server || args.remote.pipe || args.quiet() {
+        // In server, pipe, or quiet mode, only log errors (to stderr)
         let subscriber = tracing_subscriber::fmt()
             .with_max_level(Level::ERROR)
             .with_target(false)
@@ -120,7 +120,24 @@ async fn main() -> Result<()> {
     args.validate().context("Invalid arguments")?;
 
     // Route to appropriate mode
-    let result = if args.remote.pipe {
+    let result = if args.remote.server {
+        // ============================================================
+        // SERVER MODE (invoked by remote SSH)
+        // ============================================================
+        // When remote client runs: ssh user@host arsync --server /path
+        // SSH connects our stdin/stdout to remote client
+        // We receive files via rsync protocol and write locally
+        // ============================================================
+        #[cfg(feature = "remote-sync")]
+        {
+            info!("Running in server mode");
+            protocol::server_mode(&args).await
+        }
+        #[cfg(not(feature = "remote-sync"))]
+        {
+            anyhow::bail!("Server mode requires remote-sync feature")
+        }
+    } else if args.remote.pipe {
         // ============================================================
         // PIPE MODE (TESTING ONLY)
         // ============================================================

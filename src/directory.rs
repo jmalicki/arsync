@@ -13,7 +13,6 @@ use crate::metadata::MetadataConfig;
 // io_uring_extended removed - using compio directly
 use compio::dispatcher::Dispatcher;
 use compio_sync::Semaphore;
-#[allow(clippy::disallowed_types)]
 use std::collections::HashMap;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -1306,7 +1305,6 @@ pub struct HardlinkInfo {
 #[allow(dead_code)]
 pub struct FilesystemTracker {
     /// Map of (dev, ino) pairs to hardlink information
-    #[allow(clippy::disallowed_types)]
     hardlinks: HashMap<InodeInfo, HardlinkInfo>,
     /// Source filesystem device ID (for boundary detection)
     source_filesystem: Option<u64>,
@@ -1318,7 +1316,6 @@ impl FilesystemTracker {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            #[allow(clippy::disallowed_types)]
             hardlinks: HashMap::new(),
             source_filesystem: None,
         }

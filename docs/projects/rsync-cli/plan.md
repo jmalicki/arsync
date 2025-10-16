@@ -129,7 +129,7 @@ Function signature changed to take owned `SshConnection` (matches Transport trai
 - [x] `/clippy false false` - Fix any warnings
 - [x] `/build "debug" "all" false` - Verify compiles with --features remote-sync
 - [x] Code review: ~~Verify wrapper~~ - No wrapper needed!
-- [ ] Commit: `git commit -m "feat(protocol): wire rsync_compat to SSH transport"`
+- [x] Commit: `git commit -m "feat(protocol): wire rsync_compat to SSH transport"` - Commit `a5108b0`
 
 **Acceptance Criteria**:
 - [x] `push_via_rsync_protocol()` implemented (calls rsync_send)

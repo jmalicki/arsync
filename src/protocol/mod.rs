@@ -252,3 +252,66 @@ pub async fn pipe_receiver(args: &Args, destination: &Location) -> Result<SyncSt
         rsync::receive_via_pipe(args, transport, dest_path).await
     }
 }
+
+/// Server mode (for remote SSH invocation)
+///
+/// This mode is invoked when a remote SSH client connects and runs:
+/// `ssh user@host arsync --server /remote/path`
+///
+/// The server receives files via rsync wire protocol over stdin/stdout,
+/// which are connected to the remote client's SSH connection.
+///
+/// # Arguments
+///
+/// * `args` - Command-line arguments (destination path from positional arg)
+///
+/// # Returns
+///
+/// Returns sync statistics for the server-side reception
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Destination path is not local (server mode requires local destination)
+/// - Protocol communication fails
+/// - File writing fails
+///
+/// # Example
+///
+/// ```bash
+/// # Invoked by remote SSH (user doesn't run this directly):
+/// arsync --server /var/www/html
+/// ```
+#[cfg(feature = "remote-sync")]
+pub async fn server_mode(args: &Args) -> Result<SyncStats> {
+    use tracing::info;
+
+    info!("Server mode: Starting (logs to stderr, protocol uses stdout)");
+
+    // Get destination path from args
+    let destination = args.get_destination()?;
+    let Location::Local(dest_path) = destination else {
+        anyhow::bail!(
+            "Server mode requires local destination path, got remote: {:?}",
+            destination
+        );
+    };
+
+    info!("Server mode: Destination path: {}", dest_path.display());
+
+    // Create PipeTransport from stdin/stdout (connected to remote SSH client)
+    let transport = pipe::PipeTransport::from_stdio()?;
+
+    // Server mode always uses rsync wire protocol (for compatibility)
+    // Remote client expects rsync protocol
+    let stats = rsync_compat::rsync_receive(args, transport, &dest_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("Server mode failed: {}", e))?;
+
+    info!(
+        "Server mode: Complete - {} files, {} bytes",
+        stats.files_copied, stats.bytes_copied
+    );
+
+    Ok(stats)
+}
