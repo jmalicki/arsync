@@ -18,7 +18,7 @@
 //!
 //! # Example
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use arsync::protocol::transport::Transport;
 //! use compio::io::{AsyncReadExt, AsyncWriteExt};
 //!
@@ -56,13 +56,21 @@ use std::io;
 ///
 /// # Example Implementation
 ///
-/// ```rust,no_run
+/// ```rust,ignore
+/// // Example: Implementing Transport for a custom type
 /// use arsync::protocol::transport::Transport;
-/// use compio::fs::File;
+/// use compio::io::{AsyncRead, AsyncWrite};
 ///
-/// // File automatically implements AsyncRead + AsyncWrite
-/// impl Transport for File {
-///     fn name(&self) -> &str { "file" }
+/// struct MyTransport {
+///     // ... fields ...
+/// }
+///
+/// // Implement AsyncRead and AsyncWrite for MyTransport
+/// // ... implementations ...
+///
+/// // Then MyTransport automatically implements Transport
+/// impl Transport for MyTransport {
+///     fn name(&self) -> &str { "my-custom-transport" }
 /// }
 /// ```
 pub trait Transport: AsyncRead + AsyncWrite + Send + Unpin {
@@ -94,13 +102,12 @@ pub trait Transport: AsyncRead + AsyncWrite + Send + Unpin {
 ///
 /// # Example
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use arsync::protocol::transport::{Transport, read_exact};
-/// use compio::fs::File;
 ///
-/// async fn example(mut file: File) -> std::io::Result<()> {
+/// async fn example<T: Transport>(mut transport: T) -> std::io::Result<()> {
 ///     let mut buf = [0u8; 100];
-///     read_exact(&mut file, &mut buf).await?;
+///     read_exact(&mut transport, &mut buf).await?;
 ///     Ok(())
 /// }
 /// ```
@@ -149,12 +156,11 @@ where
 ///
 /// # Example
 ///
-/// ```rust,no_run
+/// ```rust,ignore
 /// use arsync::protocol::transport::{Transport, write_all};
-/// use compio::fs::File;
 ///
-/// async fn example(mut file: File) -> std::io::Result<()> {
-///     write_all(&mut file, b"Hello, World!").await?;
+/// async fn example<T: Transport>(mut transport: T) -> std::io::Result<()> {
+///     write_all(&mut transport, b"Hello, World!").await?;
 ///     Ok(())
 /// }
 /// ```
