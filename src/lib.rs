@@ -54,6 +54,7 @@ pub mod i18n;
 pub mod io_uring;
 pub mod metadata;
 pub mod progress;
+pub mod protocol;
 pub mod sync;
 
 // Re-export commonly used types
