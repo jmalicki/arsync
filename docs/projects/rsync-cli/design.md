@@ -164,9 +164,9 @@ pub async fn remote_sync(args, source, destination) -> Result<SyncStats> {
    - Need Transport impl or wrapper
 
 4. **Feature Flag Strategy**
-   - Decide: Enable `remote-sync` by default? Or keep opt-in?
-   - Impact on binary size and dependencies
-   - Testing strategy (CI needs to test both)
+   - Keep `remote-sync` as opt-in feature (not enabled by default)
+   - Users compile with `--features remote-sync` when needed
+   - CI tests both configurations (with and without feature)
 
 5. **Error Handling**
    - SSH connection failures
@@ -426,30 +426,49 @@ pub async fn server_mode(args: &Args) -> Result<SyncStats> {
 }
 ```
 
-### Component 4: Feature Flag Decision
+### Component 4: Feature Flag Strategy
 
-**Options**:
+**Decision**: Keep `remote-sync` as an **opt-in** feature flag
 
-**A. Enable by default** (Recommended)
 ```toml
 # Cargo.toml
 [features]
-default = ["remote-sync"]
+# remote-sync is NOT in default features
+default = []
 remote-sync = []
 ```
-- Pros: Users get remote sync out of the box
-- Cons: Slightly larger binary (~50KB protocol code)
-- Impact: Minimal, worth it for functionality
 
-**B. Keep opt-in**
-```toml
-# Users must compile with --features remote-sync
+**Rationale**:
+- **Binary size**: Protocol code adds ~50KB+ (worthwhile for those who need it)
+- **Dependency tree**: Keeps default build minimal
+- **Use case split**: Many users only need local io_uring copies
+- **Clear opt-in**: Users explicitly compile for remote sync when needed
+
+**User Experience**:
+```bash
+# Default build (local-only, smallest binary)
+cargo build --release
+
+# With remote sync support
+cargo build --release --features remote-sync
+
+# Install with remote sync
+cargo install --path . --features remote-sync
 ```
-- Pros: Smaller default binary
-- Cons: Users surprised when remote paths don't work
-- **Not recommended** - remote sync is a core feature
 
-**Decision**: Enable `remote-sync` by default.
+**Error Handling**:
+When user tries remote path without feature:
+```
+Error: Remote sync not supported in this build
+Hint: Compile with --features remote-sync to enable remote sync
+      cargo build --release --features remote-sync
+```
+
+**CI Strategy**:
+- Test both configurations:
+  - Default build (no remote-sync)
+  - Full build (with remote-sync)
+- Ensures both paths remain working
 
 ---
 
@@ -603,20 +622,24 @@ async fn test_remote_sync_via_localhost() {
 
 ### Phase 4: Feature Flag & Build Configuration
 
-**Goal**: Enable remote-sync by default for users
+**Goal**: Maintain remote-sync as opt-in feature, ensure both builds work
 
 **Tasks**:
-1. Update `Cargo.toml` to include `remote-sync` in default features
-2. Update CI to test both with and without feature
-3. Add documentation about compiling without remote sync
-4. Measure binary size impact
+1. Keep `Cargo.toml` with `remote-sync` as opt-in (NOT in default features)
+2. Update CI to test both configurations:
+   - Default build (without remote-sync)
+   - Full build (with remote-sync)
+3. Add clear error messages when remote path used without feature
+4. Document compilation with remote-sync in README
+5. Measure binary size difference
 
 **Acceptance Criteria**:
-- [ ] Default build includes remote sync
-- [ ] `cargo build` produces working remote sync
-- [ ] `cargo build --no-default-features` still compiles (local-only)
-- [ ] CI tests both configurations
-- [ ] Binary size documented (likely <100KB increase)
+- [ ] Default `cargo build` works (local-only)
+- [ ] `cargo build --features remote-sync` includes remote sync
+- [ ] Both configurations tested in CI
+- [ ] Clear error when remote path used without feature compiled
+- [ ] Binary size difference documented (~50-100KB)
+- [ ] README explains how to enable remote sync
 
 ### Phase 5: Error Handling & Polish
 
@@ -714,10 +737,10 @@ async fn test_remote_sync_via_localhost() {
 - Validate metadata preservation
 - Debug any issues found
 
-### Phase 4: Feature Flag & CI (1 day)
-- Enable default feature
-- Update CI configuration
-- Test both build modes
+### Phase 4: Build Configuration & CI (1 day)
+- Keep remote-sync as opt-in feature
+- Update CI to test both configurations
+- Document compilation requirements
 
 ### Phase 5: Error Handling (1-2 days)
 - Add comprehensive error handling
