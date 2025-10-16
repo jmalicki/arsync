@@ -423,6 +423,7 @@ mod tests {
                 progress: false,
                 verbose: 0,
                 quiet: false,
+                pirate: false,
             },
         }
     }

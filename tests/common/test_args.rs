@@ -44,6 +44,7 @@ pub fn create_minimal_test_args() -> Args {
             progress: false,
             verbose: 0,
             quiet: false,
+            pirate: false,
         },
     }
 }

@@ -11,7 +11,6 @@ use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
 
-
 /// Test directory permissions preservation
 #[compio::test]
 async fn test_directory_permissions_preservation() {

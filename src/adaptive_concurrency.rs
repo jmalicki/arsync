@@ -53,12 +53,11 @@ impl ConcurrencyOptions {
     #[must_use]
     pub fn new(max_files_in_flight: usize, fail_on_exhaustion: bool) -> Self {
         // Ensure max_files_in_flight is at least 1
-        let max_files_in_flight = NonZeroUsize::new(max_files_in_flight)
-            .unwrap_or_else(|| {
-                debug_assert!(false, "max_files_in_flight must be >= 1");
-                // SAFETY: 1 is non-zero
-                unsafe { NonZeroUsize::new_unchecked(1) }
-            });
+        let max_files_in_flight = NonZeroUsize::new(max_files_in_flight).unwrap_or_else(|| {
+            debug_assert!(false, "max_files_in_flight must be >= 1");
+            // SAFETY: 1 is non-zero
+            unsafe { NonZeroUsize::new_unchecked(1) }
+        });
 
         // Compute minimum permits: never go below 10 or 10% of max
         let min_value = std::cmp::max(10, max_files_in_flight.get() / 10);
@@ -148,7 +147,7 @@ impl AdaptiveConcurrencyController {
     /// Returns FdExhaustion error if EMFILE detected and fail_on_exhaustion is true
     pub fn handle_error(&self, error: &SyncError) -> crate::error::Result<()> {
         use crate::error::SyncError;
-        
+
         // Check if this is a file descriptor exhaustion error
         if Self::is_emfile_error(error) {
             let count = self.emfile_errors.fetch_add(1, Ordering::Relaxed) + 1;
