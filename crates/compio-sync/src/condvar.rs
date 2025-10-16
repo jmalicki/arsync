@@ -222,6 +222,15 @@ impl Condvar {
         // Relaxed ordering is fine - this is just a reset, no synchronization needed
         self.inner.notified.store(false, Ordering::Relaxed);
     }
+
+    /// Get the number of tasks waiting on this condvar
+    ///
+    /// This is useful for tests, debugging, and observability.
+    /// **Note**: The count may be stale by the time you read it due to concurrent notify operations.
+    #[must_use]
+    pub fn waiter_count(&self) -> usize {
+        self.inner.waiters.waiter_count()
+    }
 }
 
 impl Default for Condvar {

@@ -100,6 +100,7 @@ impl ConcurrencyOptions {
 /// file descriptor exhaustion (EMFILE) is detected, then gradually
 /// increases it again when resources are available.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct AdaptiveConcurrencyController {
     /// The underlying semaphore
     semaphore: SharedSemaphore,
@@ -113,6 +114,7 @@ pub struct AdaptiveConcurrencyController {
     fail_on_exhaustion: bool,
 }
 
+#[allow(dead_code)]
 impl AdaptiveConcurrencyController {
     /// Create a new adaptive controller from options
     ///
