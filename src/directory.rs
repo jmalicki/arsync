@@ -9,6 +9,7 @@ use crate::cli::{Args, CopyMethod};
 use crate::copy::copy_file;
 use crate::error::{Result, SyncError};
 use crate::io_uring::FileOperations;
+use crate::metadata::MetadataConfig;
 // io_uring_extended removed - using compio directly
 use compio::dispatcher::Dispatcher;
 use compio_sync::Semaphore;
@@ -604,7 +605,7 @@ pub async fn copy_directory(
 
         // Preserve root directory metadata (permissions, ownership, timestamps) if requested
         let root_metadata = ExtendedMetadata::new(src).await?;
-        preserve_directory_metadata(src, dst, &root_metadata, args).await?;
+        preserve_directory_metadata(src, dst, &root_metadata, &args.metadata).await?;
 
         // Set source filesystem from root directory
         hardlink_tracker.set_source_filesystem(root_metadata.device_id());
@@ -618,7 +619,8 @@ pub async fn copy_directory(
         _copy_method,
         &mut stats,
         &mut hardlink_tracker,
-        args,
+        &args.metadata,
+        &args.concurrency,
     )
     .await?;
 
@@ -690,14 +692,16 @@ async fn traverse_and_copy_directory_iterative(
     _copy_method: CopyMethod,
     stats: &mut DirectoryStats,
     hardlink_tracker: &mut FilesystemTracker,
-    args: &Args,
+    metadata_config: &MetadataConfig,
+    concurrency_config: &crate::cli::ConcurrencyConfig,
 ) -> Result<()> {
     // Create a dispatcher for async operations
     let dispatcher = Box::leak(Box::new(Dispatcher::new()?));
 
-    // Leak file_ops and args to give them static lifetimes (it's fine since they're just references)
-    let file_ops_static: &'static FileOperations = unsafe { std::mem::transmute(file_ops) };
-    let args_static: &'static Args = unsafe { std::mem::transmute(args) };
+    // Create Arc-wrapped FileOperations and configs for safe sharing across async tasks
+    // No more unsafe transmute needed!
+    let file_ops_arc = Arc::new(file_ops.clone());
+    let metadata_config_arc = Arc::new(metadata_config.clone());
 
     // Wrap shared state in wrapper types for static lifetimes
     let shared_stats = SharedStats::new(std::mem::take(stats));
@@ -705,32 +709,32 @@ async fn traverse_and_copy_directory_iterative(
 
     // Check FD limits and warn if too low
     if let Ok(fd_limit) = check_fd_limits() {
-        if fd_limit < args.max_files_in_flight as u64 {
+        if fd_limit < concurrency_config.max_files_in_flight as u64 {
             warn!(
                 "FD limit ({}) is less than --max-files-in-flight ({}). Consider: ulimit -n {}",
                 fd_limit,
-                args.max_files_in_flight,
-                args.max_files_in_flight * 2
+                concurrency_config.max_files_in_flight,
+                concurrency_config.max_files_in_flight * 2
             );
         }
     }
 
-    // Create adaptive concurrency controller for bounding concurrent operations
-    // This prevents unbounded queue growth and adapts to resource constraints
-    let concurrency_controller =
-        Arc::new(AdaptiveConcurrencyController::new(args.max_files_in_flight));
+    // Create adaptive concurrency controller from config options
+    // The controller owns its configuration and behavior (adapt vs fail)
+    let concurrency_options = concurrency_config.to_options();
+    let concurrency_controller = Arc::new(AdaptiveConcurrencyController::new(&concurrency_options));
 
     // Process the directory
     let result = process_directory_entry_with_compio(
         dispatcher,
         initial_src,
         initial_dst,
-        file_ops_static,
+        file_ops_arc,
         _copy_method,
         shared_stats.clone(),
         shared_hardlink_tracker.clone(),
         concurrency_controller,
-        args_static,
+        metadata_config_arc,
     )
     .await;
 
@@ -790,12 +794,12 @@ async fn process_directory_entry_with_compio(
     dispatcher: &'static Dispatcher,
     src_path: PathBuf,
     dst_path: PathBuf,
-    file_ops: &'static FileOperations,
+    file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
     stats: SharedStats,
     hardlink_tracker: SharedHardlinkTracker,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
-    args: &'static Args,
+    metadata_config: Arc<MetadataConfig>,
 ) -> Result<()> {
     // Acquire permit from adaptive concurrency controller
     // This prevents unbounded queue growth and adapts to resource constraints (e.g., FD exhaustion)
@@ -823,7 +827,8 @@ async fn process_directory_entry_with_compio(
             stats.increment_directories_created()?;
 
             // Preserve directory metadata (permissions, ownership, timestamps) if requested
-            preserve_directory_metadata(&src_path, &dst_path, &extended_metadata, args).await?;
+            preserve_directory_metadata(&src_path, &dst_path, &extended_metadata, &metadata_config)
+                .await?;
         }
 
         // Read directory entries using compio-fs-extended wrapper
@@ -869,18 +874,20 @@ async fn process_directory_entry_with_compio(
             let stats = stats.clone();
             let hardlink_tracker = hardlink_tracker.clone();
             let concurrency_controller = concurrency_controller.clone();
+            let file_ops_clone = Arc::clone(&file_ops);
+            let metadata_config_clone = Arc::clone(&metadata_config);
             let receiver = dispatcher
                 .dispatch(move || {
                     process_directory_entry_with_compio(
                         dispatcher,
                         child_src_path,
                         child_dst_path,
-                        file_ops,
+                        file_ops_clone,
                         copy_method,
                         stats,
                         hardlink_tracker,
                         concurrency_controller.clone(),
-                        args,
+                        metadata_config_clone,
                     )
                 })
                 .map_err(|e| {
@@ -920,7 +927,7 @@ async fn process_directory_entry_with_compio(
             stats,
             hardlink_tracker,
             concurrency_controller,
-            args,
+            metadata_config,
         )
         .await?;
     } else if extended_metadata.is_symlink() {
@@ -960,12 +967,12 @@ async fn process_file(
     src_path: PathBuf,
     dst_path: PathBuf,
     metadata: ExtendedMetadata,
-    _file_ops: &'static FileOperations,
+    _file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
     stats: SharedStats,
     hardlink_tracker: SharedHardlinkTracker,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
-    args: &'static Args,
+    metadata_config: Arc<MetadataConfig>,
 ) -> Result<()> {
     debug!(
         "Processing file: {} (link_count: {})",
@@ -991,7 +998,7 @@ async fn process_file(
         // First time seeing this inode - copy the file content normally
         debug!("Copying file content: {}", src_path.display());
 
-        match copy_file(&src_path, &dst_path, args).await {
+        match copy_file(&src_path, &dst_path, &metadata_config).await {
             Ok(()) => {
                 stats.increment_files_copied()?;
                 stats.increment_bytes_copied(metadata.len())?;
@@ -999,39 +1006,18 @@ async fn process_file(
                 debug!("Copied file: {}", dst_path.display());
             }
             Err(e) => {
-                // Check if this is FD exhaustion and handle accordingly
-                let adapted = concurrency_controller.handle_error(&e);
+                // Handle error - controller will either adapt or fail based on configuration
+                // If fail_on_exhaustion is true and this is EMFILE, this returns an error
+                // Otherwise, it adapts automatically and returns Ok
+                concurrency_controller.handle_error(&e)?;
 
-                if adapted {
-                    // Adapted to FD exhaustion
-                    if args.no_adaptive_concurrency {
-                        // User disabled adaptive concurrency - fail hard
-                        return Err(SyncError::FdExhaustion(format!(
-                            "File descriptor exhaustion detected (--no-adaptive-concurrency is set). \
-                             Failed to copy {} -> {}: {}. \
-                             Either increase ulimit or remove --no-adaptive-concurrency flag.",
-                            src_path.display(),
-                            dst_path.display(),
-                            e
-                        )));
-                    }
-                    // Otherwise, log warning and continue with reduced concurrency
-                    warn!(
-                        "Adapted to FD exhaustion - continuing with reduced concurrency. \
-                         Failed to copy file {} -> {}: {}",
-                        src_path.display(),
-                        dst_path.display(),
-                        e
-                    );
-                } else {
-                    // Not FD exhaustion - just log warning
-                    warn!(
-                        "Failed to copy file {} -> {}: {}",
-                        src_path.display(),
-                        dst_path.display(),
-                        e
-                    );
-                }
+                // Log the error and continue
+                warn!(
+                    "Failed to copy file {} -> {}: {}",
+                    src_path.display(),
+                    dst_path.display(),
+                    e
+                );
                 stats.increment_errors()?;
             }
         }
@@ -1600,6 +1586,7 @@ pub async fn preserve_directory_xattr(src_path: &Path, dst_path: &Path) -> Resul
 /// * `src_path` - Source directory path
 /// * `dst_path` - Destination directory path  
 /// * `extended_metadata` - Pre-captured source directory metadata
+/// * `metadata_config` - Metadata preservation configuration
 ///
 /// # Returns
 ///
@@ -1616,12 +1603,12 @@ pub async fn preserve_directory_metadata(
     src_path: &Path,
     dst_path: &Path,
     extended_metadata: &ExtendedMetadata,
-    args: &Args,
+    metadata_config: &MetadataConfig,
 ) -> Result<()> {
     use compio_fs_extended::{metadata, OwnershipOps};
 
     // Preserve directory permissions if requested
-    if args.should_preserve_permissions() {
+    if metadata_config.should_preserve_permissions() {
         let src_permissions = extended_metadata.metadata.permissions();
         let mode = src_permissions.mode();
         let compio_permissions = compio::fs::Permissions::from_mode(mode);
@@ -1649,7 +1636,7 @@ pub async fn preserve_directory_metadata(
     }
 
     // Preserve directory ownership if requested
-    if args.should_preserve_ownership() {
+    if metadata_config.should_preserve_ownership() {
         let source_uid = extended_metadata.metadata.uid();
         let source_gid = extended_metadata.metadata.gid();
 
@@ -1674,7 +1661,7 @@ pub async fn preserve_directory_metadata(
     }
 
     // Preserve directory timestamps if requested
-    if args.should_preserve_timestamps() {
+    if metadata_config.should_preserve_timestamps() {
         let src_accessed = extended_metadata.metadata.accessed().map_err(|e| {
             SyncError::FileSystem(format!("Failed to get source directory access time: {e}"))
         })?;
@@ -1695,7 +1682,7 @@ pub async fn preserve_directory_metadata(
     }
 
     // Preserve directory extended attributes if requested
-    if args.should_preserve_xattrs() {
+    if metadata_config.should_preserve_xattrs() {
         preserve_directory_xattr(src_path, dst_path).await?;
         debug!("Preserved directory xattrs for {}", dst_path.display());
     }

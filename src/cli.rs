@@ -1,14 +1,49 @@
 //! Command-line interface definitions
+//!
+//! This module organizes CLI arguments by **functional usage** - each group
+//! contains the options needed by a specific component or subsystem.
 
 use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
 
+// Import MetadataConfig from metadata module
+pub use crate::metadata::MetadataConfig;
+
 /// High-performance bulk file copying utility using `io_uring`
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
-#[allow(clippy::struct_excessive_bools)]
 pub struct Args {
+    /// Source and destination paths
+    #[command(flatten)]
+    pub paths: PathConfig,
+
+    /// `FileOperations` configuration (`io_uring`, buffers)
+    #[command(flatten)]
+    pub io: IoConfig,
+
+    /// Concurrency control configuration
+    #[command(flatten)]
+    pub concurrency: ConcurrencyConfig,
+
+    /// Metadata preservation flags (used by copy operations)
+    #[command(flatten)]
+    pub metadata: MetadataConfig,
+
+    /// Output and logging configuration
+    #[command(flatten)]
+    pub output: OutputConfig,
+}
+
+// ============================================================================
+// FUNCTIONAL GROUPS: Organized by what component consumes them
+// ============================================================================
+
+/// Paths configuration
+///
+/// Used by: `main()`, `sync_files()`, `copy_directory()`
+#[derive(clap::Args, Debug, Clone)]
+pub struct PathConfig {
     /// Source directory or file
     #[arg(value_name = "SOURCE")]
     pub source: PathBuf,
@@ -16,11 +51,37 @@ pub struct Args {
     /// Destination directory or file
     #[arg(value_name = "DESTINATION")]
     pub destination: PathBuf,
+}
 
+/// I/O and `FileOperations` configuration
+///
+/// Used by: `FileOperations::new()`, `copy_read_write()`
+#[derive(clap::Args, Debug, Clone)]
+#[command(next_help_heading = "I/O Performance Options")]
+pub struct IoConfig {
     /// Queue depth for `io_uring` operations
     #[arg(long, default_value = "4096")]
     pub queue_depth: usize,
 
+    /// Buffer size in KB (0 = auto-detect, default: 64KB)
+    #[arg(long, default_value = "0")]
+    pub buffer_size_kb: usize,
+
+    /// Copy method to use
+    #[arg(long, default_value = "auto")]
+    pub copy_method: CopyMethod,
+
+    /// Number of CPU cores to use (0 = auto-detect)
+    #[arg(long, default_value = "0")]
+    pub cpu_count: usize,
+}
+
+/// Concurrency control configuration
+///
+/// Used by: `AdaptiveConcurrencyController`, `traverse_and_copy_directory_iterative()`
+#[derive(clap::Args, Debug, Clone)]
+#[command(next_help_heading = "Concurrency Control")]
+pub struct ConcurrencyConfig {
     /// Maximum total files in flight (across all CPU cores)
     ///
     /// Controls memory usage and system load by limiting the total number of
@@ -29,85 +90,41 @@ pub struct Args {
     ///
     /// Default: 1024
     /// High-performance (`NVMe`, 32GB+ RAM): 2048-4096
-    /// Conservative (`HDD`, limited RAM): 256-512
+    /// Conservative (HDD, limited RAM): 256-512
     #[arg(long, default_value = "1024")]
     pub max_files_in_flight: usize,
 
-    /// Number of CPU cores to use (0 = auto-detect)
-    #[arg(long, default_value = "0")]
-    pub cpu_count: usize,
-
-    /// Buffer size in KB (0 = auto-detect)
-    #[arg(long, default_value = "0")]
-    pub buffer_size_kb: usize,
-
-    /// Copy method to use
-    #[arg(long, default_value = "auto")]
-    pub copy_method: CopyMethod,
-
-    // ========== rsync-compatible flags ==========
-    /// Archive mode; same as -rlptgoD (recursive, links, perms, times, group, owner, devices)
-    #[arg(short = 'a', long)]
-    pub archive: bool,
-
-    /// Recurse into directories
-    #[arg(short = 'r', long)]
-    pub recursive: bool,
-
-    /// Copy symlinks as symlinks
-    #[arg(short = 'l', long)]
-    pub links: bool,
-
-    /// Preserve permissions
-    #[arg(short = 'p', long)]
-    pub perms: bool,
-
-    /// Preserve modification times
-    #[arg(short = 't', long)]
-    pub times: bool,
-
-    /// Preserve group
-    #[arg(short = 'g', long)]
-    pub group: bool,
-
-    /// Preserve owner (super-user only)
-    #[arg(short = 'o', long)]
-    pub owner: bool,
-
-    /// Preserve device files (super-user only) and special files
-    #[arg(short = 'D', long)]
-    pub devices: bool,
-
-    /// Preserve extended attributes
-    #[arg(short = 'X', long)]
-    pub xattrs: bool,
-
-    /// Preserve ACLs (implies --perms)
-    #[arg(short = 'A', long)]
-    pub acls: bool,
-
-    /// Preserve hard links
-    #[arg(short = 'H', long)]
-    pub hard_links: bool,
-
-    /// Preserve access (use) times
-    #[arg(short = 'U', long)]
-    pub atimes: bool,
-
-    /// Preserve creation times (when supported)
+    /// Disable adaptive concurrency control (fail fast on resource exhaustion)
+    ///
+    /// By default, arsync automatically reduces concurrency when hitting resource
+    /// limits like "Too many open files" (EMFILE). This flag disables that behavior
+    /// and causes arsync to exit immediately on such errors instead.
+    ///
+    /// Use this if you want strict resource limit enforcement or in CI/CD environments
+    /// where you want to catch configuration issues early.
     #[arg(long)]
-    pub crtimes: bool,
+    pub no_adaptive_concurrency: bool,
+}
 
-    // ========== Deprecated flags (for backwards compatibility) ==========
-    /// Preserve extended attributes (deprecated: use -X/--xattrs)
-    #[arg(long, hide = true)]
-    pub preserve_xattr: bool,
+impl ConcurrencyConfig {
+    /// Convert to the options struct used by `AdaptiveConcurrencyController`
+    ///
+    /// Creates a validated `ConcurrencyOptions` with proper `NonZeroUsize` guarantees.
+    #[must_use]
+    pub fn to_options(&self) -> crate::adaptive_concurrency::ConcurrencyOptions {
+        crate::adaptive_concurrency::ConcurrencyOptions::new(
+            self.max_files_in_flight,
+            self.no_adaptive_concurrency,
+        )
+    }
+}
 
-    /// Preserve POSIX ACLs (deprecated: use -A/--acls)
-    #[arg(long, hide = true)]
-    pub preserve_acl: bool,
-
-    // ========== Other flags ==========
+/// Output and logging configuration
+///
+/// Used by: `main()`, logging initialization, progress display
+#[derive(clap::Args, Debug, Clone)]
+#[command(next_help_heading = "Output Options")]
+pub struct OutputConfig {
     /// Show what would be copied without actually copying
     #[arg(long)]
     pub dry_run: bool,
@@ -127,18 +144,6 @@ pub struct Args {
     /// Enable pirate speak (arrr! 🏴‍☠️)
     #[arg(long, default_value = "false")]
     pub pirate: bool,
-
-    // ========== Concurrency control flags ==========
-    /// Disable adaptive concurrency control (fail fast on resource exhaustion)
-    ///
-    /// By default, arsync automatically reduces concurrency when hitting resource
-    /// limits like "Too many open files" (EMFILE). This flag disables that behavior
-    /// and causes arsync to exit immediately on such errors instead.
-    ///
-    /// Use this if you want strict resource limit enforcement or in CI/CD environments
-    /// where you want to catch configuration issues early.
-    #[arg(long)]
-    pub no_adaptive_concurrency: bool,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum)]
@@ -159,40 +164,9 @@ impl Default for CopyMethod {
     }
 }
 
-impl Default for Args {
-    fn default() -> Self {
-        Self {
-            source: std::path::PathBuf::from("/default/source"),
-            destination: std::path::PathBuf::from("/default/destination"),
-            queue_depth: 4096,
-            max_files_in_flight: 1024,
-            cpu_count: 0,
-            buffer_size_kb: 0,
-            copy_method: CopyMethod::Auto,
-            archive: false,
-            recursive: false,
-            links: false,
-            perms: false,
-            times: false,
-            group: false,
-            owner: false,
-            devices: false,
-            xattrs: false,
-            acls: false,
-            hard_links: false,
-            atimes: false,
-            crtimes: false,
-            preserve_xattr: false,
-            preserve_acl: false,
-            dry_run: false,
-            progress: false,
-            verbose: 0,
-            quiet: false,
-            pirate: false,
-            no_adaptive_concurrency: false,
-        }
-    }
-}
+// ============================================================================
+// IMPLEMENTATION: Convenience methods and validation
+// ============================================================================
 
 impl Args {
     /// Validate command-line arguments
@@ -209,39 +183,43 @@ impl Args {
     /// - Both --quiet and --verbose options are used
     pub fn validate(&self) -> Result<()> {
         // Check if source exists
-        if !self.source.exists() {
-            anyhow::bail!("Source path does not exist: {}", self.source.display());
+        if !self.paths.source.exists() {
+            anyhow::bail!(
+                "Source path does not exist: {}",
+                self.paths.source.display()
+            );
         }
 
         // Check if source is readable
-        if !self.source.is_dir() && !self.source.is_file() {
+        if !self.paths.source.is_dir() && !self.paths.source.is_file() {
             anyhow::bail!(
                 "Source path must be a file or directory: {}",
-                self.source.display()
+                self.paths.source.display()
             );
         }
 
         // Check queue depth bounds
-        if self.queue_depth < 1024 || self.queue_depth > 65_536 {
+        if self.io.queue_depth < 1024 || self.io.queue_depth > 65_536 {
             anyhow::bail!(
                 "Queue depth must be between 1024 and 65536, got: {}",
-                self.queue_depth
+                self.io.queue_depth
             );
         }
 
         // Check max files in flight bounds
-        if self.max_files_in_flight < 1 || self.max_files_in_flight > 10_000 {
+        if self.concurrency.max_files_in_flight < 1 || self.concurrency.max_files_in_flight > 10_000
+        {
             anyhow::bail!(
                 "Max files in flight must be between 1 and 10000, got: {}",
-                self.max_files_in_flight
+                self.concurrency.max_files_in_flight
             );
         }
 
         // Validate buffer size
-        if self.buffer_size_kb > 1024 * 1024 {
+        if self.io.buffer_size_kb > 1024 * 1024 {
             anyhow::bail!(
                 "Buffer size too large (max 1GB): {} KB",
-                self.buffer_size_kb
+                self.io.buffer_size_kb
             );
         }
 
@@ -252,7 +230,7 @@ impl Args {
         }
 
         // Validate conflicting options
-        if self.quiet && self.verbose > 0 {
+        if self.output.quiet && self.output.verbose > 0 {
             anyhow::bail!("Cannot use both --quiet and --verbose options");
         }
 
@@ -262,10 +240,10 @@ impl Args {
     /// Get the actual CPU count to use
     #[must_use]
     pub fn effective_cpu_count(&self) -> usize {
-        if self.cpu_count == 0 {
+        if self.io.cpu_count == 0 {
             num_cpus::get()
         } else {
-            self.cpu_count
+            self.io.cpu_count
         }
     }
 
@@ -273,119 +251,127 @@ impl Args {
     #[allow(dead_code)]
     #[must_use]
     pub const fn effective_buffer_size(&self) -> usize {
-        if self.buffer_size_kb == 0 {
+        if self.io.buffer_size_kb == 0 {
             // Default to 64KB for now
             64 * 1024
         } else {
-            self.buffer_size_kb * 1024
+            self.io.buffer_size_kb * 1024
         }
     }
 
     /// Check if the source is a directory
     #[must_use]
     pub fn is_directory_copy(&self) -> bool {
-        self.source.is_dir()
+        self.paths.source.is_dir()
     }
 
     /// Check if the source is a single file
     #[must_use]
     pub fn is_file_copy(&self) -> bool {
-        self.source.is_file()
+        self.paths.source.is_file()
     }
 
     /// Get buffer size in bytes
     #[must_use]
     pub const fn buffer_size_bytes(&self) -> usize {
-        self.buffer_size_kb * 1024
+        self.io.buffer_size_kb * 1024
+    }
+
+    // ========== Convenience accessors for commonly used fields ==========
+
+    /// Get source path (convenience method for backwards compatibility)
+    #[must_use]
+    pub const fn source(&self) -> &PathBuf {
+        &self.paths.source
+    }
+
+    /// Get destination path (convenience method for backwards compatibility)
+    #[must_use]
+    pub const fn destination(&self) -> &PathBuf {
+        &self.paths.destination
+    }
+
+    /// Get queue depth (convenience method for backwards compatibility)
+    #[must_use]
+    pub const fn queue_depth(&self) -> usize {
+        self.io.queue_depth
+    }
+
+    /// Get max files in flight (convenience method for backwards compatibility)
+    #[must_use]
+    pub const fn max_files_in_flight(&self) -> usize {
+        self.concurrency.max_files_in_flight
+    }
+
+    /// Get copy method (convenience method for backwards compatibility)
+    #[must_use]
+    pub const fn copy_method(&self) -> &CopyMethod {
+        &self.io.copy_method
+    }
+
+    /// Check if verbose mode is enabled (convenience method for backwards compatibility)
+    #[must_use]
+    pub const fn verbose(&self) -> u8 {
+        self.output.verbose
+    }
+
+    /// Check if quiet mode is enabled (convenience method for backwards compatibility)
+    #[must_use]
+    pub const fn quiet(&self) -> bool {
+        self.output.quiet
     }
 
     // ========== rsync-compatible helper methods ==========
+    // These delegate to the MetadataConfig group for backwards compatibility
+    // where full Args is used (mainly in tests)
 
-    /// Check if permissions should be preserved
+    /// Check if permissions should be preserved (delegates to metadata config)
+    #[allow(dead_code)] // For backwards compatibility
     #[must_use]
     pub const fn should_preserve_permissions(&self) -> bool {
-        self.perms || self.archive || self.acls
+        self.metadata.should_preserve_permissions()
     }
 
-    /// Check if ownership (user and/or group) should be preserved
+    /// Check if ownership should be preserved (delegates to metadata config)
+    #[allow(dead_code)] // For backwards compatibility
     #[must_use]
     pub const fn should_preserve_ownership(&self) -> bool {
-        self.owner || self.group || self.archive
+        self.metadata.should_preserve_ownership()
     }
 
-    /// Check if user ownership should be preserved
-    #[allow(dead_code)]
-    #[must_use]
-    pub const fn should_preserve_owner(&self) -> bool {
-        self.owner || self.archive
-    }
-
-    /// Check if group ownership should be preserved
-    #[allow(dead_code)]
-    #[must_use]
-    pub const fn should_preserve_group(&self) -> bool {
-        self.group || self.archive
-    }
-
-    /// Check if timestamps should be preserved
+    /// Check if timestamps should be preserved (delegates to metadata config)
+    #[allow(dead_code)] // For backwards compatibility
     #[must_use]
     pub const fn should_preserve_timestamps(&self) -> bool {
-        self.times || self.archive
+        self.metadata.should_preserve_timestamps()
     }
 
-    /// Check if access times should be preserved
-    #[allow(dead_code)]
-    #[must_use]
-    pub const fn should_preserve_atimes(&self) -> bool {
-        self.atimes
-    }
-
-    /// Check if creation times should be preserved
-    #[allow(dead_code)]
-    #[must_use]
-    pub const fn should_preserve_crtimes(&self) -> bool {
-        self.crtimes
-    }
-
-    /// Check if extended attributes should be preserved
+    /// Check if xattrs should be preserved (delegates to metadata config)
+    #[allow(dead_code)] // For backwards compatibility
     #[must_use]
     pub const fn should_preserve_xattrs(&self) -> bool {
-        self.xattrs || self.preserve_xattr
+        self.metadata.should_preserve_xattrs()
     }
 
-    /// Check if ACLs should be preserved
-    #[allow(dead_code)]
-    #[must_use]
-    pub const fn should_preserve_acls(&self) -> bool {
-        self.acls || self.preserve_acl
-    }
-
-    /// Check if symlinks should be copied as symlinks
+    /// Check if symlinks should be preserved (delegates to metadata config)
     #[allow(dead_code)]
     #[must_use]
     pub const fn should_preserve_links(&self) -> bool {
-        self.links || self.archive
+        self.metadata.should_preserve_links()
     }
 
-    /// Check if hard links should be preserved
+    /// Check if hard links should be preserved (delegates to metadata config)
     #[allow(dead_code)]
     #[must_use]
     pub const fn should_preserve_hard_links(&self) -> bool {
-        self.hard_links
+        self.metadata.should_preserve_hard_links()
     }
 
-    /// Check if device files should be preserved
-    #[allow(dead_code)]
-    #[must_use]
-    pub const fn should_preserve_devices(&self) -> bool {
-        self.devices || self.archive
-    }
-
-    /// Check if recursive copying should be performed
+    /// Check if recursive copying should be performed (delegates to metadata config)
     #[allow(dead_code)]
     #[must_use]
     pub const fn should_recurse(&self) -> bool {
-        self.recursive || self.archive
+        self.metadata.recursive || self.metadata.archive
     }
 }
 
@@ -397,6 +383,50 @@ mod tests {
     use crate::error::SyncError;
     use compio::fs::File;
     use tempfile::TempDir;
+
+    /// Helper to create default test Args with custom paths
+    fn create_test_args(source: PathBuf, destination: PathBuf) -> Args {
+        Args {
+            paths: PathConfig {
+                source,
+                destination,
+            },
+            io: IoConfig {
+                queue_depth: 4096,
+                buffer_size_kb: 1024,
+                copy_method: CopyMethod::Auto,
+                cpu_count: 2,
+            },
+            concurrency: ConcurrencyConfig {
+                max_files_in_flight: 100,
+                no_adaptive_concurrency: false,
+            },
+            metadata: MetadataConfig {
+                archive: false,
+                recursive: false,
+                links: false,
+                perms: false,
+                times: false,
+                group: false,
+                owner: false,
+                devices: false,
+                xattrs: true,
+                acls: false,
+                hard_links: false,
+                atimes: false,
+                crtimes: false,
+                preserve_xattr: false,
+                preserve_acl: false,
+            },
+            output: OutputConfig {
+                dry_run: false,
+                progress: false,
+                verbose: 0,
+                quiet: false,
+                pirate: false,
+            },
+        }
+    }
 
     async fn create_temp_file() -> Result<(TempDir, PathBuf)> {
         let temp_dir = TempDir::new()
@@ -421,110 +451,36 @@ mod tests {
     #[compio::test]
     async fn test_validate_with_existing_file() {
         let (temp_dir, file_path) = create_temp_file().await.unwrap();
-        let args = Args {
-            source: file_path,
-            destination: temp_dir.path().join("dest"),
-            copy_method: CopyMethod::Auto,
-            queue_depth: 4096,
-            cpu_count: 2,
-            buffer_size_kb: 1024,
-            max_files_in_flight: 100,
-            archive: false,
-            recursive: false,
-            links: false,
-            perms: false,
-            times: false,
-            group: false,
-            owner: false,
-            devices: false,
-            xattrs: true,
-            acls: false,
-            hard_links: false,
-            atimes: false,
-            crtimes: false,
-            preserve_xattr: false,
-            preserve_acl: false,
-            dry_run: false,
-            progress: false,
-            verbose: 0,
-            quiet: false,
-            pirate: false,
-            no_adaptive_concurrency: false,
-        };
-
+        let args = create_test_args(file_path, temp_dir.path().join("dest"));
         assert!(args.validate().is_ok());
     }
 
     #[compio::test]
     async fn test_validate_with_existing_directory() {
         let (temp_dir, dir_path) = create_temp_dir().await.unwrap();
-        let args = Args {
-            source: dir_path,
-            destination: temp_dir.path().join("dest"),
-            copy_method: CopyMethod::Auto,
-            queue_depth: 4096,
-            cpu_count: 2,
-            buffer_size_kb: 1024,
-            max_files_in_flight: 100,
-            archive: false,
-            recursive: false,
-            links: false,
-            perms: false,
-            times: false,
-            group: false,
-            owner: false,
-            devices: false,
-            xattrs: true,
-            acls: false,
-            hard_links: false,
-            atimes: false,
-            crtimes: false,
-            preserve_xattr: false,
-            preserve_acl: false,
-            dry_run: false,
-            progress: false,
-            verbose: 0,
-            quiet: false,
-            pirate: false,
-            no_adaptive_concurrency: false,
-        };
-
+        let args = create_test_args(dir_path, temp_dir.path().join("dest"));
         assert!(args.validate().is_ok());
     }
 
     #[test]
     fn test_validate_with_nonexistent_source() {
-        let args = Args {
-            source: PathBuf::from("/nonexistent/path"),
-            destination: PathBuf::from("/tmp/dest"),
-            copy_method: CopyMethod::Auto,
-            queue_depth: 4096,
-            cpu_count: 2,
-            buffer_size_kb: 1024,
-            max_files_in_flight: 100,
-            archive: false,
-            recursive: false,
-            links: false,
-            perms: false,
-            times: false,
-            group: false,
-            owner: false,
-            devices: false,
-            xattrs: true,
-            acls: false,
-            hard_links: false,
-            atimes: false,
-            crtimes: false,
-            preserve_xattr: false,
-            preserve_acl: false,
-            dry_run: false,
-            progress: false,
-            verbose: 0,
-            quiet: false,
-            pirate: false,
-            no_adaptive_concurrency: false,
-        };
-
+        let args = create_test_args(
+            PathBuf::from("/nonexistent/path"),
+            PathBuf::from("/tmp/dest"),
+        );
         assert!(args.validate().is_err());
+    }
+
+    #[test]
+    fn test_convenience_accessors() {
+        let args = create_test_args(PathBuf::from("/test/src"), PathBuf::from("/test/dst"));
+
+        // Test convenience methods work
+        assert_eq!(args.source(), &PathBuf::from("/test/src"));
+        assert_eq!(args.destination(), &PathBuf::from("/test/dst"));
+        assert_eq!(args.queue_depth(), 4096);
+        assert_eq!(args.max_files_in_flight(), 100);
+        assert_eq!(args.verbose(), 0);
+        assert!(!args.quiet());
     }
 }

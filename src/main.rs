@@ -14,6 +14,7 @@ mod directory;
 mod error;
 mod i18n;
 mod io_uring;
+mod metadata;
 mod progress;
 mod sync;
 
@@ -26,12 +27,12 @@ async fn main() -> Result<()> {
     let args = Args::parse();
 
     // Set language based on --pirate flag
-    if args.pirate {
+    if args.output.pirate {
         set_language(Language::Pirate);
     }
 
     // Initialize logging based on verbosity and quiet mode
-    if args.quiet {
+    if args.quiet() {
         // In quiet mode, only log errors
         let subscriber = tracing_subscriber::fmt()
             .with_max_level(Level::ERROR)
@@ -40,7 +41,7 @@ async fn main() -> Result<()> {
         tracing::subscriber::set_global_default(subscriber)?;
     } else {
         let subscriber = tracing_subscriber::fmt()
-            .with_max_level(match args.verbose {
+            .with_max_level(match args.verbose() {
                 0 => Level::WARN,
                 1 => Level::INFO,
                 2 => Level::DEBUG,
@@ -54,7 +55,7 @@ async fn main() -> Result<()> {
     }
 
     // Log startup information (unless in quiet mode)
-    if !args.quiet {
+    if !args.quiet() {
         info!(
             "{}: arsync v{}",
             TranslationKey::InfoStartingCopy
@@ -67,20 +68,20 @@ async fn main() -> Result<()> {
             TranslationKey::HelpSource
                 .get()
                 .unwrap_or_else(|_| "Source".to_string()),
-            args.source.display()
+            args.source().display()
         );
         info!(
             "{}: {}",
             TranslationKey::HelpDestination
                 .get()
                 .unwrap_or_else(|_| "Destination".to_string()),
-            args.destination.display()
+            args.destination().display()
         );
-        info!("Copy method: {:?}", args.copy_method);
-        info!("Queue depth: {}", args.queue_depth);
+        info!("Copy method: {:?}", args.copy_method());
+        info!("Queue depth: {}", args.queue_depth());
         info!("CPU count: {}", args.effective_cpu_count());
-        info!("Buffer size: {} KB", args.buffer_size_kb);
-        info!("Max files in flight: {}", args.max_files_in_flight);
+        info!("Buffer size: {} KB", args.io.buffer_size_kb);
+        info!("Max files in flight: {}", args.max_files_in_flight());
     }
 
     // Validate arguments

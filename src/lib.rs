@@ -52,6 +52,7 @@ pub mod directory;
 pub mod error;
 pub mod i18n;
 pub mod io_uring;
+pub mod metadata;
 pub mod progress;
 pub mod sync;
 

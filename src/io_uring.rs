@@ -20,7 +20,7 @@
 //!
 //! #[compio::main]
 //! async fn main() -> arsync::Result<()> {
-//!     let mut ops = FileOperations::new(4096, 64 * 1024)?;
+//!     let ops = FileOperations::new(4096, 64 * 1024)?;
 //!     let src_path = Path::new("source.txt");
 //!     let dst_path = Path::new("destination.txt");
 //!     ops.copy_file_read_write(&src_path, &dst_path).await?;
@@ -48,7 +48,7 @@ use tracing::debug;
 /// - Buffer size should be tuned based on system memory and expected file sizes
 /// - Larger buffers reduce system call overhead but increase memory usage
 /// - Default buffer size of 64KB provides good balance for most workloads
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileOperations {
     /// Buffer size for I/O operations in bytes
     #[allow(dead_code)]
@@ -116,8 +116,7 @@ impl FileOperations {
     /// - File copying operation fails (I/O errors, permission issues)
     /// - Metadata preservation fails
     #[allow(dead_code, clippy::future_not_send)]
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    pub async fn copy_file_read_write(&mut self, src: &Path, dst: &Path) -> Result<()> {
+    pub async fn copy_file_read_write(&self, src: &Path, dst: &Path) -> Result<()> {
         // Ensure destination directory exists
         if let Some(parent) = dst.parent() {
             compio::fs::create_dir_all(parent).await.map_err(|e| {
@@ -130,7 +129,7 @@ impl FileOperations {
         }
 
         // Open source and destination files
-        let mut src_file = compio::fs::File::open(src).await.map_err(|e| {
+        let src_file = compio::fs::File::open(src).await.map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to open source file {}: {}",
                 src.display(),
@@ -147,8 +146,7 @@ impl FileOperations {
         })?;
 
         // Use the descriptor-based copy operation
-        self.copy_file_descriptors(&mut src_file, &mut dst_file)
-            .await?;
+        self.copy_file_descriptors(&src_file, &mut dst_file).await?;
 
         debug!("Copied file from {} to {}", src.display(), dst.display());
         Ok(())
@@ -169,10 +167,10 @@ impl FileOperations {
     ///
     /// Returns `Ok(u64)` with the number of bytes copied, or
     /// `Err(SyncError)` if the operation failed.
-    #[allow(clippy::future_not_send, clippy::needless_pass_by_ref_mut)]
+    #[allow(clippy::future_not_send)]
     async fn copy_file_descriptors(
         &self,
-        src_file: &mut compio::fs::File,
+        src_file: &compio::fs::File,
         dst_file: &mut compio::fs::File,
     ) -> Result<u64> {
         // Create managed buffer using compio's buffer traits
@@ -395,8 +393,7 @@ impl FileOperations {
     /// - File copying operation fails (I/O errors, permission issues)
     /// - Metadata preservation fails
     #[allow(clippy::future_not_send)]
-    #[allow(clippy::needless_pass_by_ref_mut)]
-    pub async fn copy_file_with_metadata(&mut self, src: &Path, dst: &Path) -> Result<u64> {
+    pub async fn copy_file_with_metadata(&self, src: &Path, dst: &Path) -> Result<u64> {
         // Ensure destination directory exists
         if let Some(parent) = dst.parent() {
             compio::fs::create_dir_all(parent).await.map_err(|e| {
@@ -409,7 +406,7 @@ impl FileOperations {
         }
 
         // Open source and destination files
-        let mut src_file = compio::fs::File::open(src).await.map_err(|e| {
+        let src_file = compio::fs::File::open(src).await.map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to open source file {}: {}",
                 src.display(),
@@ -432,9 +429,7 @@ impl FileOperations {
             .map_err(|e| SyncError::FileSystem(format!("Failed to get source metadata: {e}")))?;
 
         // Copy file content using the descriptor-based operation
-        let offset = self
-            .copy_file_descriptors(&mut src_file, &mut dst_file)
-            .await?;
+        let offset = self.copy_file_descriptors(&src_file, &mut dst_file).await?;
 
         // Preserve metadata using file descriptors (more efficient than path-based operations)
         self.preserve_metadata_from_fd(&src_file, &dst_file, &src_metadata)
@@ -671,7 +666,7 @@ mod tests {
                 .expect("Failed to write test file");
         }
 
-        let mut ops = FileOperations::new(1024, 4096).expect("Failed to create FileOperations");
+        let ops = FileOperations::new(1024, 4096).expect("Failed to create FileOperations");
 
         // Test file copying
         ops.copy_file_read_write(&src_file, &dst_file)
