@@ -10,19 +10,19 @@ use std::sync::Arc;
 #[compio::test]
 async fn test_atomic_stats_single_thread() {
     let initial_stats = DirectoryStats::default();
-    let stats = SharedStats::new(&initial_stats);
+    let stats = Arc::new(SharedStats::new(&initial_stats));
 
-    // Increment counters
-    stats.increment_files_copied().unwrap();
-    stats.increment_files_copied().unwrap();
-    stats.increment_directories_created().unwrap();
-    stats.increment_bytes_copied(1024).unwrap();
-    stats.increment_bytes_copied(2048).unwrap();
-    stats.increment_symlinks_processed().unwrap();
-    stats.increment_errors().unwrap();
+    // Increment counters (infallible operations)
+    stats.increment_files_copied();
+    stats.increment_files_copied();
+    stats.increment_directories_created();
+    stats.increment_bytes_copied(1024);
+    stats.increment_bytes_copied(2048);
+    stats.increment_symlinks_processed();
+    stats.increment_errors();
 
     // Verify counts
-    let final_stats = stats.into_inner().unwrap();
+    let final_stats = Arc::try_unwrap(stats).unwrap().into_inner();
     assert_eq!(final_stats.files_copied, 2);
     assert_eq!(final_stats.directories_created, 1);
     assert_eq!(final_stats.bytes_copied, 3072);
@@ -42,8 +42,8 @@ async fn test_atomic_stats_concurrent() {
         let stats_clone = Arc::clone(&stats);
         let handle = compio::runtime::spawn(async move {
             for _ in 0..10 {
-                stats_clone.increment_files_copied().unwrap();
-                stats_clone.increment_bytes_copied(100).unwrap();
+                stats_clone.increment_files_copied();
+                stats_clone.increment_bytes_copied(100);
             }
         });
         handles.push(handle);
@@ -55,7 +55,7 @@ async fn test_atomic_stats_concurrent() {
     }
 
     // Verify final counts (should be 100 tasks * 10 increments = 1000)
-    let final_stats = Arc::try_unwrap(stats).unwrap().into_inner().unwrap();
+    let final_stats = Arc::try_unwrap(stats).unwrap().into_inner();
     assert_eq!(final_stats.files_copied, 1000, "Files copied mismatch");
     assert_eq!(
         final_stats.bytes_copied, 100_000,
@@ -74,11 +74,11 @@ async fn test_atomic_stats_no_lost_updates() {
     for _ in 0..1000 {
         let stats_clone = Arc::clone(&stats);
         let handle = compio::runtime::spawn(async move {
-            stats_clone.increment_files_copied().unwrap();
-            stats_clone.increment_directories_created().unwrap();
-            stats_clone.increment_bytes_copied(1).unwrap();
-            stats_clone.increment_symlinks_processed().unwrap();
-            stats_clone.increment_errors().unwrap();
+            stats_clone.increment_files_copied();
+            stats_clone.increment_directories_created();
+            stats_clone.increment_bytes_copied(1);
+            stats_clone.increment_symlinks_processed();
+            stats_clone.increment_errors();
         });
         handles.push(handle);
     }
@@ -89,7 +89,7 @@ async fn test_atomic_stats_no_lost_updates() {
     }
 
     // Verify NO updates were lost (atomic operations are guaranteed)
-    let final_stats = Arc::try_unwrap(stats).unwrap().into_inner().unwrap();
+    let final_stats = Arc::try_unwrap(stats).unwrap().into_inner();
     assert_eq!(final_stats.files_copied, 1000);
     assert_eq!(final_stats.directories_created, 1000);
     assert_eq!(final_stats.bytes_copied, 1000);
@@ -111,7 +111,7 @@ async fn test_atomic_stats_concurrent_reads() {
         let stats_clone = Arc::clone(&stats);
         let handle = compio::runtime::spawn(async move {
             for _ in 0..20 {
-                stats_clone.increment_files_copied().unwrap();
+                stats_clone.increment_files_copied();
             }
         });
         handles.push(handle);
@@ -141,21 +141,28 @@ async fn test_atomic_stats_concurrent_reads() {
     }
 
     // Final value should be 50 writers * 20 increments = 1000
-    let final_stats = Arc::try_unwrap(stats).unwrap().into_inner().unwrap();
+    let final_stats = Arc::try_unwrap(stats).unwrap().into_inner();
     assert_eq!(final_stats.files_copied, 1000);
 }
 
-/// Test zero-cost abstraction: Result<()> is optimized away
+/// Test infallible operations: increment methods don't return Result
 #[compio::test]
-async fn test_atomic_stats_never_errors() {
+async fn test_atomic_stats_infallible_operations() {
     let initial_stats = DirectoryStats::default();
-    let stats = SharedStats::new(&initial_stats);
+    let stats = Arc::new(SharedStats::new(&initial_stats));
 
-    // These should never error
-    assert!(stats.increment_files_copied().is_ok());
-    assert!(stats.increment_directories_created().is_ok());
-    assert!(stats.increment_bytes_copied(100).is_ok());
-    assert!(stats.increment_symlinks_processed().is_ok());
-    assert!(stats.increment_errors().is_ok());
-    assert!(stats.into_inner().is_ok());
+    // All increment operations are infallible (no Result to check)
+    stats.increment_files_copied();
+    stats.increment_directories_created();
+    stats.increment_bytes_copied(100);
+    stats.increment_symlinks_processed();
+    stats.increment_errors();
+
+    // Verify the operations succeeded
+    let final_stats = Arc::try_unwrap(stats).unwrap().into_inner();
+    assert_eq!(final_stats.files_copied, 1);
+    assert_eq!(final_stats.directories_created, 1);
+    assert_eq!(final_stats.bytes_copied, 100);
+    assert_eq!(final_stats.symlinks_processed, 1);
+    assert_eq!(final_stats.errors, 1);
 }
