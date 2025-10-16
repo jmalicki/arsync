@@ -15,8 +15,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  RUSTC_WRAPPER: sccache
-  SCCACHE_GHA: true
+  # RUSTC_WRAPPER: sccache  # Temporarily disabled
+  # SCCACHE_GHA: true
 
 permissions:
   contents: read

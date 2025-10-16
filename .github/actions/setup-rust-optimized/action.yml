@@ -23,11 +23,11 @@ runs:
         toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
     
-    # Setup sccache for faster compilation
-    - name: Setup sccache
-      uses: mozilla-actions/sccache-action@v0.0.4
-      with:
-        version: '0.11.0'
+    # Note: sccache temporarily disabled due to version issues
+    # - name: Setup sccache
+    #   uses: mozilla-actions/sccache-action@v0.0.4
+    #   with:
+    #     version: 'v0.11.0'
     
     # Enhanced caching strategy
     - name: Cache Rust dependencies and build artifacts
