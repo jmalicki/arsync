@@ -146,27 +146,40 @@ Before committing or opening a PR:
 
 ### Design and implement a new feature:
 ```bash
-# 1. Create design document from conversation
+# 1. Create branch for design work
+/branch "new-feature/design" main origin true
+
+# 2. Create design document from conversation
 /design "new-feature"
 # Creates: docs/projects/new-feature/design.md
 
-# 2. Create implementation plan (auto-finds design in project folder)
+# 3. Commit design
+/commit "docs(new-feature): add design document"
+
+# 4. Create implementation plan (auto-finds design in project folder)
 /plan
 # Creates: docs/projects/new-feature/plan.md
 
-# 3. Create feature branch
+# 5. Commit plan  
+/commit "docs(new-feature): add implementation plan"
+
+# 6. Create PR for design review
+/pr-ready "docs: new feature design and plan"
+# Get feedback on design before implementing
+
+# 7. After design approved, create implementation branch
 /branch "sync/feat-new-feature" main origin true
 
-# 4. Execute the plan step-by-step
+# 8. Execute the plan step-by-step
 /implement @docs/projects/new-feature/plan.md
 # Works through checkboxes, runs quality checks
 # Add notes if issues arise, commits at checkpoints
 
-# 5. Continue implementing (run multiple times)
+# 9. Continue implementing (run multiple times)
 /implement
 # Resumes from last checkpoint, continues
 
-# 6. When complete, create PR
+# 10. When complete, update PR
 /commit "feat(sync): add new feature"
 /pr-ready "feat(sync): add new feature"
 /pr-checks

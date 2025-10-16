@@ -2,11 +2,17 @@
 
 Create a comprehensive design document based on current conversation and context.
 
+**Important**: For new projects, create a branch first with `/branch` before running `/design`.
+
 - feature_name (string, optional): Override the inferred feature name for the design doc filename
 
 ```bash
+# Recommended workflow for new projects:
+/branch "project/design-project-name" main origin true
+/design "project-name"            # Creates design in new branch
+
+# Or if just updating existing design:
 /design                           # Infer everything from context
-/design "sparse-file-support"     # Override feature name
 ```
 
 ## Context Inference
@@ -354,44 +360,70 @@ When invoked, the agent should:
    - Display path to user
 
 6. **Suggest next steps**
+   - **For new projects**: Remind to create branch first if not already done
    - Mention creating implementation plan: `/plan` (auto-finds design in project folder)
+   - Suggest committing the design: `/commit "docs(project): add design"`
    - Note any open questions needing discussion
    - Suggest code review if relevant
    - Recommend who to discuss with if complex
 
 ## Integration with /plan
 
-After creating a design doc:
+Complete workflow with branching:
 
 ```bash
-# Create the design
+# 1. Create branch for new project
+/branch "project/design-sparse-files" main origin true
+
+# 2. Create the design
 /design "sparse-file-support"
 # Output: docs/projects/sparse-file-support/design.md
 
-# Create implementation plan (auto-finds design in project folder)
+# 3. Commit the design
+/commit "docs(sparse-files): add design document"
+
+# 4. Create implementation plan (auto-finds design in project folder)
 /plan
 # Output: docs/projects/sparse-file-support/plan.md
-# Or explicitly: /plan @docs/projects/sparse-file-support/design.md
+
+# 5. Commit the plan
+/commit "docs(sparse-files): add implementation plan"
+
+# 6. Create PR for review
+/pr-ready "docs: sparse file support design and plan"
 ```
 
 ## Example Usage Scenarios
 
-### Scenario 1: From conversation (auto-infer everything)
+### Scenario 1: New project from conversation
 ```bash
 # User: "I want to add support for sparse files to optimize disk usage"
 # [Discussion about approach, trade-offs, etc.]
+
+# Create branch first for new project
+/branch "sparse-files/design" main origin true
+
 # Agent has enough context to extract problem and solution
 /design
 # Infers: Project name "sparse-file-support"
 # Creates: docs/projects/sparse-file-support/design.md
+
+# Commit the design
+/commit "docs(sparse-files): add design document"
 ```
 
-### Scenario 2: From conversation with explicit name
+### Scenario 2: New project with explicit name
 ```bash
 # User: "We should refactor the buffer management to be adaptive"
 # [Discussion about current issues and proposed solution]
+
+# Create branch for new project
+/branch "buffer/design-adaptive" main origin true
+
 /design "adaptive-buffer-management"
 # Creates: docs/projects/adaptive-buffer-management/design.md
+
+/commit "docs(buffer): add adaptive buffer management design"
 ```
 
 ### Scenario 3: Bug fix discussion

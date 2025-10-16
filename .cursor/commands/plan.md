@@ -2,15 +2,24 @@
 
 Create a comprehensive, phase-based implementation plan based on current context or a given design document.
 
+**Important**: Should be run in a feature branch. If design.md exists but no plan yet, you're likely on a design branch - this creates the plan in the same branch.
+
 - design_doc (string, optional): Path to design document (.md file) to inform the plan
-  - Can use file path: `"docs/design.md"`
-  - Can use @-mention: `@docs/design.md`
+  - Can use file path: `"docs/projects/project/design.md"`
+  - Can use @-mention: `@docs/projects/project/design.md`
   - Cursor expands @-mentions automatically
 
 ```bash
-/plan
-/plan "docs/designs/adaptive-buffers.md"
-/plan @docs/designs/sparse-files.md
+# If design.md exists in branch:
+/plan                                      # Auto-finds design.md
+
+# If specifying design doc:
+/plan @docs/projects/project/design.md
+
+# Complete workflow:
+/branch "project/design-name" main origin true  # Create branch
+/design "project-name"                          # Create design
+/plan                                           # Create plan (auto-finds design)
 ```
 
 ## Context Inference
@@ -275,29 +284,44 @@ The plan can be:
 
 ## Example Usage Scenarios
 
-### Scenario 1: Context from conversation
+### Scenario 1: Create plan after design (recommended)
 ```bash
-# User has been discussing adaptive buffer sizing
-# Agent infers feature from conversation
+# Already created design.md in a branch
+# On branch: project/design-adaptive-buffers
+# File exists: docs/projects/adaptive-buffers/design.md
+
 /plan
+# Auto-finds: docs/projects/adaptive-buffers/design.md
+# Creates: docs/projects/adaptive-buffers/plan.md
+
+/commit "docs(adaptive-buffers): add implementation plan"
 ```
 
-### Scenario 2: With design document (file path)
+### Scenario 2: Complete new project workflow
 ```bash
-# User has a design doc: docs/designs/sparse-file-support.md
-/plan @docs/projects/sparse-file-support/design.md
-# Creates: docs/projects/sparse-file-support/plan.md
-# Links to: design.md (same folder)
-```
+# Start from scratch with new project
 
-### Scenario 2b: With design document (@-mention)
-```bash
-# Using Cursor's @-mention syntax (recommended)
+# 1. Create branch
+/branch "sparse-files/design" main origin true
+
+# 2. Create design
+/design "sparse-file-support"
+# Creates: docs/projects/sparse-file-support/design.md
+
+# 3. Commit design
+/commit "docs(sparse-files): add design document"
+
+# 4. Create plan (auto-finds design in project folder)
 /plan
-# Auto-discovers sparse-file-support project from context
 # Finds: docs/projects/sparse-file-support/design.md
 # Creates: docs/projects/sparse-file-support/plan.md
 # Links to: design.md
+
+# 5. Commit plan
+/commit "docs(sparse-files): add implementation plan"
+
+# 6. Create PR for design review
+/pr-ready "docs: sparse file support design and plan"
 ```
 
 ### Scenario 3: Open files provide context

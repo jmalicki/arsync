@@ -117,7 +117,11 @@ The Cursor workflow provides an AI-assisted development cycle:
 ### Complete Feature Development Cycle
 
 ```bash
-# 1. DISCUSS & DESIGN
+# 1. CREATE BRANCH FOR DESIGN WORK
+/branch "sparse-files/design" main origin true
+# Create separate branch for design/planning phase
+
+# 2. DISCUSS & DESIGN
 # Have a conversation about the feature/problem
 # "I want to add support for sparse files to optimize disk usage"
 # [Discuss approach, trade-offs, constraints...]
@@ -126,17 +130,26 @@ The Cursor workflow provides an AI-assisted development cycle:
 # Creates: docs/projects/sparse-file-support/design.md
 # Extracts: problem, solution, alternatives, complexity from conversation
 
-# 2. CREATE IMPLEMENTATION PLAN
+/commit "docs(sparse-files): add design document"
+
+# 3. CREATE IMPLEMENTATION PLAN
 /plan
 # Auto-finds: docs/projects/sparse-file-support/design.md
 # Creates: docs/projects/sparse-file-support/plan.md
 # Generates: phases with checkboxes, quality checks, test requirements
 
-# 3. CREATE FEATURE BRANCH
-/branch "copy/feat-sparse-files" main origin true
-# Creates branch from remote main, sets upstream, pushes
+/commit "docs(sparse-files): add implementation plan"
 
-# 4. IMPLEMENT STEP-BY-STEP
+# 4. GET DESIGN REVIEWED
+/pr-ready "docs: sparse file support design and plan"
+# Review design before implementing
+# Merge design to main after approval
+
+# 5. CREATE IMPLEMENTATION BRANCH
+/branch "copy/feat-sparse-files" main origin true
+# Fresh branch from main (now has approved design)
+
+# 6. IMPLEMENT STEP-BY-STEP
 /implement
 # Auto-finds: docs/projects/sparse-file-support/plan.md
 # Reads checkboxes, finds next unchecked item
@@ -144,17 +157,17 @@ The Cursor workflow provides an AI-assisted development cycle:
 # Updates checkbox, adds notes if issues occur
 # Commits at logical checkpoints
 
-# 5. CONTINUE IMPLEMENTING
+# 7. CONTINUE IMPLEMENTING
 /implement
 # Resumes from last checkpoint
 # Works through remaining items
 # Integrates /fmt, /clippy, /test, /smoke automatically
 
-# 6. CREATE PULL REQUEST
+# 8. CREATE IMPLEMENTATION PR
 /review                      # Review all changes
 /commit "feat(copy): add sparse file support"
 /pr-ready "feat(copy): add sparse file support"
-/pr-checks                   # Monitor CI
+/pr-checks                   # Monitor CI, auto-fix failures
 ```
 
 ### Available Slash Commands
@@ -249,13 +262,19 @@ Example progress tracking:
 
 #### New Feature
 ```bash
-# Discuss idea in conversation
-/design                        # Document design
-/plan                          # Create plan
-/branch "area/feat-name"       # Create branch
-/implement                     # Start implementing
-/implement                     # Continue (run multiple times)
-/pr-ready "feat(area): name"   # Create PR
+# Design phase
+/branch "feature/design" main origin true  # Branch for design
+/design "feature-name"                     # Document design
+/commit "docs(feature): add design"
+/plan                                      # Create plan
+/commit "docs(feature): add plan"
+/pr-ready "docs: feature design"           # Get design reviewed
+
+# Implementation phase (after design approved)
+/branch "area/feat-name" main origin true  # Branch for work
+/implement                                 # Start implementing
+/implement                                 # Continue
+/pr-ready "feat(area): name"              # Create PR
 ```
 
 #### Bug Fix
