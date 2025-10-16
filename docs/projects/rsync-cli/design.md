@@ -704,12 +704,12 @@ async fn test_remote_sync_via_localhost() {
 
 ### Integration Tests
 
-**File**: `tests/remote_sync_integration_test.rs` (new)
-- [ ] Test push to localhost via SSH
-- [ ] Test pull from localhost via SSH
+**File**: `tests/docker_remote_sync_test.rs` (new) - Docker-based only
+- [ ] Test push to Docker container via SSH
+- [ ] Test pull from Docker container via SSH
 - [ ] Test metadata preservation across SSH
 - [ ] Test error conditions (connection failures, etc.)
-- [ ] Test with actual SSH (requires SSH server running)
+- [ ] Test with actual SSH (via Docker container - no local SSH server needed)
 
 **File**: `tests/rsync_cli_compat_test.rs` (new)
 - [ ] Test CLI parsing of remote paths
@@ -854,26 +854,15 @@ async fn test_push_via_docker_ssh() -> anyhow::Result<()> {
 - ⚠️ May be slow in CI (can use Docker layer caching)
 - ⚠️ Need to build arsync binary first
 
-**Alternative: No Docker** (Simpler but less isolated):
-```rust
-// Just test with localhost SSH (requires SSH server running locally)
-#[compio::test]
-#[ignore] // Only run when SSH is available
-async fn test_push_to_localhost() {
-    if !ssh_available() {
-        println!("Skipping: SSH not available");
-        return;
-    }
-    
-    // Test with localhost SSH
-    // Requires user has SSH keys configured for localhost
-}
-```
+**Decision**: Docker-only for integration tests (no localhost SSH dependency)
 
-**Recommendation**: 
-- Start with **localhost SSH tests** (simpler, no Docker dep)
-- Add **Docker tests** later for CI/CD isolation
-- Mark Docker tests as optional or feature-gated
+**Rationale**:
+- ✅ No local SSH server required
+- ✅ No SSH key configuration needed
+- ✅ Works identically for all developers
+- ✅ Works identically in CI
+- ✅ Fully automated and reproducible
+- ✅ Tests skip gracefully if Docker not available (with clear message)
 
 ### Manual Testing
 
