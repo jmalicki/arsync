@@ -164,8 +164,8 @@ pub async fn remote_sync(args, source, destination) -> Result<SyncStats> {
    - Need Transport impl or wrapper
 
 4. **Feature Flag Strategy**
-   - Keep `remote-sync` as opt-in feature (not enabled by default)
-   - Users compile with `--features remote-sync` when needed
+   - Enable `remote-sync` by default (opt-out pattern)
+   - Users can disable with `--no-default-features` for minimal builds
    - CI tests both configurations (with and without feature)
 
 5. **Error Handling**
@@ -428,47 +428,58 @@ pub async fn server_mode(args: &Args) -> Result<SyncStats> {
 
 ### Component 4: Feature Flag Strategy
 
-**Decision**: Keep `remote-sync` as an **opt-in** feature flag
+**Decision**: Enable `remote-sync` by **default** (opt-out pattern)
 
 ```toml
 # Cargo.toml
 [features]
-# remote-sync is NOT in default features
-default = []
+default = ["remote-sync"]  # Enabled by default
 remote-sync = []
 ```
 
 **Rationale**:
-- **Binary size**: Protocol code adds ~50KB+ (worthwhile for those who need it)
-- **Dependency tree**: Keeps default build minimal
-- **Use case split**: Many users only need local io_uring copies
-- **Clear opt-in**: Users explicitly compile for remote sync when needed
+- **User expectations**: CLI accepts `user@host:/path`, so it should work
+- **rsync compatibility**: rsync has remote sync by default
+- **Minimal cost**: ~50-100KB is negligible for the functionality
+- **Better UX**: Most users will want remote sync eventually
+- **Matches syntax**: If we parse remote paths, we should support them
 
 **User Experience**:
 ```bash
-# Default build (local-only, smallest binary)
+# Default build (includes remote sync)
 cargo build --release
 
-# With remote sync support
-cargo build --release --features remote-sync
+# Minimal build (local-only, opt-out)
+cargo build --release --no-default-features
 
-# Install with remote sync
-cargo install --path . --features remote-sync
+# Install default (with remote sync)
+cargo install --path .
+
+# Install minimal
+cargo install --path . --no-default-features
 ```
 
 **Error Handling**:
-When user tries remote path without feature:
+When user tries remote path in minimal build:
 ```
 Error: Remote sync not supported in this build
-Hint: Compile with --features remote-sync to enable remote sync
-      cargo build --release --features remote-sync
+Hint: This binary was compiled without remote sync support.
+      Recompile with default features or add --features remote-sync
+      cargo build --release
 ```
 
 **CI Strategy**:
 - Test both configurations:
-  - Default build (no remote-sync)
-  - Full build (with remote-sync)
+  - Default build (with remote-sync) ← Primary test path
+  - Minimal build (--no-default-features) ← Verify local-only works
 - Ensures both paths remain working
+
+**For Library Users**:
+Projects depending on arsync can opt-out in their Cargo.toml:
+```toml
+[dependencies]
+arsync = { version = "0.4", default-features = false }
+```
 
 ---
 
@@ -622,24 +633,25 @@ async fn test_remote_sync_via_localhost() {
 
 ### Phase 4: Feature Flag & Build Configuration
 
-**Goal**: Maintain remote-sync as opt-in feature, ensure both builds work
+**Goal**: Enable remote-sync by default, support minimal builds via opt-out
 
 **Tasks**:
-1. Keep `Cargo.toml` with `remote-sync` as opt-in (NOT in default features)
+1. Update `Cargo.toml` to include `remote-sync` in default features
 2. Update CI to test both configurations:
-   - Default build (without remote-sync)
-   - Full build (with remote-sync)
-3. Add clear error messages when remote path used without feature
-4. Document compilation with remote-sync in README
+   - Default build (with remote-sync) ← Primary
+   - Minimal build (--no-default-features, local-only)
+3. Add clear error messages when remote path used in minimal build
+4. Document how to build minimal version in README
 5. Measure binary size difference
 
 **Acceptance Criteria**:
-- [ ] Default `cargo build` works (local-only)
-- [ ] `cargo build --features remote-sync` includes remote sync
+- [ ] Default `cargo build` includes remote sync
+- [ ] `cargo build --no-default-features` produces minimal local-only binary
 - [ ] Both configurations tested in CI
-- [ ] Clear error when remote path used without feature compiled
+- [ ] Clear error when remote path used in minimal build
 - [ ] Binary size difference documented (~50-100KB)
-- [ ] README explains how to enable remote sync
+- [ ] README explains both build modes
+- [ ] Default behavior matches user expectations (remote paths work)
 
 ### Phase 5: Error Handling & Polish
 
@@ -738,9 +750,9 @@ async fn test_remote_sync_via_localhost() {
 - Debug any issues found
 
 ### Phase 4: Build Configuration & CI (1 day)
-- Keep remote-sync as opt-in feature
-- Update CI to test both configurations
-- Document compilation requirements
+- Enable remote-sync by default in Cargo.toml
+- Update CI to test both configurations (default + minimal)
+- Document opt-out for minimal builds
 
 ### Phase 5: Error Handling (1-2 days)
 - Add comprehensive error handling

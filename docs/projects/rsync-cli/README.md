@@ -98,12 +98,14 @@ From [`docs/projects/rsync-wire/`](../rsync-wire/):
 
 ### 4. Feature Flag Strategy
 
-**Decision**: Enable `remote-sync` feature by default
+**Decision**: Enable `remote-sync` by default (opt-out pattern)
 
 **Rationale**:
-- Remote sync is a core feature, not optional
-- Binary size impact minimal (~50KB)
-- Users expect remote paths to work
+- Users expect `arsync user@host:/path` to work (we parse the syntax)
+- rsync compatibility: rsync has remote sync by default
+- Binary size impact minimal (~50-100KB)
+- Better UX: "Just works" instead of compilation surprises
+- Advanced users can opt-out with `--no-default-features` for minimal builds
 
 ---
 
