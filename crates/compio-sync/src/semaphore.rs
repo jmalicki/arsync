@@ -26,12 +26,11 @@
 //! # }
 //! ```
 
-use std::collections::VecDeque;
+use crate::waiter_queue::WaiterQueue;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Mutex;
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll};
 
 /// A compio-compatible async semaphore for bounding concurrency
 ///
@@ -89,9 +88,9 @@ struct SemaphoreInner {
     permits: AtomicUsize,
     /// Maximum permits (for metrics and debugging)
     max_permits: usize,
-    /// Queue of tasks waiting for permits
-    /// TODO: Consider intrusive linked list for zero-allocation waiting
-    waiters: Mutex<VecDeque<Waker>>,
+    /// Waiter queue abstraction (handles mutex + wait/wake pattern)
+    /// See `waiter_queue.rs` for why mutex is safe in async code
+    waiters: WaiterQueue,
 }
 
 impl Semaphore {
@@ -120,7 +119,7 @@ impl Semaphore {
             inner: SemaphoreInner {
                 permits: AtomicUsize::new(permits),
                 max_permits: permits,
-                waiters: Mutex::new(VecDeque::new()),
+                waiters: WaiterQueue::new(),
             },
         }
     }
@@ -314,14 +313,9 @@ impl Semaphore {
         self.inner.permits.fetch_add(count, Ordering::Release);
 
         // Wake up waiters (up to count)
-        if let Ok(mut waiters) = self.inner.waiters.lock() {
-            for _ in 0..count {
-                if let Some(waker) = waiters.pop_front() {
-                    waker.wake();
-                } else {
-                    break;
-                }
-            }
+        // Note: This could be optimized with a wake_n() method on WaiterQueue
+        for _ in 0..count {
+            self.inner.waiters.wake_one();
         }
     }
 
@@ -330,19 +324,8 @@ impl Semaphore {
         // Increment available permits
         self.inner.permits.fetch_add(1, Ordering::Release);
 
-        // Wake one waiter if any exist
-        if let Ok(mut waiters) = self.inner.waiters.lock() {
-            if let Some(waker) = waiters.pop_front() {
-                waker.wake();
-            }
-        }
-    }
-
-    /// Add a waiter to the queue (called by `AcquireFuture`)
-    fn add_waiter(&self, waker: Waker) {
-        if let Ok(mut waiters) = self.inner.waiters.lock() {
-            waiters.push_back(waker);
-        }
+        // Wake one waiter (WaiterQueue handles lock-then-wake pattern)
+        self.inner.waiters.wake_one();
     }
 }
 
@@ -395,28 +378,35 @@ impl<'a> Future for AcquireFuture<'a> {
     type Output = SemaphorePermit<'a>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // RACE-FREE PATTERN: Try-register-retry to prevent lost wakeup
+        // RACE-FREE PATTERN: Try-register-retry using WaiterQueue
         //
-        // Unlike Condvar, Semaphore uses atomic permits count, so the race is different:
-        // 1. Thread A: try_acquire() → None (permits=0)
-        // 2. **RACE WINDOW** - Thread B releases permit, wakes waiters
-        // 3. Thread A: add_waiter() → Missed the wakeup! ❌
+        // Unlike Condvar, we can't use atomic check-and-add because:
+        // - Permits are atomic (separate from waiter queue)
+        // - We want lock-free fast path for try_acquire()
         //
-        // Solution: Try again AFTER registering waker
-        // Note: add_waiter() locks the queue, but permits are atomic (separate from queue)
+        // Solution: Try, then add to queue, then try again
+        // The second try catches permits released during queue registration
+        //
+        // Why this is safe for async code:
+        // - WaiterQueue mutex held for nanoseconds (just memory ops, no I/O)
+        // - No `.await` inside critical section
+        // - See `waiter_queue.rs` for detailed safety explanation
 
         // First try (fast path, lock-free atomic)
         if let Some(permit) = self.semaphore.try_acquire() {
             return Poll::Ready(permit);
         }
 
-        // No permits available - register waker for notification
-        // This locks the waiter queue but doesn't check permits atomically
-        self.semaphore.add_waiter(cx.waker().clone());
+        // No permits - add ourselves to waiter queue (unconditionally)
+        // We can't use add_waiter_if here because permits are checked separately
+        let _added = self
+            .semaphore
+            .inner
+            .waiters
+            .add_waiter_if(|| false, cx.waker().clone());
 
         // CRITICAL: Try again after registering
-        // If a permit was released while we were adding ourselves to waiters,
-        // we catch it here instead of sleeping forever
+        // Catches permits released during registration
         if let Some(permit) = self.semaphore.try_acquire() {
             return Poll::Ready(permit);
         }

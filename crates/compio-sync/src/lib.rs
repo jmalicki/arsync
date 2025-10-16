@@ -31,6 +31,7 @@
 
 mod condvar;
 mod semaphore;
+mod waiter_queue;
 
 pub use condvar::Condvar;
 pub use semaphore::{Semaphore, SemaphorePermit};

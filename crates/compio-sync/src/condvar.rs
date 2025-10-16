@@ -28,12 +28,11 @@
 //! }
 //! ```
 
-use std::collections::VecDeque;
+use crate::waiter_queue::WaiterQueue;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
-use std::task::{Context, Poll, Waker};
+use std::task::{Context, Poll};
 
 /// A compio-compatible async condition variable for task notification
 ///
@@ -88,31 +87,29 @@ pub struct Condvar {
     inner: CondvarInner,
 }
 
-/// Internal state protected by mutex
+/// Internal state using shared waiter queue abstraction
 ///
 /// CRITICAL RACE PREVENTION:
-/// The `notified` flag MUST be checked while holding the `waiters` mutex
+/// The `notified` flag MUST be checked while holding the queue's internal mutex
 /// to prevent this race:
 ///
-/// WITHOUT mutex protection:
+/// WITHOUT atomic check-and-add:
 /// 1. Waiter: check notified → false (no lock)
 /// 2. Notifier: set notified → true
 /// 3. Notifier: drain waiters
 /// 4. Waiter: add to waiters → LOST WAKEUP!
 ///
-/// WITH mutex protection:
+/// WITH atomic check-and-add (WaiterQueue):
 /// 1. Waiter: lock, check notified → false, add to waiters, unlock
 /// 2. Notifier: lock, set notified → true, drain waiters, unlock
 ///
-/// The mutex ensures these operations are atomic.
+/// The WaiterQueue encapsulates this pattern for reuse across sync primitives.
 struct CondvarInner {
     /// Notification flag (true = notified, wake immediately)
-    /// This is atomic for lock-free fast path, but MUST also be checked under mutex
     notified: AtomicBool,
 
-    /// Queue of waiting tasks
-    /// Protected by mutex to ensure waiters can't be added during drain
-    waiters: Mutex<VecDeque<Waker>>,
+    /// Waiter queue abstraction (handles mutex + check-and-add pattern)
+    waiters: WaiterQueue,
 }
 
 impl Condvar {
@@ -134,7 +131,7 @@ impl Condvar {
         Self {
             inner: CondvarInner {
                 notified: AtomicBool::new(false),
-                waiters: Mutex::new(VecDeque::new()),
+                waiters: WaiterQueue::new(),
             },
         }
     }
@@ -174,24 +171,11 @@ impl Condvar {
     /// # }
     /// ```
     pub fn notify_one(&self) {
-        // CRITICAL ORDERING: Must hold mutex while setting notified AND draining
-        // to prevent race with waiters checking notified
-        if let Ok(mut waiters) = self.inner.waiters.lock() {
-            // Set notified flag INSIDE mutex critical section
-            // This ensures waiters can't check-then-add between our set and drain
-            self.inner.notified.store(true, Ordering::Release);
+        // Set notified flag (uses Release ordering for memory synchronization)
+        self.inner.notified.store(true, Ordering::Release);
 
-            // Remove waiter from queue while holding lock
-            let waker = waiters.pop_front();
-
-            // Release lock before waking to avoid holding lock during callback
-            drop(waiters);
-
-            // Wake the task (lock is released, safe to call arbitrary code)
-            if let Some(waker) = waker {
-                waker.wake();
-            }
-        }
+        // Wake one waiter (WaiterQueue handles lock-then-wake pattern)
+        self.inner.waiters.wake_one();
     }
 
     /// Notify all waiting tasks
@@ -210,23 +194,11 @@ impl Condvar {
     /// # }
     /// ```
     pub fn notify_all(&self) {
-        // CRITICAL ORDERING: Must hold mutex while setting notified AND draining
-        if let Ok(mut waiters) = self.inner.waiters.lock() {
-            // Set notified flag INSIDE mutex critical section
-            self.inner.notified.store(true, Ordering::Release);
+        // Set notified flag (uses Release ordering for memory synchronization)
+        self.inner.notified.store(true, Ordering::Release);
 
-            // Swap with empty VecDeque (zero-copy, faster than drain+collect)
-            // This is O(1) - just swaps internal pointers, no allocation
-            let wakers = std::mem::take(&mut *waiters);
-
-            // Release lock before waking to avoid holding lock during callbacks
-            drop(waiters);
-
-            // Wake all tasks (lock is released, safe to call arbitrary code)
-            for waker in wakers {
-                waker.wake();
-            }
-        }
+        // Wake all waiters (WaiterQueue handles lock-then-wake pattern)
+        self.inner.waiters.wake_all();
     }
 
     /// Clear the notification flag
@@ -268,40 +240,30 @@ impl<'a> Future for WaitFuture<'a> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // RACE-FREE PATTERN: Check notified ONLY under mutex lock
+        // RACE-FREE PATTERN: Atomic check-and-add using WaiterQueue
         //
-        // Why fast-path check is UNSAFE:
-        // 1. Thread A (waiter): load notified → false (NO LOCK)
-        // 2. Thread B (notifier): lock, store notified → true, drain, unlock
-        // 3. Thread A: lock, (thinks notified=false due to stale cache), push, unlock → LOST WAKEUP!
+        // WaiterQueue.add_waiter_if() provides the critical atomicity:
+        // - Checks notified flag INSIDE mutex critical section
+        // - Adds waker to queue ONLY if condition is false
+        // - No TOCTOU race window between check and add
         //
-        // The problem is CPU memory ordering:
-        // - Notifier's Release store might not be visible to waiter's Acquire load
-        // - Even with proper ordering, there's a TOCTOU race between check and push
+        // Why this is safe for async code:
+        // - Mutex held for nanoseconds (just memory operations, no I/O, no syscalls)
+        // - No `.await` inside critical section (never yields while holding lock)
+        // - Futex-based on modern OS (~2-3 cycles when uncontended)
         //
-        // Solution: Check notified INSIDE the mutex critical section
-        // This ensures atomic check-and-push operation
+        // See `waiter_queue.rs` for detailed explanation of why mutex is appropriate here.
 
-        if let Ok(mut waiters) = self.condvar.inner.waiters.lock() {
-            // CRITICAL: Check notified WHILE HOLDING LOCK
-            // This prevents notifier from setting notified and draining
-            // between our check and our push to the queue
-            if self.condvar.inner.notified.load(Ordering::Acquire) {
-                // Already notified - return immediately without adding to queue
-                return Poll::Ready(());
-            }
+        let is_ready = self.condvar.inner.waiters.add_waiter_if(
+            || self.condvar.inner.notified.load(Ordering::Acquire),
+            cx.waker().clone(),
+        );
 
-            // Safe to add to waiters:
-            // - We hold the lock (notifier can't drain while we add)
-            // - notified is false (checked atomically inside critical section)
-            // - No TOCTOU race possible
-            waiters.push_back(cx.waker().clone());
-            // Lock released here when waiters drops
+        if is_ready {
+            Poll::Ready(())
+        } else {
+            Poll::Pending
         }
-
-        // Not notified, wait for wakeup
-        // Waker will be called by notify_one() or notify_all()
-        Poll::Pending
     }
 }
 
