@@ -6,75 +6,75 @@ This directory contains custom slash commands for Cursor AI to streamline common
 
 ### Git & GitHub Workflow
 
-- **`/branch`** - Create a new branch from remote without checking out base locally
+- **[`/branch`](branch.md)** - Create a new branch from remote without checking out base locally
   - Example: `/branch "sync/feat-adaptive-io" main origin true`
   
-- **`/commit`** - Create a Conventional Commit with pre-commit checks
+- **[`/commit`](commit.md)** - Create a Conventional Commit with pre-commit checks
   - Example: `/commit "feat(sync): add adaptive concurrency control"`
   
-- **`/pr`** - Create or update a GitHub Pull Request with structured template
+- **[`/pr`](pr.md)** - Create or update a GitHub Pull Request with structured template
   - Example: `/pr "feat(sync): adaptive concurrency" "Description..." main false`
   
-- **`/pr-ready`** - Push branch and ensure PR exists, show CI status
+- **[`/pr-ready`](pr-ready.md)** - Push branch and ensure PR exists, show CI status
   - Example: `/pr-ready "feat(sync): adaptive concurrency"`
   
-- **`/pr-checks`** - Watch PR CI checks with live updates
+- **[`/pr-checks`](pr-checks.md)** - Watch PR CI checks with live updates
   - Example: `/pr-checks`
   
-- **`/ci-latest`** - Show latest GitHub Actions runs for current branch
+- **[`/ci-latest`](ci-latest.md)** - Show latest GitHub Actions runs for current branch
   - Example: `/ci-latest`
   
-- **`/review`** - Summarize diff and highlight risks, test gaps, CI considerations
+- **[`/review`](review.md)** - Summarize diff and highlight risks, test gaps, CI considerations
   - Example: `/review`
 
 ### Planning & Design
 
-- **`/design`** - Create comprehensive design document from context or conversation
+- **[`/design`](design.md)** - Create comprehensive design document from context or conversation
   - Example: `/design` (auto-infer) or `/design "feature-name"`
 
-- **`/plan`** - Create detailed phase-based implementation plan from context
+- **[`/plan`](plan.md)** - Create detailed phase-based implementation plan from context
   - Example: `/plan` or `/plan @docs/projects/feature/design.md`
 
-- **`/implement`** - Execute implementation plan step-by-step, tracking progress
+- **[`/implement`](implement.md)** - Execute implementation plan step-by-step, tracking progress
   - Example: `/implement` or `/implement @docs/projects/feature/plan.md`
 
-- **`/debug`** - Systematic debugging with disciplined iterative approach
+- **[`/debug`](debug.md)** - Systematic debugging with disciplined iterative approach
   - Example: `/debug` or `/debug @src/module.rs "issue description"`
 
 ### Build & Test
 
-- **`/build`** - Build project with specified profile and features
+- **[`/build`](build.md)** - Build project with specified profile and features
   - Example: `/build "release" "all" false`
   
-- **`/test`** - Run tests with common patterns
+- **[`/test`](test.md)** - Run tests with common patterns
   - Example: `/test "all"` or `/test "copy"` or `/test "all" "compio-fs-extended"`
   
-- **`/bench`** - Run benchmark suites
+- **[`/bench`](bench.md)** - Run benchmark suites
   - Example: `/bench true false` (quick) or `/bench false true` (full)
 
-- **`/smoke`** - Run quick smoke tests for basic functionality
+- **[`/smoke`](smoke.md)** - Run quick smoke tests for basic functionality
   - Example: `/smoke`
 
 ### Code Quality
 
-- **`/fmt`** - Format code with rustfmt
+- **[`/fmt`](fmt.md)** - Format code with rustfmt
   - Example: `/fmt false true` (format) or `/fmt true true` (check only)
   
-- **`/clippy`** - Run Clippy linter
+- **[`/clippy`](clippy.md)** - Run Clippy linter
   - Example: `/clippy false false` (check) or `/clippy true false` (auto-fix)
   
-- **`/clean`** - Clean build artifacts and test data
+- **[`/clean`](clean.md)** - Clean build artifacts and test data
   - Example: `/clean false true` (target only) or `/clean true false` (full)
   
-- **`/docs`** - Build and open documentation
+- **[`/docs`](docs.md)** - Build and open documentation
   - Example: `/docs true false` (public) or `/docs true true` (include private)
 
 ### CI/CD
 
-- **`/workflow-audit`** - Audit GitHub Actions workflows for best practices
+- **[`/workflow-audit`](workflow-audit.md)** - Audit GitHub Actions workflows for best practices
   - Example: `/workflow-audit`
 
-- **`/release-check`** - Pre-release checklist and verification
+- **[`/release-check`](release-check.md)** - Pre-release checklist and verification
   - Example: `/release-check`
 
 ## Command Conventions
