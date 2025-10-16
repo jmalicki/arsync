@@ -67,6 +67,8 @@ Generate a comprehensive design document with the following sections:
 **Author**: [Inferred from conversation or git user]
 **Created**: [Date]
 **Last Updated**: [Date]
+**Branch**: [Current git branch when created]
+**Implementation Branch**: [Suggested branch for implementation, e.g., area/feat-name]
 
 ## Overview
 
@@ -327,6 +329,7 @@ When invoked, the agent should:
    - **Open files**: What modules are relevant?
    - **Git diff**: Any work in progress?
    - **Cursor position**: Specific code being looked at?
+   - **Current branch**: Get current git branch name
    - Extract key concepts, constraints, trade-offs
 
 2. **Determine feature name**
@@ -352,6 +355,8 @@ When invoked, the agent should:
    - Include code examples if discussed
    - Auto-determine complexity
    - Mark status as "Draft"
+   - Record current branch name
+   - Suggest implementation branch name
 
 5. **Save to file**
    - Path: `docs/projects/PROJECT_NAME/design.md`
@@ -360,12 +365,14 @@ When invoked, the agent should:
    - Display path to user
 
 6. **Suggest next steps**
+   - **Verify branch**: If not on a feature branch, suggest creating one
    - **For new projects**: Remind to create branch first if not already done
    - Mention creating implementation plan: `/plan` (auto-finds design in project folder)
    - Suggest committing the design: `/commit "docs(project): add design"`
    - Note any open questions needing discussion
    - Suggest code review if relevant
    - Recommend who to discuss with if complex
+   - Remind about implementation branch from design doc header
 
 ## Integration with /plan
 

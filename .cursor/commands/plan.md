@@ -64,7 +64,8 @@ Generate a detailed implementation plan with the following structure:
 **Status**: Planning
 **Complexity**: [simple/medium/complex - automatically inferred]
 **Estimated Duration**: [time estimate based on complexity and scope]
-**Branch**: [suggested branch name following <area>/<verb-noun> convention]
+**Created On Branch**: [Current git branch when plan was created]
+**Implementation Branch**: [Branch name for implementation - from design.md or suggested]
 **Related Design**: [Link to design doc if exists: `design.md` in same project folder]
 
 ## Context
@@ -380,6 +381,7 @@ When invoked, the agent should:
    - What code is selected or highlighted?
 
 3. **Check git status**
+   - Get current branch name
    - Any uncommitted changes?
    - What files have been modified?
    - What does the diff show?
@@ -407,7 +409,9 @@ When invoked, the agent should:
 6. **Generate plan**
    - Determine project name (from design doc path, conversation, or context)
    - Create output path: `docs/projects/PROJECT_NAME/plan.md`
-   - If design.md exists in project folder, reference it
+   - If design.md exists in project folder, reference it and extract branch info
+   - Record current branch name
+   - If design.md has implementation branch suggestion, use it; otherwise suggest one
    - Create phases appropriate to complexity
    - Reference specific files and line numbers
    - Include all quality checks

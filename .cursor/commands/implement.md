@@ -23,19 +23,25 @@ The command automatically:
      - Most recent plan.md accessed
      - Current conversation context
 
-2. **Reads current progress**
+2. **Verifies branch**
+   - Read "Implementation Branch" from plan.md header
+   - Check current git branch
+   - If mismatch: Warn and suggest creating/switching to correct branch
+   - If correct: Proceed with implementation
+
+3. **Reads current progress**
    - Parse all checkboxes in the plan
    - Identify completed items: `[x]` or `[X]`
    - Identify pending items: `[ ]`
    - Find current phase and next unchecked item
 
-3. **Executes next steps**
+4. **Executes next steps**
    - Implement the next unchecked item(s)
    - Follow the instructions in the plan
    - Run quality checks as specified
    - Update checkboxes as work is completed
 
-4. **Handles problems**
+5. **Handles problems**
    - If issues arise during implementation
    - **Use `/debug` for systematic diagnosis**
    - Add notes to plan under relevant section
@@ -96,6 +102,7 @@ Execute each in order, checking boxes as they pass.
 ## Implementation Guidelines
 
 ### DO:
+- ✅ **Verify you're on the correct branch** (check plan header)
 - ✅ Follow the plan steps in order
 - ✅ Run specified quality checks (`/fmt`, `/clippy`, `/test`, etc.)
 - ✅ Check boxes as items complete
@@ -105,6 +112,7 @@ Execute each in order, checking boxes as they pass.
 - ✅ Ask for input if ambiguous
 
 ### DON'T:
+- ❌ **Implement on wrong branch** (verify branch matches plan header)
 - ❌ Modify the original step text
 - ❌ Skip steps without good reason
 - ❌ Ignore quality check failures
@@ -170,10 +178,16 @@ After each execution, report:
 
 ### Scenario 1: Continue from where we left off
 ```bash
-# Previously created plan: docs/implementation-plans/sparse-file-support.md
+# Previously created plan: docs/projects/sparse-file-support/plan.md
+# Plan header says: **Implementation Branch**: copy/feat-sparse-files
 # Some items are checked, some aren't
 
+# Make sure you're on the right branch first
+git checkout copy/feat-sparse-files
+# Or: /branch "copy/feat-sparse-files" main origin true
+
 /implement
+# Verifies: Current branch matches plan's "Implementation Branch"
 # Reads plan, finds next unchecked item
 # Executes it, updates checkbox
 # Runs quality checks
@@ -182,12 +196,17 @@ After each execution, report:
 
 ### Scenario 2: Start implementing a plan
 ```bash
-# Just created implementation plan
-/plan @docs/projects/feature/design.md
-# Creates: docs/projects/feature/plan.md
+# Just created implementation plan in design branch
+# On branch: feature/design
+# Plan created: docs/projects/feature/plan.md
+# Plan header says: **Implementation Branch**: area/feat-feature
+
+# Create the implementation branch (from plan header)
+/branch "area/feat-feature" main origin true
 
 # Start implementing
 /implement @docs/projects/feature/plan.md
+# Verifies: On branch area/feat-feature ✓
 # Starts from first unchecked item (probably Phase 1, first step)
 
 # After completing Phase 1
@@ -201,7 +220,16 @@ After each execution, report:
 # Coming back to a partially completed feature
 # Plan is at Phase 2, items 5/12 done
 
+# Check what branch the plan expects
+# (Read Implementation Branch from docs/projects/feature-name/plan.md)
+
+# Ensure on correct branch
+git checkout area/feat-feature-name
+# Or if not created yet:
+# /branch "area/feat-feature-name" main origin true
+
 /implement "feature-name"
+# Verifies: Current branch matches plan's "Implementation Branch"
 # Finds docs/projects/feature-name/plan.md
 # Resumes at item 6
 
