@@ -17,7 +17,7 @@ use dashmap::DashMap;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
 
 /// Statistics tracking with interior mutability via atomics
@@ -210,27 +210,30 @@ impl SharedHardlinkTracker {
         Self::new(tracker)
     }
 
-    /// Check if an inode has already been copied
-    #[must_use]
-    pub fn is_inode_copied(&self, inode: u64) -> bool {
-        self.inner.is_inode_copied(inode)
+    /// Signal that an inode's copy is complete
+    ///
+    /// This sets the destination path and wakes all tasks waiting to create hardlinks.
+    pub fn signal_copy_complete(&self, inode: u64, path: &Path) {
+        self.inner.signal_copy_complete(inode, path);
     }
 
-    /// Get the original path for an inode that has been copied
+    /// Get destination path for a copied inode (after waiting on condvar)
     #[must_use]
-    pub fn get_original_path_for_inode(&self, inode: u64) -> Option<PathBuf> {
-        self.inner.get_original_path_for_inode(inode)
+    pub fn get_dst_path_for_inode(&self, inode: u64) -> Option<PathBuf> {
+        self.inner.get_dst_path_for_inode(inode)
     }
 
-    /// Mark an inode as copied
-    pub fn mark_inode_copied(&self, inode: u64, path: &Path) {
-        self.inner.mark_inode_copied(inode, path);
-    }
-
-    #[allow(dead_code)]
-    /// Register a file with the hardlink tracker
+    /// Register a file with the hardlink tracker (race-free)
+    ///
+    /// Returns (`is_copier`, `optional_condvar`) to determine role and synchronization
     #[must_use]
-    pub fn register_file(&self, path: &Path, device_id: u64, inode: u64, link_count: u64) -> bool {
+    pub fn register_file(
+        &self,
+        path: &Path,
+        device_id: u64,
+        inode: u64,
+        link_count: u64,
+    ) -> (bool, Option<Arc<compio_sync::Condvar>>) {
         self.inner.register_file(path, device_id, inode, link_count)
     }
 
@@ -294,7 +297,7 @@ impl SharedSemaphore {
     /// Acquire a permit from the semaphore
     ///
     /// This will block until a permit is available.
-    pub async fn acquire(&self) -> compio_sync::SemaphorePermit {
+    pub async fn acquire(&self) -> compio_sync::SemaphorePermit<'_> {
         self.inner.acquire().await
     }
 
@@ -693,10 +696,13 @@ async fn process_directory_entry_with_compio(
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
 ) -> Result<()> {
+    // Clone controller before acquiring permit to avoid borrow/move conflict
+    let controller = Arc::clone(&concurrency_controller);
+
     // Acquire permit from adaptive concurrency controller
     // This prevents unbounded queue growth and adapts to resource constraints (e.g., FD exhaustion)
     // The permit is held for the entire operation (directory, file, or symlink)
-    let _permit = concurrency_controller.acquire().await;
+    let _permit = controller.acquire().await;
 
     // Get comprehensive metadata using compio's async operations
     let extended_metadata = ExtendedMetadata::new(&src_path).await?;
@@ -872,38 +878,83 @@ async fn process_file(
         metadata.link_count()
     );
 
-    let _device_id = metadata.device_id();
+    let device_id = metadata.device_id();
     let inode_number = metadata.inode_number();
     let link_count = metadata.link_count();
 
-    // Check if this inode has already been copied (for hardlinks)
-    if link_count > 1 && hardlink_tracker.is_inode_copied(inode_number) {
-        handle_existing_hardlink(
-            &dst_path,
-            &src_path,
-            inode_number,
-            &stats,
-            &hardlink_tracker,
-        )
-        .await?;
-    } else {
-        // First time seeing this inode - copy the file content normally
-        debug!("Copying file content: {}", src_path.display());
+    // RACE-FREE HARDLINK PATTERN: Atomically determine copier vs linker
+    let (is_copier, maybe_condvar) =
+        hardlink_tracker.register_file(&src_path, device_id, inode_number, link_count);
+
+    if is_copier {
+        // We're the copier - copy the file and signal completion
+        debug!("Copying file content (copier): {}", src_path.display());
 
         match copy_file(&src_path, &dst_path, &metadata_config).await {
             Ok(()) => {
                 stats.increment_files_copied();
                 stats.increment_bytes_copied(metadata.len());
-                hardlink_tracker.mark_inode_copied(inode_number, dst_path.as_path());
-                debug!("Copied file: {}", dst_path.display());
+
+                // Signal all waiting linkers that copy is complete
+                hardlink_tracker.signal_copy_complete(inode_number, dst_path.as_path());
+                debug!("Copied file and signaled linkers: {}", dst_path.display());
             }
             Err(e) => {
                 // Handle error - controller will either adapt or fail based on configuration
-                // If fail_on_exhaustion is true and this is EMFILE, this returns an error
-                // Otherwise, it adapts automatically and returns Ok
                 concurrency_controller.handle_error(&e)?;
 
-                // Log the error and continue
+                warn!(
+                    "Failed to copy file {} -> {}: {}",
+                    src_path.display(),
+                    dst_path.display(),
+                    e
+                );
+                stats.increment_errors();
+
+                // Still signal condvar even on error (with empty dst_path)
+                // This prevents linkers from waiting forever
+                hardlink_tracker.signal_copy_complete(inode_number, Path::new(""));
+            }
+        }
+    } else if let Some(condvar) = maybe_condvar {
+        // We're a linker - wait for copier to finish, then create hardlink
+        debug!(
+            "Waiting for copy to complete (linker): {}",
+            src_path.display()
+        );
+
+        // Wait for copier to signal completion
+        condvar.wait().await;
+
+        // Get the destination path from the copier
+        if let Some(original_dst) = hardlink_tracker.get_dst_path_for_inode(inode_number) {
+            if original_dst.as_os_str().is_empty() {
+                // Copier failed - we should also fail
+                warn!(
+                    "Original copy failed, skipping hardlink creation for {}",
+                    src_path.display()
+                );
+                stats.increment_errors();
+            } else {
+                handle_existing_hardlink(&dst_path, &original_dst, inode_number, &stats).await?;
+            }
+        }
+    } else {
+        // Not a hardlink (link_count == 1) - copy normally
+        debug!(
+            "Copying file content (non-hardlink): {}",
+            src_path.display()
+        );
+
+        match copy_file(&src_path, &dst_path, &metadata_config).await {
+            Ok(()) => {
+                stats.increment_files_copied();
+                stats.increment_bytes_copied(metadata.len());
+                debug!("Copied file: {}", dst_path.display());
+            }
+            Err(e) => {
+                concurrency_controller.handle_error(&e)?;
+
                 warn!(
                     "Failed to copy file {} -> {}: {}",
                     src_path.display(),
@@ -953,56 +1004,40 @@ async fn process_file(
 #[allow(clippy::future_not_send)]
 async fn handle_existing_hardlink(
     dst_path: &Path,
-    src_path: &Path,
+    original_dst: &Path,
     inode_number: u64,
-    stats: &SharedStats,
-    hardlink_tracker: &SharedHardlinkTracker,
+    stats: &Arc<SharedStats>,
 ) -> Result<()> {
-    // This is a hardlink - create a hardlink instead of copying content
-    debug!(
-        "Creating hardlink for {} (inode: {})",
-        src_path.display(),
-        inode_number
-    );
-
-    // Find the original file path for this inode
-    if let Some(original_path) = hardlink_tracker.get_original_path_for_inode(inode_number) {
-        // Create destination directory if needed
-        if let Some(parent) = dst_path.parent() {
-            if !parent.exists() {
-                compio::fs::create_dir_all(parent).await.map_err(|e| {
-                    SyncError::FileSystem(format!(
-                        "Failed to create parent directory {}: {}",
-                        parent.display(),
-                        e
-                    ))
-                })?;
-            }
-        }
-
-        // Create hardlink using compio-fs-extended for io_uring operations
-        match compio_fs_extended::hardlink::create_hardlink_at_path(&original_path, dst_path).await
-        {
-            Ok(()) => {
-                stats.increment_files_copied();
-                debug!(
-                    "Created hardlink: {} -> {}",
-                    dst_path.display(),
-                    original_path.display()
-                );
-            }
-            Err(e) => {
-                warn!(
-                    "Failed to create hardlink for {}: {}",
-                    src_path.display(),
+    // Create destination directory if needed
+    if let Some(parent) = dst_path.parent() {
+        if !parent.exists() {
+            compio::fs::create_dir_all(parent).await.map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to create parent directory {}: {}",
+                    parent.display(),
                     e
-                );
-                stats.increment_errors();
-            }
+                ))
+            })?;
         }
-    } else {
-        warn!("Could not find original path for inode {}", inode_number);
-        stats.increment_errors();
+    }
+
+    // Create hardlink using compio-fs-extended for io_uring operations
+    match compio_fs_extended::hardlink::create_hardlink_at_path(original_dst, dst_path).await {
+        Ok(()) => {
+            stats.increment_files_copied();
+            debug!(
+                "Created hardlink: {} -> {}",
+                dst_path.display(),
+                original_dst.display()
+            );
+        }
+        Err(e) => {
+            warn!(
+                "Failed to create hardlink for inode {}: {}",
+                inode_number, e
+            );
+            stats.increment_errors();
+        }
     }
 
     Ok(())
@@ -1206,20 +1241,36 @@ pub struct InodeInfo {
     pub ino: u64,
 }
 
-/// Hardlink tracking information
-#[derive(Debug, Clone)]
+/// Hardlink tracking information with concurrent synchronization
+///
+/// Uses `Condvar` to ensure race-free hardlink creation:
+/// - First task to register becomes the "copier" (inserts with `dst_path`)
+/// - Subsequent tasks wait on the condvar until copy completes
+/// - Copier signals condvar when destination file is created
 pub struct HardlinkInfo {
-    /// Original file path
+    /// Original file path (immutable after creation)
     #[allow(dead_code)]
     pub original_path: std::path::PathBuf,
-    /// Inode number
+    /// Inode number (immutable after creation)
     pub inode_number: u64,
-    /// Number of hardlinks found
-    pub link_count: u64,
-    /// Whether this inode has been copied to destination
-    pub is_copied: bool,
-    /// Destination path where this inode was copied (for hardlink creation)
-    pub dst_path: Option<std::path::PathBuf>,
+    /// Number of hardlinks found (incremented atomically)
+    pub link_count: AtomicU64,
+    /// Destination path set by copier task (written once, read many)
+    pub dst_path: Mutex<Option<std::path::PathBuf>>,
+    /// Condition variable signaled when copy completes
+    /// Linker tasks wait on this before creating hardlinks
+    pub copy_complete: Arc<compio_sync::Condvar>,
+}
+
+impl std::fmt::Debug for HardlinkInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HardlinkInfo")
+            .field("original_path", &self.original_path)
+            .field("inode_number", &self.inode_number)
+            .field("link_count", &self.link_count.load(Ordering::Relaxed))
+            .field("dst_path", &self.dst_path.lock().ok())
+            .finish_non_exhaustive() // Omitting copy_complete condvar
+    }
 }
 
 /// Filesystem boundary and hardlink tracker
@@ -1269,111 +1320,136 @@ impl FilesystemTracker {
 
     /// Register a file for hardlink tracking
     ///
-    /// This should be called for each file encountered during traversal.
-    /// Files with `link_count` == 1 are skipped since they're not hardlinks.
-    /// Returns true if this is a new hardlink, false if it's a duplicate or skipped.
-    pub fn register_file(&self, path: &Path, dev: u64, ino: u64, link_count: u64) -> bool {
+    /// This atomically determines if this task should be the "copier" or a "linker":
+    /// - If this is the first registration: returns `(true, None)` - caller is copier
+    /// - If already registered: returns `(false, Some(condvar))` - caller is linker, must wait
+    ///
+    /// # Arguments
+    /// * `path` - Path to the file being registered
+    /// * `dev` - Device ID
+    /// * `ino` - Inode number
+    /// * `link_count` - Number of hardlinks (from stat)
+    ///
+    /// # Returns
+    /// * `(true, None)` - First registration, caller should copy file
+    /// * `(false, Some(condvar))` - Already registered, caller should wait on condvar then link
+    /// * `(false, None)` - Not a hardlink (`link_count` == 1), caller should copy normally
+    pub fn register_file(
+        &self,
+        path: &Path,
+        dev: u64,
+        ino: u64,
+        link_count: u64,
+    ) -> (bool, Option<Arc<compio_sync::Condvar>>) {
         // Skip files with link count of 1 - they're not hardlinks
         if link_count == 1 {
-            return false;
+            return (false, None);
         }
+
         let inode_info = InodeInfo { dev, ino };
 
-        // Use DashMap's entry API for concurrent-safe insert/update
+        // ATOMIC PATTERN: Try to insert, get back whether we won the race
         match self.hardlinks.entry(inode_info) {
-            dashmap::mapref::entry::Entry::Occupied(mut entry) => {
-                // This is an existing hardlink
-                let hardlink_info = entry.get_mut();
-                hardlink_info.link_count += 1;
+            dashmap::mapref::entry::Entry::Occupied(entry) => {
+                // This inode is already registered - we're a linker
+                let hardlink_info = entry.get();
+                hardlink_info.link_count.fetch_add(1, Ordering::Relaxed);
                 debug!(
-                    "Found hardlink #{} for inode ({}, {}): {}",
-                    hardlink_info.link_count,
+                    "Found hardlink #{} for inode ({}, {}): {} (will wait for copy)",
+                    hardlink_info.link_count.load(Ordering::Relaxed),
                     dev,
                     ino,
                     path.display()
                 );
-                false
+                (false, Some(Arc::clone(&hardlink_info.copy_complete)))
             }
             dashmap::mapref::entry::Entry::Vacant(entry) => {
-                // This is a new file
+                // We're the first - we're the copier
                 entry.insert(HardlinkInfo {
                     original_path: path.to_path_buf(),
                     inode_number: ino,
-                    link_count: 1,
-                    is_copied: false,
-                    dst_path: None,
+                    link_count: AtomicU64::new(1),
+                    dst_path: Mutex::new(None),
+                    copy_complete: Arc::new(compio_sync::Condvar::new()),
                 });
                 debug!(
-                    "Registered new file inode ({}, {}): {}",
+                    "Registered new hardlink inode ({}, {}): {} (will copy)",
                     dev,
                     ino,
                     path.display()
                 );
-                true
+                (true, None)
             }
         }
-    }
-
-    /// Get hardlink information for a given inode
-    ///
-    /// Returns the hardlink information if this inode has been seen before.
-    #[must_use]
-    pub fn get_hardlink_info(&self, dev: u64, ino: u64) -> Option<HardlinkInfo> {
-        let inode_info = InodeInfo { dev, ino };
-        self.hardlinks
-            .get(&inode_info)
-            .map(|entry| entry.value().clone())
     }
 
     /// Get all hardlink groups that have multiple links
     ///
-    /// Returns a vector of hardlink groups that contain multiple files.
+    /// Returns a vector of (`inode_number`, `link_count`) tuples for inodes with multiple hardlinks.
     #[must_use]
-    pub fn get_hardlink_groups(&self) -> Vec<HardlinkInfo> {
+    pub fn get_hardlink_groups(&self) -> Vec<(u64, u64)> {
         self.hardlinks
             .iter()
-            .map(|entry| entry.value().clone())
-            .filter(|info| info.link_count > 1)
+            .filter(|entry| entry.value().link_count.load(Ordering::Relaxed) > 1)
+            .map(|entry| {
+                let val = entry.value();
+                (val.inode_number, val.link_count.load(Ordering::Relaxed))
+            })
             .collect()
     }
 
-    /// Check if an inode has already been copied (for hardlink creation)
+    /// Signal that an inode's copy is complete and store its destination path
     ///
-    /// Returns true if this inode has been processed and copied to the destination.
-    /// This is used to determine whether to copy file content or create a hardlink.
-    #[must_use]
-    pub fn is_inode_copied(&self, ino: u64) -> bool {
-        self.hardlinks
+    /// This should be called by the copier task after successfully creating the destination file.
+    /// It sets the destination path and signals all waiting linker tasks via the condvar.
+    ///
+    /// # Arguments
+    /// * `ino` - Inode number that was copied
+    /// * `dst_path` - Path where the file was copied to
+    pub fn signal_copy_complete(&self, ino: u64, dst_path: &Path) {
+        // Find the hardlink info for this inode (drop iterator before accessing)
+        let entry_opt = self
+            .hardlinks
             .iter()
-            .any(|entry| entry.value().inode_number == ino && entry.value().is_copied)
-    }
+            .find(|e| e.value().inode_number == ino)
+            .map(|e| (*e.key(), Arc::clone(&e.value().copy_complete)));
 
-    /// Mark an inode as copied and store its destination path
-    ///
-    /// This should be called after successfully copying a file's content,
-    /// so that subsequent hardlinks to the same inode can be created instead of copied.
-    pub fn mark_inode_copied(&self, ino: u64, dst_path: &Path) {
-        for mut entry in self.hardlinks.iter_mut() {
-            let hardlink_info = entry.value_mut();
-            if hardlink_info.inode_number == ino {
-                hardlink_info.is_copied = true;
-                hardlink_info.dst_path = Some(dst_path.to_path_buf());
-                debug!("Marked inode {} as copied to {}", ino, dst_path.display());
-                break;
-            }
+        if let Some((_key, condvar)) = entry_opt {
+            // Set destination path (re-lookup and drop iterator quickly)
+            {
+                let found = self
+                    .hardlinks
+                    .iter()
+                    .find(|e| e.value().inode_number == ino);
+                if let Some(entry) = found {
+                    let hardlink_info = entry.value();
+                    if let Ok(mut dst) = hardlink_info.dst_path.lock() {
+                        *dst = Some(dst_path.to_path_buf());
+                    }
+                }
+            } // Iterator dropped here
+
+            // Signal all waiting linker tasks (iterator is dropped)
+            condvar.notify_all();
+
+            debug!(
+                "Signaled copy complete for inode {} at {}",
+                ino,
+                dst_path.display()
+            );
         }
     }
 
-    /// Get the original destination path for an inode that has been copied
+    /// Get the destination path where an inode was copied
     ///
-    /// Returns the destination path where this inode's content was first copied.
-    /// This is used to create hardlinks pointing to the original copied file.
+    /// Returns the destination path if it has been set by the copier task.
+    /// This should only be called after waiting on the condvar.
     #[must_use]
-    pub fn get_original_path_for_inode(&self, ino: u64) -> Option<PathBuf> {
+    pub fn get_dst_path_for_inode(&self, ino: u64) -> Option<PathBuf> {
         self.hardlinks
             .iter()
-            .find(|entry| entry.value().inode_number == ino && entry.value().is_copied)
-            .and_then(|entry| entry.value().dst_path.clone())
+            .find(|entry| entry.value().inode_number == ino)
+            .and_then(|entry| entry.value().dst_path.lock().ok()?.clone())
     }
 
     /// Get statistics about the filesystem tracking
@@ -1384,7 +1460,7 @@ impl FilesystemTracker {
         let total_hardlinks: u64 = self
             .hardlinks
             .iter()
-            .map(|entry| entry.value().link_count)
+            .map(|entry| entry.value().link_count.load(Ordering::Relaxed))
             .sum();
 
         FilesystemStats {
@@ -1766,13 +1842,15 @@ mod tests {
         // Create hardlink
         std::fs::hard_link(&file1, &file2).expect("Failed to create hardlink");
 
-        // Register first file
-        let registered = tracker.register_file(&file1, 1, 100, 2);
-        assert!(registered); // Should register as new file
+        // Register first file (should be copier)
+        let (is_copier, condvar) = tracker.register_file(&file1, 1, 100, 2);
+        assert!(is_copier); // Should be copier (first registration)
+        assert!(condvar.is_none()); // Copier doesn't get condvar
 
-        // Register hardlink
-        let registered = tracker.register_file(&file2, 1, 100, 2);
-        assert!(!registered); // Should not register as new (it's a hardlink)
+        // Register hardlink (should be linker)
+        let (is_copier, condvar) = tracker.register_file(&file2, 1, 100, 2);
+        assert!(!is_copier); // Should not be copier (it's a hardlink)
+        assert!(condvar.is_some()); // Linker gets condvar to wait on
 
         // Check stats
         let stats = tracker.get_stats();
