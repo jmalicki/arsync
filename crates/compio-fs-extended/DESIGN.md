@@ -102,8 +102,11 @@ let mut remaining = len;
 let mut buf = vec![0u8; 1 << 20]; // 1 MiB
 while remaining > 0 {
     let to_read = remaining.min(buf.len() as u64) as usize;
-    let n = src.read_at(&mut buf[..to_read], offset).await?; // kqueue-driven
+    // Use read_at/write_at if available in compio::fs; otherwise fall back to read/write + seek
+    let n = /* src.read_at or src.read */
+            src.read_at(&mut buf[..to_read], offset).await?; // kqueue-driven
     if n == 0 { break; }
+    /* dst.write_at or dst.write */
     dst.write_at(&buf[..n], offset).await?; // kqueue-driven
     offset += n as u64;
     remaining -= n as u64;
@@ -121,6 +124,42 @@ This approach ensures we “use kqueue” on macOS for the performance-critical 
 
 ---
 
+## Windows IOCP integration (how this works)
+
+On Windows, `compio` integrates with IOCP (I/O Completion Ports). We express streaming operations using `compio::fs` async file APIs so that reads/writes are issued as overlapped I/O, and completions are delivered by IOCP to the runtime.
+
+- Streaming data paths (copy fallbacks, chunked transfers) use async `compio::fs::File` methods. These translate to overlapped I/O; completions are handled by IOCP, providing scalable async performance without blocking threads.
+- One-shot administrative calls that are not overlapped (e.g., `CopyFileExW`, `SetFileInformationByHandle` for allocation, metadata tweaks) will be invoked via `compio::runtime::spawn` so we do not block the IOCP reactor thread.
+
+Example (Windows ranged copy fallback, IOCP-driven):
+```rust
+// Pseudocode (Windows): compio::fs async read/write => overlapped I/O via IOCP
+let mut offset = src_offset;
+let mut remaining = len;
+let mut buf = vec![0u8; 1 << 20];
+while remaining > 0 {
+    let to_read = remaining.min(buf.len() as u64) as usize;
+    let n = /* src.read_at or src.read */
+            src.read_at(&mut buf[..to_read], offset).await?; // IOCP-driven
+    if n == 0 { break; }
+    /* dst.write_at or dst.write */
+    dst.write_at(&buf[..n], offset).await?; // IOCP-driven
+    offset += n as u64;
+    remaining -= n as u64;
+}
+```
+
+Administrative ops example (Windows preallocate with `FILE_ALLOCATION_INFO`):
+```rust
+compio::runtime::spawn(async move {
+    // Call SetFileInformationByHandle(FILE_ALLOCATION_INFO)
+}).await?;
+```
+
+This ensures Windows builds benefit from IOCP for data movement while keeping non-overlapped syscalls off the hot path.
+
+---
+
 ## Operation Design by Platform
 Below: current Linux approach and proposed macOS/Windows designs. Where an operation is not applicable, return a clear `ExtendedError::NotSupported`.
 
@@ -128,23 +167,29 @@ Below: current Linux approach and proposed macOS/Windows designs. Where an opera
 - Linux (current): `libc::copy_file_range` (fd-to-fd) with offsets; best-effort; fallback TBD.
 - macOS (Darwin):
   - Prefer APFS clone when possible: `fclonefileat` (fd/dirfd). If unavailable or cross-FS, fallback.
-  - Fallbacks: `copyfile(3)` for whole-file copies; for ranged copies, use kqueue-driven `compio::fs::File::{read_at, write_at}` loop (see pseudocode above). This ensures the data path is scheduled via kqueue.
+  - Fallbacks: `copyfile(3)` for whole-file copies; for ranged copies, use a kqueue-driven `compio::fs` async read/write loop (prefer `read_at/write_at` if available). This ensures the data path is scheduled via kqueue.
   - Strategy:
     - If length == 0 (probe): try `fclonefileat` or return capability boolean.
     - Otherwise, attempt clone, else kqueue-driven read/write fallback.
 - Windows:
   - Whole-file: `CopyFileExW` (fast path, system optimized) when copying entire file with offsets 0..EOF.
-  - Ranged copies: No direct `copy_file_range` equivalent. Use overlapped I/O with compio (IOCP) `read_at`/`write_at` loop.
+  - Ranged copies: No direct `copy_file_range` equivalent. Use IOCP-driven `compio::fs` async read/write loop (prefer `read_at/write_at` if available).
   - Optional (future): `FSCTL_DUPLICATE_EXTENTS_TO_FILE` (extent cloning) on supported FS (ReFS/NTFS) for same-volume clones.
+  - Runtime integration:
+    - macOS: data path via kqueue (async file ops); admin ops (`fclonefileat`, `copyfile`) via `spawn`.
+    - Windows: data path via IOCP (async file ops); admin ops (`CopyFileExW`) via `spawn`.
 
 ### 2) fadvise (access pattern hints)
 - Linux (current): io_uring `Fadvise` opcode.
 - macOS:
   - `posix_fadvise` exists but may be a stub; prefer `fcntl(F_RDADVISE, radvisory)` for read-ahead hints.
-  - Invoke via `spawn` (administrative), while the actual data path remains kqueue-driven where relevant.
+  - Invoke via `spawn` (administrative). Hints do not map to readiness; they don’t use kqueue directly.
 - Windows:
   - No direct equivalent. Hints are typically provided at open (`FILE_FLAG_SEQUENTIAL_SCAN`/`FILE_FLAG_RANDOM_ACCESS`).
   - Design: best-effort no-op; document that callers should choose open flags for Windows.
+  - Runtime integration:
+    - macOS: not kqueue; run in `spawn`.
+    - Windows: not IOCP; run in `spawn` or no-op.
 
 ### 3) fallocate (preallocation / hole punching / zero range)
 - Linux (current): io_uring `Fallocate`.
@@ -155,6 +200,9 @@ Below: current Linux approach and proposed macOS/Windows designs. Where an opera
     - ZERO_RANGE/PUNCH_HOLE -> no direct; emulate with `ftruncate` + writes or return NotSupported.
 - Windows:
   - Use `SetFileInformationByHandle` with `FILE_ALLOCATION_INFO` to preallocate space.
+  - Runtime integration:
+    - macOS: preallocation is administrative; run in `spawn` (not kqueue).
+    - Windows: preallocation is administrative; run in `spawn` (not IOCP).
   - `SetEndOfFile` to extend logical file size.
   - Punch/zero range not generally supported; return NotSupported or emulate via writes.
 
@@ -164,6 +212,9 @@ Below: current Linux approach and proposed macOS/Windows designs. Where an opera
   - Darwin supports xattrs (`getxattr`, `setxattr`, `listxattr`, `removexattr`) and `f*` variants.
   - Implement using `xattr` crate or `libc` functions; no io_uring.
 - Windows:
+  - Runtime integration:
+    - macOS: xattr calls are administrative; run in `spawn` (not kqueue).
+    - Windows: NotSupported.
   - POSIX xattrs are not supported. NTFS EAs/ADS exist but semantics differ.
   - Design: return `ExtendedError::NotSupported("xattr unsupported on Windows")` for all xattr ops (feature still compiles but is a no-op on Windows).
 
@@ -174,6 +225,9 @@ Below: current Linux approach and proposed macOS/Windows designs. Where an opera
 - Windows:
   - Use `std::os::windows::fs::{symlink_file, symlink_dir}` and `std::fs::hard_link`.
   - Note: symlink creation may require developer mode/admin; document errors.
+  - Runtime integration:
+    - macOS: administrative; run in `spawn` (not kqueue).
+    - Windows: administrative; run in `spawn` (not IOCP).
 
 ### 6) Directory operations (`DirectoryFd`) and *at variants
 - Linux (current): `DirectoryFd` uses Unix fd; `mkdirat` via `nix`.
@@ -182,6 +236,9 @@ Below: current Linux approach and proposed macOS/Windows designs. Where an opera
 - Windows:
   - No raw fd; use raw HANDLEs via `AsRawHandle`.
   - Design: introduce `DirectoryHandle` on Windows (wrapper around `HANDLE` opened with `FILE_FLAG_BACKUP_SEMANTICS`). For now, provide path-based helpers and document reduced security vs *at.
+  - Runtime integration:
+    - macOS: directory mutations typically administrative; run in `spawn` or use `compio::fs` helpers.
+    - Windows: administrative; run in `spawn` (not IOCP).
 
 ### 7) Metadata (statx, utimens)
 - Linux (current): io_uring `Statx`; `nix` for utimensat/futimens.
@@ -191,6 +248,9 @@ Below: current Linux approach and proposed macOS/Windows designs. Where an opera
 - Windows:
   - Use `std::fs::metadata` for basic info; times via `filetime` crate (`SetFileTime`).
   - No `statx`; return equivalent `(atime, mtime)` via available APIs.
+  - Runtime integration:
+    - macOS: administrative; run in `spawn` (not kqueue).
+    - Windows: administrative; run in `spawn` (not IOCP).
 
 ### 8) Device / special files
 - Linux (current): `mknod`, `mkfifo`, sockets.
