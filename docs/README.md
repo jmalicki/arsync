@@ -1,51 +1,32 @@
 # Documentation Index
 
-This directory contains all project documentation organized by purpose.
+This directory contains all project documentation organized **project-first** for better integration with Cursor slash commands.
 
 ## Directory Structure
 
-### 📐 `designs/`
-**Design documents and architectural decisions**
+### 📦 `projects/` - **All project documentation**
 
-Technical design documents explaining how and why features are built:
-- `semaphore-design.md` - Semaphore-based concurrency control
-- `compio-fs-extended-plan.md` - compio-fs-extended architecture
-- `fadvise-vs-o-direct.md` - I/O optimization approach
-- `metadata-preservation.md` - Metadata handling design
-- `research.md` - Research notes and investigations
+Each project contains its related design docs, plans, and analyses bundled together:
 
-Use `/design` to create new design documents from conversations.
+```
+docs/projects/PROJECT_NAME/
+  ├── design.md           # Design document (created with /design)
+  ├── plan.md             # Implementation plan (created with /plan)
+  ├── analysis-*.md       # Analysis documents
+  ├── design-*.md         # Additional designs
+  └── README.md           # Project overview
+```
 
-### 📋 `implementation-plans/`
-**Phased implementation plans with checkboxes**
-
-Execution plans for features and projects:
-- `main-implementation-plan.md` - Original arsync implementation
-- `benchmarking-plan.md` - Benchmarking infrastructure
-- `testing-strategy.md` - Testing approach
-- `testing-priorities.md` - Testing priorities
-- `phase-3-1-summary.md` - Phase 3.1 completion summary
-- `phase-3-2-status.md` - Phase 3.2 current status
-
-Use `/plan` to create new implementation plans.
-Use `/implement` to execute plans step-by-step.
-
-### 🔍 `analysis/`
-**Post-mortem analyses and investigations**
-
-Bug investigations, performance analyses, and technical deep-dives:
-- `compio-metadata-bug-analysis.md` - Bug investigation
-- `compio-metadata-bug-verdict.md` - Conclusion and resolution
-- `github-actions-improvements.md` - CI/CD analysis
-
-Use `/debug` when investigating issues - results may become analysis docs.
-
-### 📦 `projects/`
-**Project-specific documentation**
-
-Subdirectories for specific projects and initiatives:
+**Current Projects:**
+- `main-arsync/` - Main project implementation and testing
+- `benchmarking/` - Benchmarking infrastructure
+- `cli-refactor/` - CLI architecture refactoring
 - `ci/` - CI/CD improvements
-- `cli-refactor/` - CLI refactoring analysis
+- `compio-fs-extended/` - Advanced async filesystem library
+- `compio-metadata-bug/` - Metadata bug investigation
+- `semaphore/` - Semaphore concurrency control
+
+See `projects/README.md` for detailed project listing.
 
 ### 🏴‍☠️ `pirate/`
 **Pirate-themed documentation**
@@ -80,24 +61,27 @@ Fun pirate translations of user-facing docs.
 1. **Design a feature**:
    ```bash
    /design "feature-name"
-   # Creates: docs/designs/feature-name.md
+   # Creates: docs/projects/feature-name/design.md
    ```
 
 2. **Plan implementation**:
    ```bash
-   /plan @docs/designs/feature-name.md
-   # Creates: docs/implementation-plans/feature-name.md
+   /plan
+   # Auto-finds design in project folder
+   # Creates: docs/projects/feature-name/plan.md
    ```
 
 3. **Execute the plan**:
    ```bash
-   /implement @docs/implementation-plans/feature-name.md
+   /implement
+   # Auto-finds plan in project folder
+   # Executes: docs/projects/feature-name/plan.md
    ```
 
 4. **If issues arise**:
    ```bash
    /debug "issue description"
-   # May result in: docs/analysis/issue-name.md
+   # May create: docs/projects/feature-name/analysis-issue.md
    ```
 
 ### Document Lifecycle
@@ -105,22 +89,25 @@ Fun pirate translations of user-facing docs.
 ```
 Idea/Discussion
     ↓
-docs/designs/feature.md         ← /design
+docs/projects/feature-name/design.md    ← /design
     ↓
-docs/implementation-plans/      ← /plan
-feature.md
+docs/projects/feature-name/plan.md      ← /plan (auto-finds design.md)
     ↓
-Implementation                   ← /implement
+Implementation                           ← /implement (auto-finds plan.md)
     ↓
 (if issues)
-docs/analysis/investigation.md  ← /debug
+docs/projects/feature-name/analysis.md  ← /debug
 ```
 
 ## Naming Conventions
 
-- **Designs**: `feature-name.md` (kebab-case)
-- **Plans**: `feature-name.md` (matches design doc name)
-- **Analysis**: `issue-name.md` or `feature-analysis.md`
+- **Projects**: `project-name/` directory (kebab-case)
+- **Within projects**:
+  - `design.md` - Main design document
+  - `plan.md` - Main implementation plan
+  - `analysis.md` or `analysis-TOPIC.md` - Analysis documents
+  - `design-ASPECT.md` - Additional designs
+  - `plan-ASPECT.md` - Additional plans
 - **User docs**: Clear, descriptive names (any case)
 
 ## See Also

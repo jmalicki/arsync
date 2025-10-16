@@ -33,10 +33,10 @@ This directory contains custom slash commands for Cursor AI to streamline common
   - Example: `/design` (auto-infer) or `/design "feature-name"`
 
 - **`/plan`** - Create detailed phase-based implementation plan from context
-  - Example: `/plan` or `/plan @docs/design.md`
+  - Example: `/plan` or `/plan @docs/projects/feature/design.md`
 
 - **`/implement`** - Execute implementation plan step-by-step, tracking progress
-  - Example: `/implement` or `/implement @docs/implementation-plans/feature.md`
+  - Example: `/implement` or `/implement @docs/projects/feature/plan.md`
 
 - **`/debug`** - Systematic debugging with disciplined iterative approach
   - Example: `/debug` or `/debug @src/module.rs "issue description"`
@@ -148,17 +148,17 @@ Before committing or opening a PR:
 ```bash
 # 1. Create design document from conversation
 /design "new-feature"
-# Creates: docs/designs/new-feature.md
+# Creates: docs/projects/new-feature/design.md
 
-# 2. Create implementation plan from design
-/plan @docs/designs/new-feature.md
-# Creates: docs/implementation-plans/new-feature.md
+# 2. Create implementation plan (auto-finds design in project folder)
+/plan
+# Creates: docs/projects/new-feature/plan.md
 
 # 3. Create feature branch
 /branch "sync/feat-new-feature" main origin true
 
 # 4. Execute the plan step-by-step
-/implement @docs/implementation-plans/new-feature.md
+/implement @docs/projects/new-feature/plan.md
 # Works through checkboxes, runs quality checks
 # Add notes if issues arise, commits at checkpoints
 

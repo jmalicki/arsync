@@ -16,12 +16,12 @@ The command automatically:
 
 1. **Locates the plan**
    - If path provided: Use that plan
-   - If name provided: Look for `docs/implementation-plans/NAME.md`
+   - If name provided: Look for `docs/projects/NAME/plan.md`
    - If nothing provided: Infer from:
-     - Most recent design doc discussed
-     - Most recent implementation plan
+     - Current project context (most recent project discussed)
+     - Open files matching a project folder
+     - Most recent plan.md accessed
      - Current conversation context
-     - Open files
 
 2. **Reads current progress**
    - Parse all checkboxes in the plan
@@ -183,11 +183,11 @@ After each execution, report:
 ### Scenario 2: Start implementing a plan
 ```bash
 # Just created implementation plan
-/plan @docs/designs/feature.md
-# Creates: docs/implementation-plans/feature.md
+/plan @docs/projects/feature/design.md
+# Creates: docs/projects/feature/plan.md
 
 # Start implementing
-/implement @docs/implementation-plans/feature.md
+/implement @docs/projects/feature/plan.md
 # Starts from first unchecked item (probably Phase 1, first step)
 
 # After completing Phase 1
@@ -202,7 +202,7 @@ After each execution, report:
 # Plan is at Phase 2, items 5/12 done
 
 /implement "feature-name"
-# Finds docs/implementation-plans/feature-name.md
+# Finds docs/projects/feature-name/plan.md
 # Resumes at item 6
 
 # Continue working...
@@ -347,7 +347,7 @@ At logical boundaries (especially after completing phases), commit and update PR
 - Implemented caching layer  
 - Added unit tests
 
-Part of implementation plan: docs/implementation-plans/feature.md
+Part of implementation plan: docs/projects/feature/plan.md
 Phase 2 of 4 complete."
 
 # Push to existing PR or create new one if none exists

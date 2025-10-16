@@ -348,13 +348,13 @@ When invoked, the agent should:
    - Mark status as "Draft"
 
 5. **Save to file**
-   - Path: `docs/designs/FEATURE_NAME.md`
-   - Create `docs/designs/` if needed
-   - Use kebab-case for filename
+   - Path: `docs/projects/PROJECT_NAME/design.md`
+   - Create `docs/projects/PROJECT_NAME/` if needed
+   - Use kebab-case for project directory name
    - Display path to user
 
 6. **Suggest next steps**
-   - Mention creating implementation plan: `/plan @docs/designs/FEATURE_NAME.md`
+   - Mention creating implementation plan: `/plan` (auto-finds design in project folder)
    - Note any open questions needing discussion
    - Suggest code review if relevant
    - Recommend who to discuss with if complex
@@ -366,11 +366,12 @@ After creating a design doc:
 ```bash
 # Create the design
 /design "sparse-file-support"
-# Output: docs/designs/sparse-file-support.md
+# Output: docs/projects/sparse-file-support/design.md
 
-# Create implementation plan from design
-/plan @docs/designs/sparse-file-support.md
-# Output: docs/implementation-plans/sparse-file-support.md
+# Create implementation plan (auto-finds design in project folder)
+/plan
+# Output: docs/projects/sparse-file-support/plan.md
+# Or explicitly: /plan @docs/projects/sparse-file-support/design.md
 ```
 
 ## Example Usage Scenarios
@@ -381,8 +382,8 @@ After creating a design doc:
 # [Discussion about approach, trade-offs, etc.]
 # Agent has enough context to extract problem and solution
 /design
-# Infers: Feature is "sparse file support"
-# Creates: docs/designs/sparse-file-support.md
+# Infers: Project name "sparse-file-support"
+# Creates: docs/projects/sparse-file-support/design.md
 ```
 
 ### Scenario 2: From conversation with explicit name
@@ -390,7 +391,7 @@ After creating a design doc:
 # User: "We should refactor the buffer management to be adaptive"
 # [Discussion about current issues and proposed solution]
 /design "adaptive-buffer-management"
-# Creates: docs/designs/adaptive-buffer-management.md
+# Creates: docs/projects/adaptive-buffer-management/design.md
 ```
 
 ### Scenario 3: Bug fix discussion
@@ -398,8 +399,8 @@ After creating a design doc:
 # User: "There's a race condition in metadata handling that causes corruption"
 # [Analysis of root cause and solution approach]
 /design
-# Infers: This is about "metadata race condition"
-# Creates: docs/designs/metadata-race-fix.md
+# Infers: Project "metadata-race-fix"
+# Creates: docs/projects/metadata-race-fix/design.md
 ```
 
 ### Scenario 4: Open files provide context
@@ -407,8 +408,8 @@ After creating a design doc:
 # User has src/copy.rs open
 # Discussion about improving performance with zero-copy
 /design
-# Infers: Feature from discussion and open file context
-# Creates: docs/designs/zero-copy-optimization.md
+# Infers: Project from discussion and open file context
+# Creates: docs/projects/zero-copy-optimization/design.md
 ```
 
 ### Scenario 5: Idea without implementation discussion
@@ -417,7 +418,7 @@ After creating a design doc:
 # Agent: "Tell me more about the use case and approach"
 # [Brief discussion]
 /design
-# Creates: docs/designs/compression-support.md
+# Creates: docs/projects/compression-support/design.md
 # May have more open questions, less implementation detail
 ```
 

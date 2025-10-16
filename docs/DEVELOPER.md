@@ -123,12 +123,13 @@ The Cursor workflow provides an AI-assisted development cycle:
 # [Discuss approach, trade-offs, constraints...]
 
 /design
-# Creates: docs/designs/sparse-file-support.md
+# Creates: docs/projects/sparse-file-support/design.md
 # Extracts: problem, solution, alternatives, complexity from conversation
 
 # 2. CREATE IMPLEMENTATION PLAN
-/plan @docs/designs/sparse-file-support.md
-# Creates: docs/implementation-plans/sparse-file-support.md
+/plan
+# Auto-finds: docs/projects/sparse-file-support/design.md
+# Creates: docs/projects/sparse-file-support/plan.md
 # Generates: phases with checkboxes, quality checks, test requirements
 
 # 3. CREATE FEATURE BRANCH
@@ -136,7 +137,8 @@ The Cursor workflow provides an AI-assisted development cycle:
 # Creates branch from remote main, sets upstream, pushes
 
 # 4. IMPLEMENT STEP-BY-STEP
-/implement @docs/implementation-plans/sparse-file-support.md
+/implement
+# Auto-finds: docs/projects/sparse-file-support/plan.md
 # Reads checkboxes, finds next unchecked item
 # Implements it, runs quality checks
 # Updates checkbox, adds notes if issues occur
@@ -159,13 +161,13 @@ The Cursor workflow provides an AI-assisted development cycle:
 
 #### Planning & Design
 - **`/design`** - Generate design document from conversation
-  - Auto-infers feature name and content from context
-  - Creates `docs/designs/FEATURE_NAME.md`
+  - Auto-infers project name and content from context
+  - Creates `docs/projects/PROJECT_NAME/design.md`
   - Includes: problem statement, architecture, testing strategy, complexity
 
 - **`/plan`** - Create phased implementation plan
-  - Can reference design doc or infer from context
-  - Creates `docs/implementation-plans/FEATURE_NAME.md`
+  - Auto-discovers design.md in project folder or infers from context
+  - Creates `docs/projects/PROJECT_NAME/plan.md`
   - Generates phases with checkboxes, quality checks, test items
 
 - **`/implement`** - Execute implementation plan

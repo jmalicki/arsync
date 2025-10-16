@@ -56,7 +56,7 @@ Generate a detailed implementation plan with the following structure:
 **Complexity**: [simple/medium/complex - automatically inferred]
 **Estimated Duration**: [time estimate based on complexity and scope]
 **Branch**: [suggested branch name following <area>/<verb-noun> convention]
-**Related Design**: [Link to design doc if provided: `../designs/FEATURE_NAME.md`]
+**Related Design**: [Link to design doc if exists: `design.md` in same project folder]
 
 ## Context
 [Brief summary of what was inferred from:
@@ -69,8 +69,8 @@ Generate a detailed implementation plan with the following structure:
 [1-2 paragraph description of what will be implemented and why]
 
 ## Design References
-[If design_doc provided:
-- **Design Document**: [`docs/designs/FEATURE_NAME.md`](../designs/FEATURE_NAME.md)
+[If design.md exists in same project folder:
+- **Design Document**: [`design.md`](design.md)
 - Key design decisions
 - Architecture choices
 - API contracts
@@ -235,27 +235,33 @@ The final phase must always include PR preparation:
 
 The plan should be output as a complete markdown document and saved to:
 
-**Location**: `docs/implementation-plans/FEATURE_NAME.md`
+**Location**: `docs/projects/PROJECT_NAME/plan.md`
 
-**Naming conventions**:
-- If design doc provided: Match the design doc name
-  - Design: `docs/designs/sparse-file-support.md`
-  - Plan: `docs/implementation-plans/sparse-file-support.md`
-- If no design doc: Derive from feature name in context
-  - Feature: "Add adaptive buffer sizing"
-  - Plan: `docs/implementation-plans/adaptive-buffer-sizing.md`
+**Project Discovery**:
+- If design doc provided: Use same project folder
+  - Design: `docs/projects/sparse-file-support/design.md`
+  - Plan: `docs/projects/sparse-file-support/plan.md`
+- If no design doc: Look for existing project or create new
+  - Check `docs/projects/PROJECT_NAME/design.md`
+  - If exists: Save plan alongside it
+  - If not: Create new project folder
 
 **Reference to design doc**:
-- If design doc exists, include link at the top:
+- If design.md exists in same project folder, include link:
   ```markdown
-  **Related Design**: [Design Document](../designs/FEATURE_NAME.md)
+  **Related Design**: [Design Document](design.md)
   ```
 
 The plan can be:
-1. Saved to `docs/implementation-plans/FEATURE_NAME.md`
+1. Saved to `docs/projects/PROJECT_NAME/plan.md`
 2. Used as a checklist during implementation
 3. Referenced in PR descriptions
 4. Tracked using `/todo` commands
+
+**Benefits of project-first structure:**
+- Auto-discovery: `/plan` can find `design.md` in same project folder
+- Bundled docs: All project docs in one place
+- Simpler paths: `docs/projects/PROJECT/design.md` and `plan.md`
 
 ## Best Practices
 
@@ -279,17 +285,19 @@ The plan can be:
 ### Scenario 2: With design document (file path)
 ```bash
 # User has a design doc: docs/designs/sparse-file-support.md
-/plan "docs/designs/sparse-file-support.md"
-# Creates: docs/implementation-plans/sparse-file-support.md
-# Links to: ../designs/sparse-file-support.md
+/plan @docs/projects/sparse-file-support/design.md
+# Creates: docs/projects/sparse-file-support/plan.md
+# Links to: design.md (same folder)
 ```
 
 ### Scenario 2b: With design document (@-mention)
 ```bash
 # Using Cursor's @-mention syntax (recommended)
-/plan @docs/designs/sparse-file-support.md
-# Creates: docs/implementation-plans/sparse-file-support.md
-# Includes reference to design doc at top
+/plan
+# Auto-discovers sparse-file-support project from context
+# Finds: docs/projects/sparse-file-support/design.md
+# Creates: docs/projects/sparse-file-support/plan.md
+# Links to: design.md
 ```
 
 ### Scenario 3: Open files provide context
@@ -310,9 +318,9 @@ The plan can be:
 ```bash
 # Design doc: docs/designs/distributed-sync.md
 # Agent parses doc and determines appropriate complexity
-/plan @docs/designs/distributed-sync.md
-# Creates: docs/implementation-plans/distributed-sync.md
-# Header includes: **Related Design**: [../designs/distributed-sync.md](../designs/distributed-sync.md)
+/plan @docs/projects/distributed-sync/design.md
+# Creates: docs/projects/distributed-sync/plan.md
+# Header includes: **Related Design**: [design.md](design.md)
 ```
 
 ## Integration with Other Commands
@@ -373,13 +381,13 @@ When invoked, the agent should:
      - Integration complexity
 
 6. **Generate plan**
-   - Determine feature name (from design doc or context)
-   - Create output path: `docs/implementation-plans/FEATURE_NAME.md`
+   - Determine project name (from design doc path, conversation, or context)
+   - Create output path: `docs/projects/PROJECT_NAME/plan.md`
+   - If design.md exists in project folder, reference it
    - Create phases appropriate to complexity
    - Reference specific files and line numbers
    - Include all quality checks
-   - Integrate design doc requirements
-   - Link to design doc if provided
+   - Integrate design doc requirements if available
 
 ## Notes
 
