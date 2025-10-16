@@ -253,7 +253,7 @@ run_test_suite "01_rsync_100gb" \
 
 run_test_suite "02_arsync_100gb" \
     "$SOURCE_DIR/single-large-files/100GB.dat" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/single-large-files/100GB.dat' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/single-large-files/100GB.dat' '$DEST_DIR/'"
 
 # 200GB file
 run_test_suite "03_rsync_200gb" \
@@ -262,7 +262,7 @@ run_test_suite "03_rsync_200gb" \
 
 run_test_suite "04_arsync_200gb" \
     "$SOURCE_DIR/single-large-files/200GB.dat" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/single-large-files/200GB.dat' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/single-large-files/200GB.dat' '$DEST_DIR/'"
 
 # 500GB file (if available)
 if [ -f "$SOURCE_DIR/single-large-files/500GB.dat" ]; then
@@ -272,7 +272,7 @@ if [ -f "$SOURCE_DIR/single-large-files/500GB.dat" ]; then
     
     run_test_suite "06_arsync_500gb" \
         "$SOURCE_DIR/single-large-files/500GB.dat" \
-        "$ARSYNC_BIN -a --source '$SOURCE_DIR/single-large-files/500GB.dat' --destination '$DEST_DIR/'"
+        "$ARSYNC_BIN -a '$SOURCE_DIR/single-large-files/500GB.dat' '$DEST_DIR/'"
 fi
 
 echo ""
@@ -288,7 +288,7 @@ run_test_suite "07_rsync_10k_tiny" \
 
 run_test_suite "08_arsync_10k_tiny" \
     "$SOURCE_DIR/tiny-files-10k/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/tiny-files-10k/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/tiny-files-10k/' '$DEST_DIR/'"
 
 # 100k × 1KB files
 run_test_suite "09_rsync_100k_tiny" \
@@ -297,7 +297,7 @@ run_test_suite "09_rsync_100k_tiny" \
 
 run_test_suite "10_arsync_100k_tiny" \
     "$SOURCE_DIR/small-files-100k/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/small-files-100k/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/small-files-100k/' '$DEST_DIR/'"
 
 # 1M × 1KB files (extreme scale test)
 if [ -d "$SOURCE_DIR/small-files-1m/" ]; then
@@ -307,7 +307,7 @@ if [ -d "$SOURCE_DIR/small-files-1m/" ]; then
     
     run_test_suite "12_arsync_1m_tiny" \
         "$SOURCE_DIR/small-files-1m/" \
-        "$ARSYNC_BIN -a --source '$SOURCE_DIR/small-files-1m/' --destination '$DEST_DIR/'"
+        "$ARSYNC_BIN -a '$SOURCE_DIR/small-files-1m/' '$DEST_DIR/'"
 fi
 
 # 10k × 10KB files
@@ -317,7 +317,7 @@ run_test_suite "13_rsync_10k_small" \
 
 run_test_suite "14_arsync_10k_small" \
     "$SOURCE_DIR/small-files-10k-each/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/small-files-10k-each/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/small-files-10k-each/' '$DEST_DIR/'"
 
 # 10k × 100KB files (medium)
 run_test_suite "15_rsync_10k_medium" \
@@ -326,7 +326,7 @@ run_test_suite "15_rsync_10k_medium" \
 
 run_test_suite "16_arsync_10k_medium" \
     "$SOURCE_DIR/medium-files-10k/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/medium-files-10k/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/medium-files-10k/' '$DEST_DIR/'"
 
 echo ""
 echo "========================================="
@@ -340,7 +340,7 @@ run_test_suite "17_rsync_deep_d10" \
 
 run_test_suite "18_arsync_deep_d10" \
     "$SOURCE_DIR/deep-tree-d10/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/deep-tree-d10/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/deep-tree-d10/' '$DEST_DIR/'"
 
 run_test_suite "19_rsync_wide" \
     "$SOURCE_DIR/wide-tree/" \
@@ -348,7 +348,7 @@ run_test_suite "19_rsync_wide" \
 
 run_test_suite "20_arsync_wide" \
     "$SOURCE_DIR/wide-tree/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/wide-tree/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/wide-tree/' '$DEST_DIR/'"
 
 echo ""
 echo "========================================="
@@ -362,7 +362,7 @@ run_test_suite "21_rsync_hardlinks_50pct" \
 
 run_test_suite "22_arsync_hardlinks_50pct" \
     "$SOURCE_DIR/hardlinks-50pct/" \
-    "$ARSYNC_BIN -aH --source '$SOURCE_DIR/hardlinks-50pct/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -aH '$SOURCE_DIR/hardlinks-50pct/' '$DEST_DIR/'"
 
 run_test_suite "23_rsync_hardlinks_90pct" \
     "$SOURCE_DIR/hardlinks-90pct/" \
@@ -370,7 +370,7 @@ run_test_suite "23_rsync_hardlinks_90pct" \
 
 run_test_suite "24_arsync_hardlinks_90pct" \
     "$SOURCE_DIR/hardlinks-90pct/" \
-    "$ARSYNC_BIN -aH --source '$SOURCE_DIR/hardlinks-90pct/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -aH '$SOURCE_DIR/hardlinks-90pct/' '$DEST_DIR/'"
 
 echo ""
 echo "========================================="
@@ -384,7 +384,7 @@ run_test_suite "25_rsync_photo_library" \
 
 run_test_suite "26_arsync_photo_library" \
     "$SOURCE_DIR/photo-library/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/photo-library/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/photo-library/' '$DEST_DIR/'"
 
 if [ -d "$SOURCE_DIR/linux-kernel/" ]; then
     run_test_suite "27_rsync_kernel" \
@@ -393,7 +393,7 @@ if [ -d "$SOURCE_DIR/linux-kernel/" ]; then
     
     run_test_suite "28_arsync_kernel" \
         "$SOURCE_DIR/linux-kernel/" \
-        "$ARSYNC_BIN -a --source '$SOURCE_DIR/linux-kernel/' --destination '$DEST_DIR/'"
+        "$ARSYNC_BIN -a '$SOURCE_DIR/linux-kernel/' '$DEST_DIR/'"
 fi
 
 echo ""
@@ -408,7 +408,7 @@ run_test_suite "29_rsync_xattrs" \
 
 run_test_suite "30_arsync_xattrs" \
     "$SOURCE_DIR/with-xattrs/" \
-    "$ARSYNC_BIN -aX --source '$SOURCE_DIR/with-xattrs/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -aX '$SOURCE_DIR/with-xattrs/' '$DEST_DIR/'"
 
 echo ""
 echo "========================================="

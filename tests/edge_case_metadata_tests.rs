@@ -4,21 +4,22 @@
 //! These tests cover extreme scenarios and edge cases that could reveal
 //! subtle bugs in the permission and timestamp preservation logic.
 
+use arsync::cli::Args;
 use arsync::copy::copy_file;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
-#[path = "common/mod.rs"]
-mod test_utils;
+
+mod common;
+use common::test_args::create_archive_test_args;
+use common::test_timeout_guard;
 use std::time::Duration as StdDuration;
-use test_utils::{test_helpers::create_test_args_archive, test_timeout_guard};
 
 /// Create a default Args struct for testing with archive mode enabled
-fn create_test_args_with_archive() -> arsync::cli::Args {
-    create_test_args_archive(PathBuf::from("/test/source"), PathBuf::from("/test/dest"))
+fn create_test_args_with_archive() -> Args {
+    create_archive_test_args()
 }
 
 /// Test permission preservation with files that have no read permission
@@ -42,7 +43,9 @@ async fn test_permission_preservation_no_read_permission() {
 
     // Copy the file (this should still work as we're the owner)
     let args = create_test_args_with_archive();
-    copy_file(&src_path, &dst_path, &args).await.unwrap();
+    copy_file(&src_path, &dst_path, &args.metadata)
+        .await
+        .unwrap();
 
     // Check that permissions were preserved
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -88,7 +91,9 @@ async fn test_timestamp_preservation_very_recent() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args).await.unwrap();
+        copy_file(&src_path, &dst_path, &args.metadata)
+            .await
+            .unwrap();
 
         // Check that the recent timestamp was preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -149,7 +154,7 @@ async fn test_permission_preservation_execute_only() {
 
         // Copy the file - skip if permission prevents reading
         let args = create_test_args_with_archive();
-        match copy_file(&src_path, &dst_path, &args).await {
+        match copy_file(&src_path, &dst_path, &args.metadata).await {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
@@ -214,7 +219,9 @@ async fn test_timestamp_preservation_identical_times() {
     if result == 0 {
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args).await.unwrap();
+        copy_file(&src_path, &dst_path, &args.metadata)
+            .await
+            .unwrap();
 
         // Check that identical timestamps were preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -287,7 +294,7 @@ async fn test_permission_preservation_all_bits() {
 
         // Copy the file - skip if permission prevents reading or writing
         let args = create_test_args_with_archive();
-        match copy_file(&src_path, &dst_path, &args).await {
+        match copy_file(&src_path, &dst_path, &args.metadata).await {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
@@ -347,7 +354,9 @@ async fn test_metadata_preservation_long_filename() {
 
     // Copy the file
     let args = create_test_args_with_archive();
-    copy_file(&src_path, &dst_path, &args).await.unwrap();
+    copy_file(&src_path, &dst_path, &args.metadata)
+        .await
+        .unwrap();
 
     // Check that permissions were preserved
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -414,7 +423,9 @@ async fn test_metadata_preservation_special_characters() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args).await.unwrap();
+        copy_file(&src_path, &dst_path, &args.metadata)
+            .await
+            .unwrap();
 
         // Check that permissions were preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -462,7 +473,9 @@ async fn test_metadata_preservation_unicode_filenames() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args).await.unwrap();
+        copy_file(&src_path, &dst_path, &args.metadata)
+            .await
+            .unwrap();
 
         // Check that permissions were preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();

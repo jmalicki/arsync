@@ -50,7 +50,9 @@ pub mod cli;
 pub mod copy;
 pub mod directory;
 pub mod error;
+pub mod i18n;
 pub mod io_uring;
+pub mod metadata;
 pub mod progress;
 pub mod sync;
 
@@ -58,8 +60,7 @@ pub mod sync;
 #[cfg(test)]
 pub use cli::Args;
 
-// Export protocol module for integration tests and when feature is enabled
-#[cfg(feature = "remote-sync")]
+// Protocol module: types are always available, implementation is feature-gated
 pub mod protocol;
 
 // Re-export commonly used types

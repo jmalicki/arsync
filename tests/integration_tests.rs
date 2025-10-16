@@ -32,15 +32,10 @@ fn test_missing_source() {
     let temp_dir = TempDir::new().unwrap();
 
     let mut cmd = Command::cargo_bin("arsync").unwrap();
-    cmd.args([
-        "--source",
-        "/nonexistent/path",
-        "--destination",
-        temp_dir.path().to_str().unwrap(),
-    ])
-    .assert()
-    .failure()
-    .stderr(predicate::str::contains("Source path does not exist"));
+    cmd.args(["/nonexistent/path", temp_dir.path().to_str().unwrap()])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Source path does not exist"));
 }
 
 #[test]
@@ -49,9 +44,7 @@ fn test_invalid_queue_depth() {
 
     let mut cmd = Command::cargo_bin("arsync").unwrap();
     cmd.args([
-        "--source",
         temp_dir.path().to_str().unwrap(),
-        "--destination",
         temp_dir.path().to_str().unwrap(),
         "--queue-depth",
         "100", // Too small
@@ -69,9 +62,7 @@ fn test_dry_run() {
 
     let mut cmd = Command::cargo_bin("arsync").unwrap();
     cmd.args([
-        "--source",
         temp_dir.path().to_str().unwrap(),
-        "--destination",
         temp_dir.path().to_str().unwrap(),
         "--dry-run",
     ])

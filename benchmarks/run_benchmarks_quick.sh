@@ -292,7 +292,7 @@ echo "=== TEST 1: Large Files (5× 5GB = 25GB) ==="
 # Run arsync first to catch bugs early
 run_test_suite "01_arsync_large_files" \
     "$SOURCE_DIR/large-files/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/large-files/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/large-files/' '$DEST_DIR/'"
 
 run_test_suite "02_rsync_large_files" \
     "$SOURCE_DIR/large-files/" \
@@ -303,7 +303,7 @@ echo ""
 echo "=== TEST 2: Small Files (1000 × 10KB) ==="
 run_test_suite "03_arsync_1k_small" \
     "$SOURCE_DIR/small-files-1k/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/small-files-1k/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/small-files-1k/' '$DEST_DIR/'"
 
 run_test_suite "04_rsync_1k_small" \
     "$SOURCE_DIR/small-files-1k/" \
@@ -314,7 +314,7 @@ echo ""
 echo "=== TEST 3: Tiny Files (5000 × 1KB) ==="
 run_test_suite "05_arsync_5k_tiny" \
     "$SOURCE_DIR/tiny-files-5k/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/tiny-files-5k/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/tiny-files-5k/' '$DEST_DIR/'"
 
 run_test_suite "06_rsync_5k_tiny" \
     "$SOURCE_DIR/tiny-files-5k/" \
@@ -325,7 +325,7 @@ echo ""
 echo "=== TEST 4: Medium Files (500 × 1MB) ==="
 run_test_suite "07_arsync_500_medium" \
     "$SOURCE_DIR/medium-files-500/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/medium-files-500/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/medium-files-500/' '$DEST_DIR/'"
 
 run_test_suite "08_rsync_500_medium" \
     "$SOURCE_DIR/medium-files-500/" \
@@ -336,7 +336,7 @@ echo ""
 echo "=== TEST 5: Mixed Workload (Photos) ==="
 run_test_suite "09_arsync_photos" \
     "$SOURCE_DIR/mixed-photos/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/mixed-photos/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/mixed-photos/' '$DEST_DIR/'"
 
 run_test_suite "10_rsync_photos" \
     "$SOURCE_DIR/mixed-photos/" \
@@ -347,7 +347,7 @@ echo ""
 echo "=== TEST 6: Directory Tree ==="
 run_test_suite "11_arsync_dirtree" \
     "$SOURCE_DIR/dir-tree/" \
-    "$ARSYNC_BIN -a --source '$SOURCE_DIR/dir-tree/' --destination '$DEST_DIR/'"
+    "$ARSYNC_BIN -a '$SOURCE_DIR/dir-tree/' '$DEST_DIR/'"
 
 run_test_suite "12_rsync_dirtree" \
     "$SOURCE_DIR/dir-tree/" \

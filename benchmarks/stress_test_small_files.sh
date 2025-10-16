@@ -70,8 +70,8 @@ test_file_count() {
     local start_time=$(date +%s.%N)
     
     if timeout 60 "$ARSYNC_BIN" -a \
-        --source "$source_dir/" \
-        --destination "$dest_dir/" \
+        "$source_dir/" \
+        "$dest_dir/" \
         > "$TEST_DIR/test_${count}_stdout.log" \
         2> "$TEST_DIR/test_${count}_stderr.log"; then
         

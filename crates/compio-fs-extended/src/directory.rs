@@ -148,6 +148,62 @@ impl DirectoryFd {
     }
 }
 
+/// Read directory entries
+///
+/// This function provides a consistent API for directory reading that abstracts
+/// whether the operation is blocking or uses io_uring.
+///
+/// CURRENT STATUS: Uses std::fs::read_dir (synchronous) because:
+/// - Linux kernel 6.14 does NOT have IORING_OP_GETDENTS64
+/// - Patches proposed in 2021 were never merged
+/// - See: https://lwn.net/Articles/878873/
+///
+/// FUTURE: If kernel adds GETDENTS64 support, this function can be updated
+/// to use io_uring without changing the calling code.
+///
+/// # Arguments
+///
+/// * `path` - Directory path to read
+///
+/// # Returns
+///
+/// Iterator over directory entries
+///
+/// # Errors
+///
+/// Returns an error if the directory cannot be read
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use compio_fs_extended::directory::read_dir;
+/// use std::path::Path;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let entries = read_dir(Path::new("/tmp")).await?;
+/// for entry in entries {
+///     let entry = entry?;
+///     println!("Entry: {:?}", entry.file_name());
+/// }
+/// # Ok(())
+/// # }
+/// ```
+pub async fn read_dir(path: &Path) -> Result<std::fs::ReadDir> {
+    // NOTE: Kernel limitation - must use synchronous std::fs::read_dir
+    // Wrapping in spawn to avoid blocking the async runtime
+    // This function exists to:
+    // 1. Provide a consistent API in compio-fs-extended
+    // 2. Allow future swap to io_uring if/when kernel adds GETDENTS64
+    // 3. Keep app code (src/directory.rs) abstracted from implementation details
+    let path_owned = path.to_path_buf();
+    compio::runtime::spawn(async move {
+        std::fs::read_dir(path_owned)
+            .map_err(|e| directory_error(&format!("Failed to read directory: {}", e)))
+    })
+    .await
+    .map_err(|e| directory_error(&format!("spawn failed: {:?}", e)))?
+}
+
 impl Clone for DirectoryFd {
     fn clone(&self) -> Self {
         Self {

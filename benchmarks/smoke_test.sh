@@ -116,7 +116,7 @@ run_test() {
     
     # Run with timeout protection
     set +e
-    timeout ${timeout_sec}s "$ARSYNC_BIN" -a --source "$source" --destination "$dest" 2>&1
+    timeout ${timeout_sec}s "$ARSYNC_BIN" -a "$source" "$dest" 2>&1
     local exit_code=$?
     set -e
     

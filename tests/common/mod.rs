@@ -4,6 +4,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+pub mod test_args;
+
+#[allow(dead_code)]
 pub struct TestTimeoutGuard {
     cancelled: Arc<AtomicBool>,
 }
@@ -14,6 +17,7 @@ impl Drop for TestTimeoutGuard {
     }
 }
 
+#[allow(dead_code)]
 pub fn test_timeout_guard(duration: Duration) -> TestTimeoutGuard {
     let cancelled = Arc::new(AtomicBool::new(false));
     let cancelled_clone = Arc::clone(&cancelled);

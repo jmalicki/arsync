@@ -9,6 +9,7 @@ use crate::cli::{Args, CopyMethod};
 use crate::copy::copy_file;
 use crate::error::{Result, SyncError};
 use crate::io_uring::FileOperations;
+use crate::metadata::MetadataConfig;
 // io_uring_extended removed - using compio directly
 use compio::dispatcher::Dispatcher;
 use compio_sync::Semaphore;
@@ -16,19 +17,20 @@ use compio_sync::Semaphore;
 use std::collections::HashMap;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
 
 /// Wrapper for shared statistics tracking across async tasks
 ///
-/// This struct wraps `DirectoryStats` in `Arc<Mutex<>>` to allow shared access
-/// across multiple async tasks dispatched by compio's dispatcher. It provides
-/// a clean API for updating statistics from concurrent operations.
+/// This struct uses lock-free atomic counters (`Arc<AtomicU64>`) for high-performance
+/// statistics tracking across multiple async tasks. All increment operations are
+/// lock-free using `fetch_add` with relaxed memory ordering.
 ///
 /// # Thread Safety
 ///
-/// All methods are thread-safe and can be called concurrently from different
-/// async tasks without additional synchronization.
+/// All methods are thread-safe and lock-free. Atomic operations use `Ordering::Relaxed`
+/// since statistics counters don't require synchronization (eventual consistency is fine).
 ///
 /// # Usage
 ///
@@ -38,173 +40,146 @@ use tracing::{debug, info, warn};
 /// stats.increment_bytes_copied(1024);
 /// let final_stats = stats.into_inner();
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SharedStats {
-    /// Inner stats wrapped in Arc<Mutex<>> for thread-safe access
-    inner: Arc<Mutex<DirectoryStats>>,
+    /// Files copied counter using atomics for lock-free operations
+    files_copied: Arc<AtomicU64>,
+    /// Directories created counter using atomics
+    directories_created: Arc<AtomicU64>,
+    /// Bytes copied counter using atomics
+    bytes_copied: Arc<AtomicU64>,
+    /// Symlinks processed counter using atomics
+    symlinks_processed: Arc<AtomicU64>,
+    /// Errors counter using atomics
+    errors: Arc<AtomicU64>,
 }
 
 impl SharedStats {
-    /// Create a new `SharedStats` wrapper
+    /// Create a new `SharedStats` wrapper with atomic counters
     ///
     /// # Arguments
     ///
     /// * `stats` - The initial directory statistics to wrap
     #[must_use]
-    pub fn new(stats: DirectoryStats) -> Self {
+    pub fn new(stats: &DirectoryStats) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(stats)),
+            files_copied: Arc::new(AtomicU64::new(stats.files_copied)),
+            directories_created: Arc::new(AtomicU64::new(stats.directories_created)),
+            bytes_copied: Arc::new(AtomicU64::new(stats.bytes_copied)),
+            symlinks_processed: Arc::new(AtomicU64::new(stats.symlinks_processed)),
+            errors: Arc::new(AtomicU64::new(stats.errors)),
         }
     }
 
     #[allow(dead_code)]
-    /// Get the number of files copied
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn files_copied(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .files_copied)
+    /// Get the number of files copied (lock-free atomic read)
+    #[must_use]
+    pub fn files_copied(&self) -> u64 {
+        self.files_copied.load(Ordering::Relaxed)
     }
 
     #[allow(dead_code)]
-    /// Get the number of directories created
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn directories_created(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .directories_created)
+    /// Get the number of directories created (lock-free atomic read)
+    #[must_use]
+    pub fn directories_created(&self) -> u64 {
+        self.directories_created.load(Ordering::Relaxed)
     }
 
     #[allow(dead_code)]
-    /// Get the number of bytes copied
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn bytes_copied(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .bytes_copied)
+    /// Get the number of bytes copied (lock-free atomic read)
+    #[must_use]
+    pub fn bytes_copied(&self) -> u64 {
+        self.bytes_copied.load(Ordering::Relaxed)
     }
 
     #[allow(dead_code)]
-    /// Get the number of symlinks processed
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn symlinks_processed(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .symlinks_processed)
+    /// Get the number of symlinks processed (lock-free atomic read)
+    #[must_use]
+    pub fn symlinks_processed(&self) -> u64 {
+        self.symlinks_processed.load(Ordering::Relaxed)
     }
 
     #[allow(dead_code)]
-    /// Get the number of errors encountered
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn errors(&self) -> Result<u64> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .errors)
+    /// Get the number of errors encountered (lock-free atomic read)
+    #[must_use]
+    pub fn errors(&self) -> u64 {
+        self.errors.load(Ordering::Relaxed)
     }
 
-    /// Increment the number of files copied
+    /// Increment the number of files copied (lock-free atomic operation)
     ///
     /// # Errors
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    /// Never errors (kept for API compatibility, atomics never fail)
+    #[allow(clippy::unnecessary_wraps)]
     pub fn increment_files_copied(&self) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .files_copied += 1;
+        self.files_copied.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
-    /// Increment the number of directories created
+    /// Increment the number of directories created (lock-free atomic operation)
     ///
     /// # Errors
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    /// Never errors (kept for API compatibility, atomics never fail)
+    #[allow(clippy::unnecessary_wraps)]
     pub fn increment_directories_created(&self) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .directories_created += 1;
+        self.directories_created.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
-    /// Increment the number of bytes copied
+    /// Increment the number of bytes copied by a given amount (lock-free atomic operation)
     ///
+    /// # Arguments
+    ///
+    /// * `bytes` - The number of bytes to add to the counter
+    ///
+    #[allow(clippy::unnecessary_wraps)]
     /// # Errors
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    /// Never errors (kept for API compatibility, atomics never fail)
     pub fn increment_bytes_copied(&self, bytes: u64) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .bytes_copied += bytes;
+        self.bytes_copied.fetch_add(bytes, Ordering::Relaxed);
         Ok(())
     }
 
-    /// Increment the number of symlinks processed
+    /// Increment the number of symlinks processed (lock-free atomic operation)
     ///
     /// # Errors
+    #[allow(clippy::unnecessary_wraps)]
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    /// Never errors (kept for API compatibility, atomics never fail)
     pub fn increment_symlinks_processed(&self) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .symlinks_processed += 1;
+        self.symlinks_processed.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
-    /// Increment the number of errors encountered
+    /// Increment the number of errors encountered (lock-free atomic operation)
     ///
     /// # Errors
     ///
-    /// This function will return an error if the internal mutex is poisoned.
+    #[allow(clippy::unnecessary_wraps)]
+    /// Never errors (kept for API compatibility, atomics never fail)
     pub fn increment_errors(&self) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| SyncError::FileSystem("Failed to acquire stats lock".to_string()))?
-            .errors += 1;
+        self.errors.fetch_add(1, Ordering::Relaxed);
         Ok(())
     }
 
     /// Extract the inner `DirectoryStats` from the shared wrapper
     ///
-    /// # Errors
+    /// This is now a simple atomic load operation since we're using atomics.
     ///
-    /// This function will return an error if:
-    /// - Multiple references to the Arc exist (cannot unwrap)
-    /// - The internal mutex is poisoned
+    /// # Errors
+    #[allow(clippy::unnecessary_wraps)]
+    ///
+    /// Never errors (kept for API compatibility, atomics never fail)
     pub fn into_inner(self) -> Result<DirectoryStats> {
-        let inner = Arc::try_unwrap(self.inner).map_err(|_| {
-            SyncError::FileSystem("Failed to unwrap Arc - multiple references exist".to_string())
-        })?;
-        inner.into_inner().map_err(|_| {
-            SyncError::FileSystem("Failed to unwrap Mutex - mutex is poisoned".to_string())
+        Ok(DirectoryStats {
+            files_copied: self.files_copied.load(Ordering::Relaxed),
+            directories_created: self.directories_created.load(Ordering::Relaxed),
+            bytes_copied: self.bytes_copied.load(Ordering::Relaxed),
+            symlinks_processed: self.symlinks_processed.load(Ordering::Relaxed),
+            errors: self.errors.load(Ordering::Relaxed),
         })
     }
 }
@@ -447,11 +422,10 @@ impl SharedSemaphore {
     }
 }
 
-/// Extended metadata using `std::fs` metadata support
-#[derive(Debug)]
+/// Extended metadata using `compio::fs` metadata support
 pub struct ExtendedMetadata {
-    /// The underlying filesystem metadata
-    pub metadata: std::fs::Metadata,
+    /// The underlying filesystem metadata (from `compio::fs`)
+    pub metadata: compio::fs::Metadata,
 }
 
 impl ExtendedMetadata {
@@ -463,9 +437,10 @@ impl ExtendedMetadata {
     /// - The path does not exist
     /// - Permission is denied to read the path
     /// - The path is not accessible
-    #[allow(clippy::unused_async)]
+    #[allow(clippy::future_not_send)]
     pub async fn new(path: &Path) -> Result<Self> {
-        let metadata = std::fs::symlink_metadata(path).map_err(|e| {
+        // Use compio::fs::symlink_metadata for async metadata retrieval
+        let metadata = compio::fs::symlink_metadata(path).await.map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to get metadata for {}: {}",
                 path.display(),
@@ -592,7 +567,7 @@ pub async fn copy_directory(
         let root_metadata = ExtendedMetadata::new(src).await?;
         hardlink_tracker.set_source_filesystem(root_metadata.device_id());
     } else {
-        std::fs::create_dir_all(dst).map_err(|e| {
+        compio::fs::create_dir_all(dst).await.map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to create destination directory {}: {}",
                 dst.display(),
@@ -604,7 +579,7 @@ pub async fn copy_directory(
 
         // Preserve root directory metadata (permissions, ownership, timestamps) if requested
         let root_metadata = ExtendedMetadata::new(src).await?;
-        preserve_directory_metadata(src, dst, &root_metadata, args).await?;
+        preserve_directory_metadata(src, dst, &root_metadata, &args.metadata).await?;
 
         // Set source filesystem from root directory
         hardlink_tracker.set_source_filesystem(root_metadata.device_id());
@@ -618,7 +593,8 @@ pub async fn copy_directory(
         _copy_method,
         &mut stats,
         &mut hardlink_tracker,
-        args,
+        &args.metadata,
+        &args.concurrency,
     )
     .await?;
 
@@ -690,47 +666,50 @@ async fn traverse_and_copy_directory_iterative(
     _copy_method: CopyMethod,
     stats: &mut DirectoryStats,
     hardlink_tracker: &mut FilesystemTracker,
-    args: &Args,
+    metadata_config: &MetadataConfig,
+    concurrency_config: &crate::cli::ConcurrencyConfig,
 ) -> Result<()> {
     // Create a dispatcher for async operations
     let dispatcher = Box::leak(Box::new(Dispatcher::new()?));
 
-    // Leak file_ops and args to give them static lifetimes (it's fine since they're just references)
-    let file_ops_static: &'static FileOperations = unsafe { std::mem::transmute(file_ops) };
-    let args_static: &'static Args = unsafe { std::mem::transmute(args) };
+    // Create Arc-wrapped FileOperations and configs for safe sharing across async tasks
+    // No more unsafe transmute needed!
+    let file_ops_arc = Arc::new(file_ops.clone());
+    let metadata_config_arc = Arc::new(metadata_config.clone());
 
     // Wrap shared state in wrapper types for static lifetimes
-    let shared_stats = SharedStats::new(std::mem::take(stats));
+    let stats_value = std::mem::take(stats);
+    let shared_stats = SharedStats::new(&stats_value);
     let shared_hardlink_tracker = SharedHardlinkTracker::new(std::mem::take(hardlink_tracker));
 
     // Check FD limits and warn if too low
     if let Ok(fd_limit) = check_fd_limits() {
-        if fd_limit < args.max_files_in_flight as u64 {
+        if fd_limit < concurrency_config.max_files_in_flight as u64 {
             warn!(
                 "FD limit ({}) is less than --max-files-in-flight ({}). Consider: ulimit -n {}",
                 fd_limit,
-                args.max_files_in_flight,
-                args.max_files_in_flight * 2
+                concurrency_config.max_files_in_flight,
+                concurrency_config.max_files_in_flight * 2
             );
         }
     }
 
-    // Create adaptive concurrency controller for bounding concurrent operations
-    // This prevents unbounded queue growth and adapts to resource constraints
-    let concurrency_controller =
-        Arc::new(AdaptiveConcurrencyController::new(args.max_files_in_flight));
+    // Create adaptive concurrency controller from config options
+    // The controller owns its configuration and behavior (adapt vs fail)
+    let concurrency_options = concurrency_config.to_options();
+    let concurrency_controller = Arc::new(AdaptiveConcurrencyController::new(&concurrency_options));
 
     // Process the directory
     let result = process_directory_entry_with_compio(
         dispatcher,
         initial_src,
         initial_dst,
-        file_ops_static,
+        file_ops_arc,
         _copy_method,
         shared_stats.clone(),
         shared_hardlink_tracker.clone(),
         concurrency_controller,
-        args_static,
+        metadata_config_arc,
     )
     .await;
 
@@ -790,12 +769,12 @@ async fn process_directory_entry_with_compio(
     dispatcher: &'static Dispatcher,
     src_path: PathBuf,
     dst_path: PathBuf,
-    file_ops: &'static FileOperations,
+    file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
     stats: SharedStats,
     hardlink_tracker: SharedHardlinkTracker,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
-    args: &'static Args,
+    metadata_config: Arc<MetadataConfig>,
 ) -> Result<()> {
     // Acquire permit from adaptive concurrency controller
     // This prevents unbounded queue growth and adapts to resource constraints (e.g., FD exhaustion)
@@ -823,19 +802,22 @@ async fn process_directory_entry_with_compio(
             stats.increment_directories_created()?;
 
             // Preserve directory metadata (permissions, ownership, timestamps) if requested
-            preserve_directory_metadata(&src_path, &dst_path, &extended_metadata, args).await?;
+            preserve_directory_metadata(&src_path, &dst_path, &extended_metadata, &metadata_config)
+                .await?;
         }
 
-        // Read directory entries using std::fs::read_dir
-        // Note: compio doesn't have read_dir yet, but we use compio's dispatcher
-        // for async scheduling of the actual processing operations
-        let entries = std::fs::read_dir(&src_path).map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to read directory {}: {}",
-                src_path.display(),
-                e
-            ))
-        })?;
+        // Read directory entries using compio-fs-extended wrapper
+        // This abstracts whether read_dir is blocking or uses io_uring (currently blocking due to kernel limitation)
+        // See: compio_fs_extended::directory::read_dir for implementation details and kernel status
+        let entries = compio_fs_extended::directory::read_dir(&src_path)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to read directory {}: {}",
+                    src_path.display(),
+                    e
+                ))
+            })?;
 
         // ========================================================================
         // CONCURRENT PROCESSING: Dispatch all child entries concurrently
@@ -867,18 +849,20 @@ async fn process_directory_entry_with_compio(
             let stats = stats.clone();
             let hardlink_tracker = hardlink_tracker.clone();
             let concurrency_controller = concurrency_controller.clone();
+            let file_ops_clone = Arc::clone(&file_ops);
+            let metadata_config_clone = Arc::clone(&metadata_config);
             let receiver = dispatcher
                 .dispatch(move || {
                     process_directory_entry_with_compio(
                         dispatcher,
                         child_src_path,
                         child_dst_path,
-                        file_ops,
+                        file_ops_clone,
                         copy_method,
                         stats,
                         hardlink_tracker,
                         concurrency_controller.clone(),
-                        args,
+                        metadata_config_clone,
                     )
                 })
                 .map_err(|e| {
@@ -918,7 +902,7 @@ async fn process_directory_entry_with_compio(
             stats,
             hardlink_tracker,
             concurrency_controller,
-            args,
+            metadata_config,
         )
         .await?;
     } else if extended_metadata.is_symlink() {
@@ -958,12 +942,12 @@ async fn process_file(
     src_path: PathBuf,
     dst_path: PathBuf,
     metadata: ExtendedMetadata,
-    _file_ops: &'static FileOperations,
+    _file_ops: Arc<FileOperations>,
     _copy_method: CopyMethod,
     stats: SharedStats,
     hardlink_tracker: SharedHardlinkTracker,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
-    args: &'static Args,
+    metadata_config: Arc<MetadataConfig>,
 ) -> Result<()> {
     debug!(
         "Processing file: {} (link_count: {})",
@@ -983,12 +967,13 @@ async fn process_file(
             inode_number,
             &stats,
             &hardlink_tracker,
-        )?;
+        )
+        .await?;
     } else {
         // First time seeing this inode - copy the file content normally
         debug!("Copying file content: {}", src_path.display());
 
-        match copy_file(&src_path, &dst_path, args).await {
+        match copy_file(&src_path, &dst_path, &metadata_config).await {
             Ok(()) => {
                 stats.increment_files_copied()?;
                 stats.increment_bytes_copied(metadata.len())?;
@@ -996,39 +981,18 @@ async fn process_file(
                 debug!("Copied file: {}", dst_path.display());
             }
             Err(e) => {
-                // Check if this is FD exhaustion and handle accordingly
-                let adapted = concurrency_controller.handle_error(&e);
+                // Handle error - controller will either adapt or fail based on configuration
+                // If fail_on_exhaustion is true and this is EMFILE, this returns an error
+                // Otherwise, it adapts automatically and returns Ok
+                concurrency_controller.handle_error(&e)?;
 
-                if adapted {
-                    // Adapted to FD exhaustion
-                    if args.no_adaptive_concurrency {
-                        // User disabled adaptive concurrency - fail hard
-                        return Err(SyncError::FdExhaustion(format!(
-                            "File descriptor exhaustion detected (--no-adaptive-concurrency is set). \
-                             Failed to copy {} -> {}: {}. \
-                             Either increase ulimit or remove --no-adaptive-concurrency flag.",
-                            src_path.display(),
-                            dst_path.display(),
-                            e
-                        )));
-                    }
-                    // Otherwise, log warning and continue with reduced concurrency
-                    warn!(
-                        "Adapted to FD exhaustion - continuing with reduced concurrency. \
-                         Failed to copy file {} -> {}: {}",
-                        src_path.display(),
-                        dst_path.display(),
-                        e
-                    );
-                } else {
-                    // Not FD exhaustion - just log warning
-                    warn!(
-                        "Failed to copy file {} -> {}: {}",
-                        src_path.display(),
-                        dst_path.display(),
-                        e
-                    );
-                }
+                // Log the error and continue
+                warn!(
+                    "Failed to copy file {} -> {}: {}",
+                    src_path.display(),
+                    dst_path.display(),
+                    e
+                );
                 stats.increment_errors()?;
             }
         }
@@ -1069,7 +1033,8 @@ async fn process_file(
 ///
 /// - Increments the files-copied counter on successful hardlink creation
 /// - Increments the error counter on failures
-fn handle_existing_hardlink(
+#[allow(clippy::future_not_send)]
+async fn handle_existing_hardlink(
     dst_path: &Path,
     src_path: &Path,
     inode_number: u64,
@@ -1088,7 +1053,7 @@ fn handle_existing_hardlink(
         // Create destination directory if needed
         if let Some(parent) = dst_path.parent() {
             if !parent.exists() {
-                std::fs::create_dir_all(parent).map_err(|e| {
+                compio::fs::create_dir_all(parent).await.map_err(|e| {
                     SyncError::FileSystem(format!(
                         "Failed to create parent directory {}: {}",
                         parent.display(),
@@ -1098,8 +1063,9 @@ fn handle_existing_hardlink(
             }
         }
 
-        // Create hardlink using std filesystem operations (compio has Send issues)
-        match std::fs::hard_link(&original_path, dst_path) {
+        // Create hardlink using compio-fs-extended for io_uring operations
+        match compio_fs_extended::hardlink::create_hardlink_at_path(&original_path, dst_path).await
+        {
             Ok(()) => {
                 stats.increment_files_copied()?;
                 debug!(
@@ -1151,6 +1117,7 @@ fn handle_existing_hardlink(
 /// This function will return an error if:
 /// - Symlink target reading fails
 /// - Symlink creation fails
+#[allow(clippy::future_not_send)]
 async fn process_symlink(src_path: PathBuf, dst_path: PathBuf, stats: SharedStats) -> Result<()> {
     debug!("Processing symlink: {}", src_path.display());
 
@@ -1168,19 +1135,66 @@ async fn process_symlink(src_path: PathBuf, dst_path: PathBuf, stats: SharedStat
 }
 
 /// Copy a symlink preserving its target
-#[allow(clippy::unused_async)]
+#[allow(clippy::future_not_send)]
 async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
-    let target = std::fs::read_link(src).map_err(|e| {
+    use compio_fs_extended::directory::DirectoryFd;
+    use compio_fs_extended::symlink::{create_symlink_at_dirfd, read_symlink_at_dirfd};
+
+    // Extract parent directory and filename for DirectoryFd operations
+    let src_parent = src.parent().ok_or_else(|| {
+        SyncError::FileSystem(format!("Source path has no parent: {}", src.display()))
+    })?;
+    let src_name = src
+        .file_name()
+        .ok_or_else(|| {
+            SyncError::FileSystem(format!("Source path has no filename: {}", src.display()))
+        })?
+        .to_string_lossy();
+
+    let dst_parent = dst.parent().ok_or_else(|| {
+        SyncError::FileSystem(format!("Destination path has no parent: {}", dst.display()))
+    })?;
+    let dst_name = dst
+        .file_name()
+        .ok_or_else(|| {
+            SyncError::FileSystem(format!(
+                "Destination path has no filename: {}",
+                dst.display()
+            ))
+        })?
+        .to_string_lossy();
+
+    // Open DirectoryFd for source and destination parents
+    let src_dir_fd = DirectoryFd::open(src_parent).await.map_err(|e| {
         SyncError::FileSystem(format!(
-            "Failed to read symlink target for {}: {}",
-            src.display(),
+            "Failed to open source directory {}: {}",
+            src_parent.display(),
             e
         ))
     })?;
 
+    let dst_dir_fd = DirectoryFd::open(dst_parent).await.map_err(|e| {
+        SyncError::FileSystem(format!(
+            "Failed to open destination directory {}: {}",
+            dst_parent.display(),
+            e
+        ))
+    })?;
+
+    // Read symlink target using io_uring DirectoryFd operations
+    let target = read_symlink_at_dirfd(&src_dir_fd, &src_name)
+        .await
+        .map_err(|e| {
+            SyncError::FileSystem(format!(
+                "Failed to read symlink target for {}: {}",
+                src.display(),
+                e
+            ))
+        })?;
+
     // Remove destination if it exists
     if dst.exists() {
-        std::fs::remove_file(dst).map_err(|e| {
+        compio::fs::remove_file(dst).await.map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to remove existing destination {}: {}",
                 dst.display(),
@@ -1189,10 +1203,11 @@ async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
         })?;
     }
 
-    // Create symlink with same target
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(&target, dst).map_err(|e| {
+    // Create symlink with same target using io_uring DirectoryFd operations
+    let target_str = target.to_string_lossy();
+    create_symlink_at_dirfd(&dst_dir_fd, &target_str, &dst_name)
+        .await
+        .map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to create symlink {} -> {}: {}",
                 dst.display(),
@@ -1200,14 +1215,6 @@ async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
                 e
             ))
         })?;
-    }
-
-    #[cfg(not(unix))]
-    {
-        return Err(SyncError::FileSystem(
-            "Symlink creation not supported on this platform".to_string(),
-        ));
-    }
 
     debug!("Copied symlink {} -> {}", dst.display(), target.display());
     Ok(())
@@ -1554,6 +1561,7 @@ pub async fn preserve_directory_xattr(src_path: &Path, dst_path: &Path) -> Resul
 /// * `src_path` - Source directory path
 /// * `dst_path` - Destination directory path  
 /// * `extended_metadata` - Pre-captured source directory metadata
+/// * `metadata_config` - Metadata preservation configuration
 ///
 /// # Returns
 ///
@@ -1570,12 +1578,12 @@ pub async fn preserve_directory_metadata(
     src_path: &Path,
     dst_path: &Path,
     extended_metadata: &ExtendedMetadata,
-    args: &Args,
+    metadata_config: &MetadataConfig,
 ) -> Result<()> {
     use compio_fs_extended::{metadata, OwnershipOps};
 
     // Preserve directory permissions if requested
-    if args.should_preserve_permissions() {
+    if metadata_config.should_preserve_permissions() {
         let src_permissions = extended_metadata.metadata.permissions();
         let mode = src_permissions.mode();
         let compio_permissions = compio::fs::Permissions::from_mode(mode);
@@ -1603,7 +1611,7 @@ pub async fn preserve_directory_metadata(
     }
 
     // Preserve directory ownership if requested
-    if args.should_preserve_ownership() {
+    if metadata_config.should_preserve_ownership() {
         let source_uid = extended_metadata.metadata.uid();
         let source_gid = extended_metadata.metadata.gid();
 
@@ -1628,7 +1636,7 @@ pub async fn preserve_directory_metadata(
     }
 
     // Preserve directory timestamps if requested
-    if args.should_preserve_timestamps() {
+    if metadata_config.should_preserve_timestamps() {
         let src_accessed = extended_metadata.metadata.accessed().map_err(|e| {
             SyncError::FileSystem(format!("Failed to get source directory access time: {e}"))
         })?;
@@ -1649,7 +1657,7 @@ pub async fn preserve_directory_metadata(
     }
 
     // Preserve directory extended attributes if requested
-    if args.should_preserve_xattrs() {
+    if metadata_config.should_preserve_xattrs() {
         preserve_directory_xattr(src_path, dst_path).await?;
         debug!("Preserved directory xattrs for {}", dst_path.display());
     }
@@ -1753,7 +1761,7 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
-            SharedStats::new(stats),
+            SharedStats::new(&stats),
         )
         .await;
 
@@ -1785,7 +1793,7 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
-            SharedStats::new(stats),
+            SharedStats::new(&stats),
         )
         .await;
 

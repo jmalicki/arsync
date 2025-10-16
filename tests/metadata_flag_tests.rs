@@ -11,36 +11,29 @@ use arsync::copy::copy_file;
 use arsync::directory::{preserve_directory_metadata, ExtendedMetadata};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use tempfile::TempDir;
 
 mod common;
-use common::test_helpers::create_test_args;
+use common::test_args::{create_minimal_test_args, ArgsBuilder};
 
 /// Create Args with NO metadata preservation (default rsync behavior)
 fn create_args_no_metadata() -> Args {
-    create_test_args(PathBuf::from("/test/source"), PathBuf::from("/test/dest"))
+    create_minimal_test_args()
 }
 
 /// Create Args with only permissions preservation enabled
 fn create_args_perms_only() -> Args {
-    let mut args = create_args_no_metadata();
-    args.perms = true;
-    args
+    ArgsBuilder::new().perms(true).build()
 }
 
 /// Create Args with only timestamp preservation enabled
 fn create_args_times_only() -> Args {
-    let mut args = create_args_no_metadata();
-    args.times = true;
-    args
+    ArgsBuilder::new().times(true).build()
 }
 
 /// Create Args with archive mode (all metadata)
 fn create_args_archive() -> Args {
-    let mut args = create_args_no_metadata();
-    args.archive = true;
-    args
+    ArgsBuilder::new().archive(true).build()
 }
 
 /// Test: Permissions are NOT preserved when --perms flag is OFF
@@ -64,7 +57,9 @@ async fn test_permissions_not_preserved_when_flag_off() {
 
     // Copy WITHOUT --perms flag
     let args = create_args_no_metadata();
-    copy_file(&src_path, &dst_path, &args).await.unwrap();
+    copy_file(&src_path, &dst_path, &args.metadata)
+        .await
+        .unwrap();
 
     // Destination should NOT have the same permissions as source
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -102,7 +97,9 @@ async fn test_permissions_preserved_when_flag_on() {
 
     // Copy WITH --perms flag
     let args = create_args_perms_only();
-    copy_file(&src_path, &dst_path, &args).await.unwrap();
+    copy_file(&src_path, &dst_path, &args.metadata)
+        .await
+        .unwrap();
 
     // Destination SHOULD have the same permissions as source
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -141,7 +138,9 @@ async fn test_timestamps_not_preserved_when_flag_off() {
 
     // Copy WITHOUT --times flag
     let args = create_args_no_metadata();
-    copy_file(&src_path, &dst_path, &args).await.unwrap();
+    copy_file(&src_path, &dst_path, &args.metadata)
+        .await
+        .unwrap();
 
     // Destination should have DIFFERENT (newer) timestamps
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -180,7 +179,9 @@ async fn test_timestamps_preserved_when_flag_on() {
 
     // Copy WITH --times flag
     let args = create_args_times_only();
-    copy_file(&src_path, &dst_path, &args).await.unwrap();
+    copy_file(&src_path, &dst_path, &args.metadata)
+        .await
+        .unwrap();
 
     // Destination SHOULD have the same timestamps as source (within precision)
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -228,7 +229,9 @@ async fn test_archive_mode_preserves_all_metadata() {
 
     // Copy WITH --archive flag
     let args = create_args_archive();
-    copy_file(&src_path, &dst_path, &args).await.unwrap();
+    copy_file(&src_path, &dst_path, &args.metadata)
+        .await
+        .unwrap();
 
     // Verify both permissions and timestamps are preserved
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -280,7 +283,7 @@ async fn test_directory_permissions_not_preserved_when_flag_off() {
     // Preserve metadata WITHOUT --perms flag
     let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
     let args = create_args_no_metadata();
-    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args)
+    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args.metadata)
         .await
         .unwrap();
 
@@ -322,7 +325,7 @@ async fn test_directory_permissions_preserved_when_flag_on() {
     // Preserve metadata WITH --perms flag
     let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
     let args = create_args_perms_only();
-    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args)
+    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args.metadata)
         .await
         .unwrap();
 
@@ -362,13 +365,13 @@ async fn test_individual_flags_match_archive_components() {
 
     // Copy with --perms only
     let args_perms = create_args_perms_only();
-    copy_file(&src_path1, &dst_path1_perms, &args_perms)
+    copy_file(&src_path1, &dst_path1_perms, &args_perms.metadata)
         .await
         .unwrap();
 
     // Copy with --archive
     let args_archive = create_args_archive();
-    copy_file(&src_path1, &dst_path1_archive, &args_archive)
+    copy_file(&src_path1, &dst_path1_archive, &args_archive.metadata)
         .await
         .unwrap();
 

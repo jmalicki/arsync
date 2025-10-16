@@ -14,24 +14,29 @@ mod cli;
 mod copy;
 mod directory;
 mod error;
+mod i18n;
 mod io_uring;
+mod metadata;
 mod progress;
+mod protocol;
 mod sync;
 
-// Remote sync protocol (feature-gated for now)
-#[cfg(feature = "remote-sync")]
-mod protocol;
-
 use cli::{Args, Location};
+use i18n::{set_language, Language, TranslationKey};
 
-#[compio::main(unwind_safe)]
+#[compio::main]
 async fn main() -> Result<()> {
     // Parse command line arguments
     let args = Args::parse();
 
+    // Set language based on --pirate flag
+    if args.output.pirate {
+        set_language(Language::Pirate);
+    }
+
     // Initialize logging based on verbosity and quiet mode
     // Note: In pipe mode, logs go to stderr (FD 2) so they don't interfere with protocol (FD 0/1)
-    if args.pipe || args.quiet {
+    if args.remote.pipe || args.quiet() {
         // In quiet or pipe mode, only log errors (to stderr)
         let subscriber = tracing_subscriber::fmt()
             .with_max_level(Level::ERROR)
@@ -41,7 +46,7 @@ async fn main() -> Result<()> {
         tracing::subscriber::set_global_default(subscriber)?;
     } else {
         let subscriber = tracing_subscriber::fmt()
-            .with_max_level(match args.verbose {
+            .with_max_level(match args.verbose() {
                 0 => Level::WARN,
                 1 => Level::INFO,
                 2 => Level::DEBUG,
@@ -61,11 +66,11 @@ async fn main() -> Result<()> {
         .context("Failed to parse destination")?;
 
     // Log startup information (unless in quiet mode)
-    if !args.quiet {
+    if !args.quiet() {
         info!("Starting arsync v{}", env!("CARGO_PKG_VERSION"));
 
         // Show SIMD capabilities for checksums (verbose mode only)
-        if args.verbose > 0 {
+        if args.verbose() > 0 {
             #[cfg(target_arch = "x86_64")]
             {
                 if is_x86_feature_detected!("avx512f") {
@@ -104,18 +109,18 @@ async fn main() -> Result<()> {
                 }
             }
         }
-        info!("Copy method: {:?}", args.copy_method);
-        info!("Queue depth: {}", args.queue_depth);
+        info!("Copy method: {:?}", args.copy_method());
+        info!("Queue depth: {}", args.queue_depth());
         info!("CPU count: {}", args.effective_cpu_count());
-        info!("Buffer size: {} KB", args.buffer_size_kb);
-        info!("Max files in flight: {}", args.max_files_in_flight);
+        info!("Buffer size: {} KB", args.io.buffer_size_kb);
+        info!("Max files in flight: {}", args.max_files_in_flight());
     }
 
     // Validate arguments
     args.validate().context("Invalid arguments")?;
 
     // Route to appropriate mode
-    let result = if args.pipe {
+    let result = if args.remote.pipe {
         // ============================================================
         // PIPE MODE (TESTING ONLY)
         // ============================================================
@@ -125,7 +130,7 @@ async fn main() -> Result<()> {
         // ============================================================
         #[cfg(feature = "remote-sync")]
         {
-            match args.pipe_role {
+            match args.remote.pipe_role {
                 Some(cli::PipeRole::Sender) => {
                     info!("Pipe mode: sender");
                     protocol::pipe_sender(&args, &source).await
@@ -164,14 +169,42 @@ async fn main() -> Result<()> {
 
     match result {
         Ok(stats) => {
-            info!("Sync completed successfully");
-            info!("Files copied: {}", stats.files_copied);
-            info!("Bytes copied: {}", stats.bytes_copied);
+            info!(
+                "{}",
+                TranslationKey::StatusComplete
+                    .get()
+                    .unwrap_or_else(|_| "Complete".to_string())
+            );
+            info!(
+                "{} {}: {}",
+                TranslationKey::ProgressFiles
+                    .get()
+                    .unwrap_or_else(|_| "Files".to_string()),
+                TranslationKey::ProgressCompleted
+                    .get()
+                    .unwrap_or_else(|_| "Completed".to_string()),
+                stats.files_copied
+            );
+            info!(
+                "{} {}: {}",
+                TranslationKey::ProgressBytes
+                    .get()
+                    .unwrap_or_else(|_| "Bytes".to_string()),
+                TranslationKey::ProgressCompleted
+                    .get()
+                    .unwrap_or_else(|_| "Completed".to_string()),
+                stats.bytes_copied
+            );
             info!("Duration: {:?}", stats.duration);
             Ok(())
         }
         Err(e) => {
-            eprintln!("Error: {e}");
+            eprintln!(
+                "{}: {e}",
+                TranslationKey::StatusFailed
+                    .get()
+                    .unwrap_or_else(|_| "Failed".to_string())
+            );
             std::process::exit(1);
         }
     }

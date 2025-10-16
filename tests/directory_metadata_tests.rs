@@ -3,20 +3,13 @@
 //! This module tests directory metadata preservation including permissions,
 //! ownership, and timestamps during directory copy operations.
 
+mod common;
+
 use arsync::directory::{preserve_directory_metadata, ExtendedMetadata};
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
-use std::path::PathBuf;
 use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
-
-mod common;
-use common::test_helpers::create_test_args_archive;
-
-/// Create a default Args struct for testing with archive mode enabled
-fn create_test_args_with_archive() -> arsync::cli::Args {
-    create_test_args_archive(PathBuf::from("/test/source"), PathBuf::from("/test/dest"))
-}
 
 /// Test directory permissions preservation
 #[compio::test]
@@ -37,8 +30,8 @@ async fn test_directory_permissions_preservation() {
     let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
 
     // Actually call the preserve_directory_metadata function with archive mode
-    let args = create_test_args_with_archive();
-    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args)
+    let args = common::test_args::create_archive_test_args();
+    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args.metadata)
         .await
         .unwrap();
 
@@ -72,8 +65,8 @@ async fn test_directory_permissions_special_bits() {
     let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
 
     // Actually call the preserve_directory_metadata function with archive mode
-    let args = create_test_args_with_archive();
-    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args)
+    let args = common::test_args::create_archive_test_args();
+    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args.metadata)
         .await
         .unwrap();
 
@@ -222,8 +215,8 @@ async fn test_nested_directory_metadata_preservation() {
         let extended_metadata = ExtendedMetadata::new(src_path).await.unwrap();
 
         // Actually call the preserve_directory_metadata function with archive mode
-        let args = create_test_args_with_archive();
-        preserve_directory_metadata(src_path, dst_path, &extended_metadata, &args)
+        let args = common::test_args::create_archive_test_args();
+        preserve_directory_metadata(src_path, dst_path, &extended_metadata, &args.metadata)
             .await
             .unwrap();
 
@@ -259,9 +252,9 @@ async fn test_directory_metadata_restrictive_permissions() {
 
     // Actually call the preserve_directory_metadata function with archive mode
     // Note: This may fail for very restrictive permissions (0o000) due to inability to read xattrs
-    let args = create_test_args_with_archive();
+    let args = common::test_args::create_archive_test_args();
     let preservation_result =
-        preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args).await;
+        preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args.metadata).await;
 
     // For very restrictive permissions, we expect some operations to fail
     if preservation_result.is_err() {
@@ -306,9 +299,9 @@ async fn test_directory_metadata_no_permissions_failure() {
     let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
 
     // Attempt to preserve metadata with archive mode - this should fail due to no permissions
-    let args = create_test_args_with_archive();
+    let args = common::test_args::create_archive_test_args();
     let preservation_result =
-        preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args).await;
+        preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args.metadata).await;
 
     // Verify that the preservation fails as expected
     assert!(
@@ -347,8 +340,8 @@ async fn test_directory_metadata_umask_interaction() {
     let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
 
     // Actually call the preserve_directory_metadata function with archive mode
-    let args = create_test_args_with_archive();
-    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args)
+    let args = common::test_args::create_archive_test_args();
+    preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args.metadata)
         .await
         .unwrap();
 

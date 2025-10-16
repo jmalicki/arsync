@@ -44,6 +44,7 @@
 //! All progress tracking operations are thread-safe and can be used concurrently
 //! across multiple threads. Statistics are updated atomically to prevent race conditions.
 
+use crate::i18n::TranslationKey;
 use crate::io_uring::CopyOperation;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::time::Duration;
@@ -274,7 +275,10 @@ impl ProgressTracker {
     /// - Completion message is displayed once
     /// - Statistics remain available after completion
     pub fn finish(&self) {
-        self.progress_bar.finish_with_message("Copy completed");
+        let message = TranslationKey::ProgressComplete
+            .get()
+            .unwrap_or_else(|_| "Complete".to_string());
+        self.progress_bar.finish_with_message(message);
     }
 
     /// Track progress for a specific copy operation

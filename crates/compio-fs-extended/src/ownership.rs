@@ -414,23 +414,18 @@ impl OwnershipOps for File {
     /// - Users can only change ownership of files they own
     /// - Users can change group ownership to groups they belong to
     async fn fchown(&self, uid: u32, gid: u32) -> Result<()> {
+        use nix::unistd::{fchown as nix_fchown, Gid, Uid};
+
         let fd = self.as_raw_fd();
 
-        compio::runtime::spawn_blocking(move || {
-            let result = unsafe { libc::fchown(fd, uid, gid) };
-
-            if result == -1 {
-                let errno = std::io::Error::last_os_error();
-                Err(filesystem_error(&format!(
-                    "fchown failed: {errno} (errno: {})",
-                    errno.raw_os_error().unwrap_or(-1)
-                )))
-            } else {
-                Ok(())
-            }
+        // NOTE: Kernel doesn't have IORING_OP_FCHOWN - this is a kernel limitation
+        // Using spawn + safe nix wrapper instead of unsafe libc
+        compio::runtime::spawn(async move {
+            nix_fchown(fd, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid)))
+                .map_err(|e| filesystem_error(&format!("fchown failed: {}", e)))
         })
         .await
-        .map_err(|e| filesystem_error(&format!("spawn_blocking failed: {e:?}")))?
+        .map_err(|e| filesystem_error(&format!("spawn failed: {e:?}")))?
     }
 
     /// Change file ownership using file path
@@ -459,28 +454,25 @@ impl OwnershipOps for File {
     /// - Users can only change ownership of files they own
     /// - Users can change group ownership to groups they belong to
     async fn chown<P: AsRef<Path>>(path: P, uid: u32, gid: u32) -> Result<()> {
-        use std::ffi::CString;
-        use std::os::unix::ffi::OsStrExt;
-
         let path = path.as_ref();
-        let path_cstr = CString::new(path.as_os_str().as_bytes())
-            .map_err(|e| filesystem_error(&format!("Invalid path for chown: {e}")))?;
 
-        compio::runtime::spawn_blocking(move || {
-            let result = unsafe { libc::chown(path_cstr.as_ptr(), uid, gid) };
+        // WARNING: Path-based chown is TOCTOU-vulnerable - prefer fchown instead
+        // TODO: Consider deprecating this function in favor of FD-based operations
+        // NOTE: Kernel doesn't have IORING_OP_CHOWN - using safe nix wrapper
+        use nix::unistd::{chown as nix_chown, Gid, Uid};
 
-            if result == -1 {
-                let errno = std::io::Error::last_os_error();
-                Err(filesystem_error(&format!(
-                    "chown failed: {errno} (errno: {})",
-                    errno.raw_os_error().unwrap_or(-1)
-                )))
-            } else {
-                Ok(())
-            }
+        let path_owned = path.to_path_buf();
+
+        compio::runtime::spawn(async move {
+            nix_chown(
+                &path_owned,
+                Some(Uid::from_raw(uid)),
+                Some(Gid::from_raw(gid)),
+            )
+            .map_err(|e| filesystem_error(&format!("chown failed: {}", e)))
         })
         .await
-        .map_err(|e| filesystem_error(&format!("spawn_blocking failed: {e:?}")))?
+        .map_err(|e| filesystem_error(&format!("spawn failed: {e:?}")))?
     }
 
     /// Preserve ownership from source file to destination file
