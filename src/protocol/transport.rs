@@ -30,7 +30,7 @@
 //! }
 //! ```
 
-use compio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use compio::io::{AsyncRead, AsyncWrite};
 use std::io;
 
 /// Generic transport for rsync protocol

@@ -4,7 +4,6 @@
 //! with rsync processes. rsync uses a multiplexed I/O protocol with message tags.
 
 use crate::cli::Args;
-use crate::protocol::pipe::PipeTransport;
 use crate::protocol::rsync::FileEntry;
 use crate::protocol::transport::{self, Transport};
 use crate::protocol::varint::encode_varint_into;
@@ -272,7 +271,9 @@ impl<T: Transport> MultiplexWriter<T> {
 /// Bidirectional multiplex wrapper (can both read and write)
 pub struct Multiplex<T: Transport> {
     transport: T,
+    #[allow(dead_code)]
     read_buffer: Vec<u8>,
+    #[allow(dead_code)]
     read_buffer_pos: usize,
 }
 
@@ -761,7 +762,7 @@ pub fn tokens_to_delta(
                 (token - 97) as i64
             } else {
                 // Complex encoding
-                let bit_count = ((token - 97) >> 4) as usize;
+                let _bit_count = ((token - 97) >> 4) as usize;
 
                 if pos + 4 > tokens.len() {
                     anyhow::bail!("Block offset truncated");
@@ -826,13 +827,16 @@ pub async fn receive_delta_rsync<T: Transport>(
 }
 
 // ============================================================================
-// rsync-Compatible Pipe Mode (File List Exchange Only - Minimal)
+// rsync-Compatible Protocol Functions (File List Exchange Only - Minimal)
+// Generic over any Transport (SSH, pipes, etc.)
 // ============================================================================
 
 /// Receive files from rsync sender (file list only - minimal implementation)
-pub async fn rsync_receive_via_pipe(
+///
+/// Generic over any Transport implementation (SSH, pipes, etc.)
+pub async fn rsync_receive<T: Transport>(
     _args: &Args,
-    transport: PipeTransport,
+    transport: T,
     dest_path: &Path,
 ) -> Result<SyncStats> {
     let start = Instant::now();
@@ -893,10 +897,12 @@ pub async fn rsync_receive_via_pipe(
 }
 
 /// Send files to rsync receiver (file list only - minimal implementation)
-pub async fn rsync_send_via_pipe(
+///
+/// Generic over any Transport implementation (SSH, pipes, etc.)
+pub async fn rsync_send<T: Transport>(
     args: &Args,
     source_path: &Path,
-    transport: PipeTransport,
+    transport: T,
 ) -> Result<SyncStats> {
     let start = Instant::now();
     info!("rsync-compat sender: Starting (file list only)");

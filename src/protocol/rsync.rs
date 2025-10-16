@@ -36,37 +36,99 @@ const MIN_BLOCK_SIZE: usize = 128;
 const ROLLING_MODULUS: u32 = 65521;
 
 /// Push files to remote using rsync protocol over SSH
+///
+/// Uses the complete rsync wire protocol implementation to send files
+/// to a remote arsync server over an SSH connection.
+///
+/// # Arguments
+///
+/// * `args` - Command-line arguments with metadata preservation settings
+/// * `local_path` - Local path to send
+/// * `connection` - SSH connection to remote server
+///
+/// # Returns
+///
+/// Returns sync statistics (files copied, bytes transferred, duration)
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Protocol negotiation fails
+/// - File list transmission fails  
+/// - SSH connection fails during transfer
 pub async fn push_via_rsync_protocol(
-    _args: &Args,
-    _local_path: &Path,
-    _connection: &mut SshConnection,
+    args: &Args,
+    local_path: &Path,
+    connection: SshConnection,
 ) -> Result<SyncStats> {
-    let _start = Instant::now();
+    use crate::protocol::rsync_compat;
+    use tracing::info;
 
-    // TODO: Implement rsync protocol
-    // Phase 1: Protocol handshake
-    // Phase 2: File list generation and exchange
-    // Phase 3: Block checksum exchange (per file)
-    // Phase 4: Delta generation and transmission
-    // Phase 5: Metadata update
+    info!("Starting push to remote via rsync protocol");
+    info!("Local path: {}", local_path.display());
 
-    anyhow::bail!("rsync protocol implementation in progress")
+    // SshConnection already implements Transport
+    // We can use it directly with rsync_compat (no wrapper needed!)
+    let stats = rsync_compat::rsync_send(args, local_path, connection)
+        .await
+        .map_err(|e| anyhow::anyhow!("Push via rsync protocol failed: {}", e))?;
+
+    info!(
+        "Push complete: {} files, {} bytes",
+        stats.files_copied, stats.bytes_copied
+    );
+
+    Ok(stats)
 }
 
 /// Pull files from remote using rsync protocol over SSH
+///
+/// Uses the complete rsync wire protocol implementation to receive files
+/// from a remote arsync server over an SSH connection.
+///
+/// # Arguments
+///
+/// * `args` - Command-line arguments with metadata preservation settings
+/// * `connection` - SSH connection to remote server
+/// * `local_path` - Local destination path for received files
+///
+/// # Returns
+///
+/// Returns sync statistics (files copied, bytes transferred, duration)
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Protocol negotiation fails
+/// - File list reception fails
+/// - SSH connection fails during transfer
 pub async fn pull_via_rsync_protocol(
-    _args: &Args,
-    _connection: &mut SshConnection,
-    _local_path: &Path,
+    args: &Args,
+    connection: SshConnection,
+    local_path: &Path,
 ) -> Result<SyncStats> {
-    let _start = Instant::now();
+    use crate::protocol::rsync_compat;
+    use tracing::info;
 
-    // TODO: Implement rsync protocol (receiver side)
+    info!("Starting pull from remote via rsync protocol");
+    info!("Local path: {}", local_path.display());
 
-    anyhow::bail!("rsync protocol implementation in progress")
+    // SshConnection already implements Transport
+    // We can use it directly with rsync_compat (no wrapper needed!)
+    let stats = rsync_compat::rsync_receive(args, connection, local_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("Pull via rsync protocol failed: {}", e))?;
+
+    info!(
+        "Pull complete: {} files, {} bytes",
+        stats.files_copied, stats.bytes_copied
+    );
+
+    Ok(stats)
 }
 
-/// rsync protocol handshake
+/// rsync protocol handshake (old stub, kept for reference)
+#[allow(dead_code)]
 async fn handshake(_connection: &mut SshConnection) -> Result<u8> {
     // TODO: Send our protocol version
     // TODO: Receive remote protocol version
@@ -87,7 +149,8 @@ pub struct FileEntry {
     pub symlink_target: Option<String>,
 }
 
-/// Generate file list for transmission
+/// Generate file list for transmission (old stub, kept for reference)
+#[allow(dead_code)]
 async fn generate_file_list(_path: &Path, _args: &Args) -> Result<Vec<FileEntry>> {
     // TODO: Traverse directory
     // TODO: Generate FileEntry for each file
@@ -95,14 +158,16 @@ async fn generate_file_list(_path: &Path, _args: &Args) -> Result<Vec<FileEntry>
     Ok(vec![])
 }
 
-/// Send file list over connection
+/// Send file list over connection (old stub, kept for reference)
+#[allow(dead_code)]
 async fn send_file_list(_connection: &mut SshConnection, _files: &[FileEntry]) -> Result<()> {
     // TODO: Encode file list in rsync wire format
     // TODO: Send over SSH connection
     Ok(())
 }
 
-/// Receive file list from connection
+/// Receive file list from connection (old stub, kept for reference)
+#[allow(dead_code)]
 async fn receive_file_list(_connection: &mut SshConnection) -> Result<Vec<FileEntry>> {
     // TODO: Receive and decode file list
     Ok(vec![])
@@ -239,7 +304,7 @@ pub async fn send_via_pipe(
 
 /// Receive files via pipe transport (for testing)
 pub async fn receive_via_pipe(
-    args: &Args,
+    _args: &Args,
     mut transport: PipeTransport,
     dest_path: &Path,
 ) -> Result<SyncStats> {

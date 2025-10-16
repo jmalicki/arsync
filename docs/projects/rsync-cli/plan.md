@@ -84,81 +84,67 @@ is complete and tested - we're wiring it to SSH and the CLI.
 
 **File**: `src/protocol/ssh.rs`
 
-- [ ] Add `SshTransport` struct:
-  ```rust
-  pub struct SshTransport<'a> {
-      connection: &'a mut SshConnection,
-  }
-  ```
-- [ ] Implement `SshTransport::new(connection: &mut SshConnection)`
-- [ ] Implement `AsyncRead` for `SshTransport<'_>`:
-  - [ ] Delegate to `connection.stdout.read()`
-  - [ ] Handle async properly with compio
-- [ ] Implement `AsyncWrite` for `SshTransport<'_>`:
-  - [ ] Delegate to `connection.stdin.write()`
-  - [ ] Handle async properly with compio
-- [ ] Implement `Transport` marker trait for `SshTransport<'_>`
-- [ ] Add doc comments explaining the wrapper pattern
+- [x] ~~Add `SshTransport` struct~~ - **NOT NEEDED**
+- [x] ~~Implement wrapper~~ - **NOT NEEDED**
 
-**Alternative Considered**: Make `SshConnection` directly implement `Transport`
-- Start with wrapper (less invasive)
-- Can refactor later if needed
+**Note**: Upon code review, discovered `SshConnection` already implements Transport!
+- Lines 122-146: AsyncRead implementation (delegates to stdout) ✅
+- Lines 133-145: AsyncWrite implementation (delegates to stdin) ✅  
+- Lines 152-160: Transport marker trait ✅
+- No wrapper needed - can use SshConnection directly as Transport ✅
+
+This simplifies the implementation significantly!
 
 #### 1.2: Implement push_via_rsync_protocol
 
 **File**: `src/protocol/rsync.rs` (line ~39)
 
-**Current**:
-```rust
-pub async fn push_via_rsync_protocol(...) -> Result<SyncStats> {
-    // TODO: Implement rsync protocol
-    anyhow::bail!("rsync protocol implementation in progress")
-}
-```
+- [x] Remove TODO and bail
+- [x] ~~Create `SshTransport` wrapper~~ - **NOT NEEDED** (SshConnection implements Transport!)
+- [x] Call rsync_compat: `rsync_compat::rsync_send(args, local_path, connection).await`
+- [x] Add error context for SSH failures
+- [x] Add tracing::info for start/completion
+- [x] Update doc comment to reflect actual implementation
 
-**Implementation**:
-- [ ] Remove TODO and bail
-- [ ] Create `SshTransport` wrapper: `let transport = SshTransport::new(connection);`
-- [ ] Call rsync_compat: `rsync_compat::rsync_send_via_pipe(args, local_path, transport).await`
-- [ ] Add error context for SSH failures
-- [ ] Add tracing::info for start/completion
-- [ ] Update doc comment to reflect actual implementation
+**Note**: Renamed `rsync_send_via_pipe` → `rsync_send` to reflect generic Transport usage.
+Function signature changed to take owned `SshConnection` (matches Transport trait).
 
 #### 1.3: Implement pull_via_rsync_protocol
 
-**File**: `src/protocol/rsync.rs` (line ~56)
+**File**: `src/protocol/rsync.rs` (line ~80)
 
-**Current**:
-```rust
-pub async fn pull_via_rsync_protocol(...) -> Result<SyncStats> {
-    // TODO: Implement rsync protocol (receiver side)
-    anyhow::bail!("rsync protocol implementation in progress")
-}
-```
+- [x] Remove TODO and bail
+- [x] ~~Create `SshTransport` wrapper~~ - **NOT NEEDED** (SshConnection implements Transport!)
+- [x] Call rsync_compat: `rsync_compat::rsync_receive(args, connection, local_path).await`
+- [x] Add error context for SSH failures
+- [x] Add tracing::info for start/completion
+- [x] Update doc comment to reflect actual implementation
 
-**Implementation**:
-- [ ] Remove TODO and bail
-- [ ] Create `SshTransport` wrapper: `let transport = SshTransport::new(connection);`
-- [ ] Call rsync_compat: `rsync_compat::rsync_receive_via_pipe(args, transport, local_path).await`
-- [ ] Add error context for SSH failures
-- [ ] Add tracing::info for start/completion
-- [ ] Update doc comment to reflect actual implementation
+**Note**: Renamed `rsync_receive_via_pipe` → `rsync_receive` to reflect generic Transport usage.
+Function signature changed to take owned `SshConnection` (matches Transport trait).
 
 #### 1.4: Quality Checks - Phase 1
 
-- [ ] `/fmt false true` - Format new code
-- [ ] `/clippy false false` - Fix any warnings
-- [ ] `/build "debug" "all" false` - Verify compiles with --features remote-sync
-- [ ] Code review: Verify wrapper properly delegates to SSH connection
+- [x] `/fmt false true` - Format new code
+- [x] `/clippy false false` - Fix any warnings
+- [x] `/build "debug" "all" false` - Verify compiles with --features remote-sync
+- [x] Code review: ~~Verify wrapper~~ - No wrapper needed!
 - [ ] Commit: `git commit -m "feat(protocol): wire rsync_compat to SSH transport"`
 
 **Acceptance Criteria**:
-- [ ] `push_via_rsync_protocol()` implemented (calls rsync_send_via_pipe)
-- [ ] `pull_via_rsync_protocol()` implemented (calls rsync_receive_via_pipe)
-- [ ] `SshTransport` wrapper complete and tested for compilation
-- [ ] No clippy warnings
-- [ ] Code formatted
-- [ ] Compiles with `--features remote-sync`
+- [x] `push_via_rsync_protocol()` implemented (calls rsync_send)
+- [x] `pull_via_rsync_protocol()` implemented (calls rsync_receive)
+- [x] ~~`SshTransport` wrapper complete~~ - NOT NEEDED (SshConnection is Transport!)
+- [x] No clippy errors (only pre-existing warnings)
+- [x] Code formatted
+- [x] Compiles with `--features remote-sync`
+
+**Additional Changes Made**:
+- [x] Made rsync_send/rsync_receive generic over `T: Transport`
+- [x] Updated protocol/mod.rs call sites (pipe_sender, pipe_receiver)
+- [x] Fixed args.remote_shell → args.remote.remote_shell
+- [x] Removed unused PipeTransport import from rsync_compat.rs
+- [x] Marked old stub functions with #[allow(dead_code)]
 
 ---
 

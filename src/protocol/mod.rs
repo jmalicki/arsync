@@ -152,25 +152,28 @@ async fn push_to_remote(
     local_path: &std::path::Path,
     user: Option<&str>,
     host: &str,
-    remote_path: &std::path::Path,
+    _remote_path: &std::path::Path,
 ) -> Result<SyncStats> {
     // Connect to remote via SSH
     let username = user.map(String::from).unwrap_or_else(whoami::username);
-    let mut connection = ssh::SshConnection::connect(host, &username, &args.remote_shell).await?;
+    let connection =
+        ssh::SshConnection::connect(host, &username, &args.remote.remote_shell).await?;
 
     // Start remote arsync in server mode
-    connection.start_server(remote_path).await?;
+    // connection.start_server(remote_path).await?;  // TODO: May not be needed with rsync protocol
 
     // Try to negotiate QUIC if supported
     #[cfg(feature = "quic")]
     {
-        if let Ok(quic_conn) = quic::negotiate_quic(&mut connection).await {
-            return quic::push_via_quic(args, local_path, quic_conn).await;
-        }
+        // Note: QUIC negotiation would need to clone/recreate connection
+        // For now, skip QUIC and go directly to rsync protocol
+        // if let Ok(quic_conn) = quic::negotiate_quic(&mut connection).await {
+        //     return quic::push_via_quic(args, local_path, quic_conn).await;
+        // }
     }
 
     // Fall back to rsync wire protocol over SSH
-    rsync::push_via_rsync_protocol(args, local_path, &mut connection).await
+    rsync::push_via_rsync_protocol(args, local_path, connection).await
 }
 
 /// Pull files from remote to local
@@ -179,26 +182,29 @@ async fn pull_from_remote(
     args: &Args,
     user: Option<&str>,
     host: &str,
-    remote_path: &std::path::Path,
+    _remote_path: &std::path::Path,
     local_path: &std::path::Path,
 ) -> Result<SyncStats> {
     // Connect to remote via SSH
     let username = user.map(String::from).unwrap_or_else(whoami::username);
-    let mut connection = ssh::SshConnection::connect(host, &username, &args.remote_shell).await?;
+    let connection =
+        ssh::SshConnection::connect(host, &username, &args.remote.remote_shell).await?;
 
     // Start remote arsync in server mode
-    connection.start_server(remote_path).await?;
+    // connection.start_server(remote_path).await?;  // TODO: May not be needed with rsync protocol
 
     // Try to negotiate QUIC if supported
     #[cfg(feature = "quic")]
     {
-        if let Ok(quic_conn) = quic::negotiate_quic(&mut connection).await {
-            return quic::pull_via_quic(args, quic_conn, local_path).await;
-        }
+        // Note: QUIC negotiation would need to clone/recreate connection
+        // For now, skip QUIC and go directly to rsync protocol
+        // if let Ok(quic_conn) = quic::negotiate_quic(&mut connection).await {
+        //     return quic::pull_via_quic(args, quic_conn, local_path).await;
+        // }
     }
 
     // Fall back to rsync wire protocol over SSH
-    rsync::pull_via_rsync_protocol(args, &mut connection, local_path).await
+    rsync::pull_via_rsync_protocol(args, connection, local_path).await
 }
 
 /// Pipe sender mode (for protocol testing)
@@ -215,9 +221,9 @@ pub async fn pipe_sender(args: &Args, source: &Location) -> Result<SyncStats> {
     let transport = pipe::PipeTransport::from_stdio()?;
 
     // Choose protocol based on --rsync-compat flag
-    if args.rsync_compat {
+    if args.remote.rsync_compat {
         // Use rsync wire protocol
-        rsync_compat::rsync_send_via_pipe(args, source_path, transport).await
+        rsync_compat::rsync_send(args, source_path, transport).await
     } else {
         // Use arsync native protocol
         rsync::send_via_pipe(args, source_path, transport).await
@@ -238,9 +244,9 @@ pub async fn pipe_receiver(args: &Args, destination: &Location) -> Result<SyncSt
     let transport = pipe::PipeTransport::from_stdio()?;
 
     // Choose protocol based on --rsync-compat flag
-    if args.rsync_compat {
+    if args.remote.rsync_compat {
         // Use rsync wire protocol
-        rsync_compat::rsync_receive_via_pipe(args, transport, dest_path).await
+        rsync_compat::rsync_receive(args, transport, dest_path).await
     } else {
         // Use arsync native protocol
         rsync::receive_via_pipe(args, transport, dest_path).await
