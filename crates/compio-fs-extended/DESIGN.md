@@ -219,6 +219,50 @@ This ensures Windows builds benefit from IOCP for data movement while keeping no
 
 ---
 
+## Windows IOCP capability catalog and matrix
+
+What IOCP is: a Windows mechanism for scalable async I/O completion. You issue overlapped I/O (ReadFile/WriteFile/… with OVERLAPPED), associate handles with a completion port, and receive completions asynchronously. IOCP is not a replacement for administrative syscalls like `CopyFileExW` or `SetFileInformationByHandle`; it complements them by making data transfer non-blocking and scalable.
+
+Core applicability:
+- Overlapped reads/writes on file handles, sockets, named pipes, etc.
+- File mapping and some metadata ops are separate APIs; they do not produce IOCP completions unless overlapped I/O is involved.
+
+Applicability to compio-fs-extended operations:
+- Streaming copy fallback (read/write loops): yes, via overlapped `ReadFile`/`WriteFile`; completions are delivered to IOCP (exposed via `compio::fs` async file ops).
+- `CopyFileExW` whole-file copies: separate API; does not use our IOCP loop (we can run it off-thread if desired).
+- Preallocation (`FILE_ALLOCATION_INFO`), truncate/extend (`SetEndOfFile`): administrative; not IOCP.
+- xattr (not POSIX on Windows): NotSupported in v1.
+- symlink/hardlink creation: administrative; not IOCP.
+- directory creation/enumeration: administrative; not IOCP (FindFirstFile/FindNextFile are synchronous enumeration APIs).
+- metadata/time updates: administrative; not IOCP.
+- ownership/ACLs: administrative; not IOCP.
+
+Matrix
+
+1) Implemented by compio::fs AND NOT supported by IOCP
+- None (compio’s async file I/O on Windows is built on overlapped I/O completed via IOCP).
+
+2) Implemented by compio::fs AND supported by IOCP
+- File reads/writes used in copy fallbacks (sequential or offset-based transfers via `read`/`write`/`read_at`/`write_at`).
+- Socket/pipe async I/O (if used by higher layers).
+
+3) NOT implemented by compio::fs AND NOT supported by IOCP
+- `CopyFileExW` (separate API; not expressed as overlapped I/O in our stack)
+- Preallocation via `SetFileInformationByHandle(FILE_ALLOCATION_INFO)`
+- Truncate/extend via `SetEndOfFile`
+- xattr (no POSIX xattr support; NTFS EAs out-of-scope v1)
+- symlink/hardlink creation
+- directory creation/enumeration
+- metadata/time updates (`SetFileTime` / `GetFileInformationByHandleEx`)
+- ownership/ACL changes
+
+4) NOT implemented by compio::fs BUT supported by IOCP
+- Named pipe async I/O, socket async I/O (available to higher layers; not directly in this crate’s scope)
+
+Note: IOCP is a completion mechanism for overlapped operations. Administrative filesystem calls typically do not produce IOCP completions and should be run off-thread if they might block.
+
+---
+
 ## Operation Design by Platform
 Below: current Linux approach and proposed macOS/Windows designs. Where an operation is not applicable, return a clear `ExtendedError::NotSupported`.
 
