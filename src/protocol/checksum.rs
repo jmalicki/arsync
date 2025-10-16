@@ -50,15 +50,22 @@ pub fn rolling_checksum_with_seed(data: &[u8], seed: u32) -> u32 {
     hasher.finish()
 }
 
-/// Update rolling checksum when sliding window
+/// Incrementally update rolling checksum when sliding window
 ///
 /// Given the old checksum, the byte leaving the window, the byte entering,
 /// and the window size, compute the new checksum without scanning the whole window.
 ///
-/// Note: For now we recompute the full checksum. The incremental update algorithm
-/// could be implemented if profiling shows it's a bottleneck, but SIMD Adler-32
-/// is so fast that recomputing may be faster than the modulo operations.
+/// **Note**: This function is intentionally not implemented because SIMD-accelerated
+/// full recomputation is fast enough. Use `rolling_checksum_with_seed()` instead.
+///
+/// The incremental update algorithm could be implemented if profiling shows it's a bottleneck,
+/// but SIMD Adler-32 is so fast that recomputing may be faster than the modulo operations.
+///
+/// # Panics
+///
+/// Always panics - use `rolling_checksum_with_seed()` for full recomputation.
 #[allow(dead_code)]
+#[allow(clippy::unimplemented)] // Intentionally unimplemented stub - SIMD recomputation is faster
 #[must_use]
 pub fn rolling_checksum_update(
     _old_checksum: u32,
@@ -66,9 +73,8 @@ pub fn rolling_checksum_update(
     _new_byte: u8,
     _block_size: usize,
 ) -> u32 {
-    // For now, just recompute - SIMD is fast enough
-    // TODO: Implement incremental update if benchmarks show it's worthwhile
-    unimplemented!("Use rolling_checksum_with_seed instead - SIMD is fast enough")
+    // This function is a stub - incremental update is not needed due to SIMD performance
+    unimplemented!("Use rolling_checksum_with_seed() - SIMD recomputation is fast enough")
 }
 
 /// Compute strong checksum (MD5)

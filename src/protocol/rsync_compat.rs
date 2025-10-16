@@ -45,6 +45,7 @@ pub enum MessageTag {
 }
 
 impl MessageTag {
+    /// Parse message tag from wire format byte
     fn from_u8(tag: u8) -> Option<Self> {
         match tag {
             7 => Some(Self::Data),
@@ -69,7 +70,9 @@ impl MessageTag {
 /// rsync multiplexed message
 #[derive(Debug)]
 pub struct MultiplexMessage {
+    /// Message type tag (Data, Info, Error, etc.)
     pub tag: MessageTag,
+    /// Message payload bytes
     pub data: Vec<u8>,
 }
 
@@ -170,14 +173,18 @@ pub async fn write_data<T: Transport>(transport: &mut T, data: &[u8]) -> Result<
 
 /// Multiplexed reader with buffering
 pub struct MultiplexReader<T: Transport> {
+    /// Underlying transport for reading wire protocol messages
     transport: T,
+    /// Internal buffer for message reassembly (currently unused - messages read atomically)
     #[allow(dead_code)]
     buffer: Vec<u8>,
+    /// Current position in buffer (currently unused)
     #[allow(dead_code)]
     buffer_pos: usize,
 }
 
 impl<T: Transport> MultiplexReader<T> {
+    /// Create a new multiplexed reader wrapping a transport
     pub fn new(transport: T) -> Self {
         Self {
             transport,
@@ -258,10 +265,12 @@ impl<T: Transport> MultiplexReader<T> {
 
 /// Multiplexed writer
 pub struct MultiplexWriter<T: Transport> {
+    /// Underlying transport for writing tagged messages
     transport: T,
 }
 
 impl<T: Transport> MultiplexWriter<T> {
+    /// Create a new multiplexed writer wrapping a transport
     pub fn new(transport: T) -> Self {
         Self { transport }
     }
@@ -274,14 +283,18 @@ impl<T: Transport> MultiplexWriter<T> {
 
 /// Bidirectional multiplex wrapper (can both read and write)
 pub struct Multiplex<T: Transport> {
+    /// Underlying transport for bidirectional message passing
     transport: T,
+    /// Internal buffer for message reassembly (currently unused)
     #[allow(dead_code)]
     read_buffer: Vec<u8>,
+    /// Current position in read buffer (currently unused)
     #[allow(dead_code)]
     read_buffer_pos: usize,
 }
 
 impl<T: Transport> Multiplex<T> {
+    /// Create a new bidirectional multiplex wrapper
     pub fn new(transport: T) -> Self {
         Self {
             transport,
@@ -341,19 +354,26 @@ impl<T: Transport> MultiplexWriter<T> {
 
 /// rsync file list flags (from flist.c)
 mod file_flags {
+    /// Top-level directory flag
     #[allow(dead_code)]
-    pub const XMIT_TOP_DIR: u8 = 0x01; // Top-level directory
+    pub const XMIT_TOP_DIR: u8 = 0x01;
+    /// Mode unchanged from previous file (delta encoding)
     #[allow(dead_code)]
-    pub const XMIT_SAME_MODE: u8 = 0x02; // Mode unchanged
+    pub const XMIT_SAME_MODE: u8 = 0x02;
+    /// Extended flags follow this byte
     #[allow(dead_code)]
-    pub const XMIT_EXTENDED_FLAGS: u8 = 0x04; // Extended flags follow
+    pub const XMIT_EXTENDED_FLAGS: u8 = 0x04;
+    /// UID unchanged from previous file (delta encoding)
     #[allow(dead_code)]
-    pub const XMIT_SAME_UID: u8 = 0x10; // UID unchanged
+    pub const XMIT_SAME_UID: u8 = 0x10;
+    /// GID unchanged from previous file (delta encoding)
     #[allow(dead_code)]
-    pub const XMIT_SAME_GID: u8 = 0x20; // GID unchanged
+    pub const XMIT_SAME_GID: u8 = 0x20;
+    /// Name matches previous file (hardlink)
     #[allow(dead_code)]
-    pub const XMIT_SAME_NAME: u8 = 0x40; // Name matches previous (hardlink)
-    pub const XMIT_LONG_NAME: u8 = 0x80; // Name > 255 bytes
+    pub const XMIT_SAME_NAME: u8 = 0x40;
+    /// Filename is longer than 255 bytes
+    pub const XMIT_LONG_NAME: u8 = 0x80;
 }
 
 /// Encode file list in rsync wire format (simplified - no delta encoding yet)
@@ -546,8 +566,10 @@ use crate::protocol::checksum::{rolling_checksum_with_seed, strong_checksum};
 /// Block checksum in rsync wire format
 #[derive(Debug, Clone)]
 pub struct RsyncBlockChecksum {
+    /// Rolling checksum (32-bit, fast but collision-prone)
     pub weak: u32,
-    pub strong: Vec<u8>, // Variable length (2 or 16 bytes)
+    /// Strong checksum (MD5 or MD4, variable length: 2 or 16 bytes)
+    pub strong: Vec<u8>,
 }
 
 /// Send block checksums in rsync wire format

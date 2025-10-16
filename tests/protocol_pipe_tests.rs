@@ -11,6 +11,7 @@
 //! 4. arsync sender → rsync receiver  (push compatibility)
 
 #![cfg(feature = "remote-sync")]
+#![allow(clippy::panic)] // Tests use panic! for setup failures
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::fs;

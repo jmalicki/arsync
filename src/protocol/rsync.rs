@@ -143,13 +143,21 @@ async fn handshake(_connection: &mut SshConnection) -> Result<u8> {
 /// File list entry in rsync protocol
 #[derive(Debug, Clone)]
 pub struct FileEntry {
+    /// Relative path from source root
     pub path: String,
+    /// File size in bytes
     pub size: u64,
+    /// Modification time (Unix timestamp)
     pub mtime: i64,
+    /// File mode (permissions and file type bits)
     pub mode: u32,
+    /// User ID (owner)
     pub uid: u32,
+    /// Group ID
     pub gid: u32,
+    /// Whether this is a symbolic link
     pub is_symlink: bool,
+    /// Symlink target path (if is_symlink is true)
     pub symlink_target: Option<String>,
 }
 
@@ -180,10 +188,14 @@ async fn receive_file_list(_connection: &mut SshConnection) -> Result<Vec<FileEn
 /// Block checksum for rsync delta algorithm
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct BlockChecksum {
-    pub weak: u32,        // Rolling checksum (fast, collision-prone)
-    pub strong: [u8; 16], // MD5 checksum (slow, collision-resistant)
-    pub offset: u64,      // Offset in file where this block starts
-    pub block_index: u32, // Index of this block
+    /// Rolling checksum (fast, collision-prone)
+    pub weak: u32,
+    /// MD5 checksum (slow, collision-resistant)
+    pub strong: [u8; 16],
+    /// Offset in file where this block starts
+    pub offset: u64,
+    /// Index of this block
+    pub block_index: u32,
 }
 
 /// Delta instruction for reconstructing files
@@ -192,7 +204,12 @@ pub enum DeltaInstruction {
     /// Raw data to insert (when no match found)
     Literal(Vec<u8>),
     /// Copy from basis file using block index
-    BlockMatch { block_index: u32, length: u32 },
+    BlockMatch {
+        /// Index of the matching block in the basis file
+        block_index: u32,
+        /// Length of the match in bytes
+        length: u32,
+    },
 }
 
 /// Calculate optimal block size for a file

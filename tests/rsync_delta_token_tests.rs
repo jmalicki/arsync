@@ -2,6 +2,8 @@
 //!
 //! Validates conversion between DeltaInstructions and rsync token format.
 
+#![allow(clippy::panic)] // Tests use panic! for assertion failures
+
 use arsync::protocol::rsync::DeltaInstruction;
 use arsync::protocol::rsync_compat::{delta_to_tokens, tokens_to_delta, RsyncBlockChecksum};
 

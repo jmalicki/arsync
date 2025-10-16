@@ -285,7 +285,9 @@ impl Args {
 
         // Local sync mode - validate source exists
         let Location::Local(source_path) = &source else {
-            unreachable!("Non-local source should have been handled above")
+            anyhow::bail!(
+                "Internal error: source should be local (remote/pipe modes already handled)"
+            )
         };
 
         // Check if source exists
@@ -304,6 +306,7 @@ impl Args {
         self.validate_common()
     }
 
+    /// Validate common arguments (I/O settings, buffer sizes, etc.)
     fn validate_common(&self) -> Result<()> {
         // Check queue depth bounds
         if self.io.queue_depth < 1024 || self.io.queue_depth > 65_536 {

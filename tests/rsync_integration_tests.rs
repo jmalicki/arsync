@@ -4,7 +4,7 @@
 //! over pipes, ensuring wire protocol compatibility.
 
 #![cfg(feature = "remote-sync")]
-#![allow(clippy::unwrap_used, clippy::expect_used)]
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::fs;
 use std::process::{Command, Stdio};

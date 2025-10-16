@@ -39,10 +39,15 @@ use crate::sync::SyncStats;
 /// Parsed location (local or remote)
 #[derive(Debug, Clone)]
 pub enum Location {
+    /// Local filesystem path
     Local(PathBuf),
+    /// Remote path accessed via SSH
     Remote {
+        /// Remote username (None = current user)
         user: Option<String>,
+        /// Remote hostname or IP address
         host: String,
+        /// Remote filesystem path
         path: PathBuf,
     },
 }
@@ -142,7 +147,9 @@ pub async fn remote_sync(
             anyhow::bail!("Remote-to-remote sync not supported yet")
         }
         (Location::Local(_), Location::Local(_)) => {
-            unreachable!("Local-to-local should have been handled by sync_files")
+            anyhow::bail!(
+                "Internal error: local-to-local sync should have been routed to sync_files"
+            )
         }
     }
 }
