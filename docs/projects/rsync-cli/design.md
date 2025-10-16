@@ -717,6 +717,164 @@ async fn test_remote_sync_via_localhost() {
 - [ ] Test --server flag handling
 - [ ] Test --rsh flag (custom SSH command)
 
+### Docker-Based Integration Testing
+
+**Approach**: Use Docker containers to create isolated SSH environments for automated testing
+
+#### Test Infrastructure Design
+
+**Container Setup**:
+```dockerfile
+# tests/docker/Dockerfile
+FROM rust:latest
+
+# Install SSH server
+RUN apt-get update && apt-get install -y openssh-server
+
+# Create test user
+RUN useradd -m -s /bin/bash testuser && \
+    echo "testuser:testpass" | chpasswd
+
+# Configure SSH
+RUN mkdir /var/run/sshd && \
+    ssh-keygen -A && \
+    sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+# Copy arsync binary into container
+COPY target/debug/arsync /usr/local/bin/arsync
+RUN chmod +x /usr/local/bin/arsync
+
+# Setup test directories
+RUN mkdir -p /home/testuser/source /home/testuser/dest && \
+    chown -R testuser:testuser /home/testuser
+
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D"]
+```
+
+**Test Helper** (`tests/docker/mod.rs`):
+```rust
+use std::process::Command;
+use anyhow::Result;
+
+pub struct DockerContainer {
+    container_id: String,
+    ssh_port: u16,
+}
+
+impl DockerContainer {
+    pub async fn start() -> Result<Self> {
+        // Build Docker image
+        Command::new("docker")
+            .args(&["build", "-t", "arsync-test", "tests/docker"])
+            .status()?;
+        
+        // Run container with SSH exposed
+        let output = Command::new("docker")
+            .args(&["run", "-d", "-P", "arsync-test"])
+            .output()?;
+        
+        let container_id = String::from_utf8(output.stdout)?.trim().to_string();
+        
+        // Get mapped SSH port
+        let port_output = Command::new("docker")
+            .args(&["port", &container_id, "22"])
+            .output()?;
+        
+        let port_str = String::from_utf8(port_output.stdout)?;
+        let ssh_port = port_str
+            .split(':')
+            .last()
+            .and_then(|p| p.trim().parse().ok())
+            .ok_or_else(|| anyhow::anyhow!("Failed to parse SSH port"))?;
+        
+        Ok(Self { container_id, ssh_port })
+    }
+    
+    pub fn ssh_connection_string(&self) -> String {
+        format!("localhost:{}", self.ssh_port)
+    }
+}
+
+impl Drop for DockerContainer {
+    fn drop(&mut self) {
+        let _ = Command::new("docker")
+            .args(&["rm", "-f", &self.container_id])
+            .status();
+    }
+}
+```
+
+**Integration Test** (`tests/docker_remote_sync_test.rs`):
+```rust
+#![cfg(feature = "remote-sync")]
+
+use arsync::protocol::Location;
+use std::fs;
+use std::path::Path;
+
+mod docker;
+
+#[compio::test]
+async fn test_push_via_docker_ssh() -> anyhow::Result<()> {
+    // Start Docker container with SSH
+    let container = docker::DockerContainer::start().await?;
+    
+    // Wait for SSH to be ready
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    
+    // Create test data locally
+    let temp_dir = tempfile::tempdir()?;
+    let source = temp_dir.path().join("source");
+    fs::create_dir(&source)?;
+    fs::write(source.join("test.txt"), "Hello, Docker!")?;
+    
+    // Push to container via SSH
+    let remote_path = format!("testuser@localhost:{}/dest", container.ssh_port);
+    let source_loc = Location::Local(source.clone());
+    let dest_loc = Location::parse(&remote_path)?;
+    
+    // TODO: Call arsync with SSH
+    // This would test the full remote sync flow
+    
+    Ok(())
+}
+```
+
+**Benefits**:
+- ✅ **Isolated environment**: No pollution of developer's system
+- ✅ **Reproducible**: Same container every time
+- ✅ **CI-friendly**: Can run in GitHub Actions
+- ✅ **Fast**: Docker startup ~2-3 seconds
+- ✅ **Realistic**: Uses actual SSH protocol
+- ✅ **Automated**: No manual setup required
+
+**Challenges**:
+- ⚠️ Requires Docker installed (document in test README)
+- ⚠️ May be slow in CI (can use Docker layer caching)
+- ⚠️ Need to build arsync binary first
+
+**Alternative: No Docker** (Simpler but less isolated):
+```rust
+// Just test with localhost SSH (requires SSH server running locally)
+#[compio::test]
+#[ignore] // Only run when SSH is available
+async fn test_push_to_localhost() {
+    if !ssh_available() {
+        println!("Skipping: SSH not available");
+        return;
+    }
+    
+    // Test with localhost SSH
+    // Requires user has SSH keys configured for localhost
+}
+```
+
+**Recommendation**: 
+- Start with **localhost SSH tests** (simpler, no Docker dep)
+- Add **Docker tests** later for CI/CD isolation
+- Mark Docker tests as optional or feature-gated
+
 ### Manual Testing
 
 **Scenarios**:
