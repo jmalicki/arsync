@@ -50,33 +50,20 @@ pub fn create_minimal_test_args() -> Args {
 }
 
 /// Create test Args with archive mode enabled (full metadata preservation)
+#[allow(dead_code)]
 pub fn create_archive_test_args() -> Args {
     let mut args = create_minimal_test_args();
     args.metadata.archive = true;
     args
 }
 
-/// Create test Args with custom paths
-pub fn create_test_args_with_paths(source: PathBuf, destination: PathBuf) -> Args {
-    let mut args = create_minimal_test_args();
-    args.paths.source = source;
-    args.paths.destination = destination;
-    args
-}
-
-/// Create test Args with custom paths and archive mode
-pub fn create_archive_test_args_with_paths(source: PathBuf, destination: PathBuf) -> Args {
-    let mut args = create_archive_test_args();
-    args.paths.source = source;
-    args.paths.destination = destination;
-    args
-}
-
 /// Builder for test Args with fluent API
+#[allow(dead_code)]
 pub struct ArgsBuilder {
     args: Args,
 }
 
+#[allow(dead_code)]
 impl ArgsBuilder {
     pub fn new() -> Self {
         Self {
