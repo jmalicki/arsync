@@ -29,6 +29,9 @@ This directory contains custom slash commands for Cursor AI to streamline common
 
 ### Planning & Design
 
+- **[`/architect`](architect.md)** - Create architecture design for very complex multi-component features
+  - Example: `/architect "distributed-sync"` (breaks into sub-projects)
+
 - **[`/design`](design.md)** - Create comprehensive design document from context or conversation
   - Example: `/design` (auto-infer) or `/design "feature-name"`
 
