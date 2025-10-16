@@ -53,6 +53,67 @@ If context is unclear, the agent will:
 - Request a brief description or design doc
 - Suggest reviewing relevant code first
 
+## Plan Document Scope
+
+**IMPORTANT**: Implementation plans should focus on **tasks, milestones, and approach** - NOT full code implementations.
+
+### What to Include:
+- ✅ **Task lists**: Specific, actionable items with checkboxes
+- ✅ **File changes**: What files need to be created/modified
+- ✅ **Function signatures**: What APIs will be added/changed
+- ✅ **Acceptance criteria**: How to verify each task is complete
+- ✅ **Dependencies**: What order tasks must be done in
+- ✅ **Testing strategy**: What kinds of tests are needed
+- ✅ **Migration steps**: How to roll out changes
+- ✅ **Pseudocode/approach**: High-level logic description
+
+### What NOT to Include:
+- ❌ **Full function implementations**: That's for `/implement` phase
+- ❌ **Complete working code**: Plan describes what to build, not the full code
+- ❌ **Detailed test implementations**: "Add test for X" yes, full test code no
+- ❌ **Line-by-line code**: Leave implementation details for `/implement`
+
+### Example - Good Plan:
+```markdown
+#### Phase 1.2: Wire Integration Functions
+
+**File**: `src/protocol/rsync.rs`
+- [ ] Update `push_via_rsync_protocol()` signature to take `SshConnection`
+- [ ] Call `rsync_compat::rsync_send()` with connection
+- [ ] Add error handling with context
+- [ ] Update `pull_via_rsync_protocol()` similarly
+
+**Acceptance Criteria**:
+- Functions compile without errors
+- Type system enforces correct Transport usage
+```
+
+### Example - Too Much Implementation:
+```markdown
+#### Phase 1.2: Wire Integration Functions
+
+```rust
+// Bad: Full implementation in plan
+pub async fn push_via_rsync_protocol(
+    args: &Args,
+    local_path: &Path,
+    connection: SshConnection,
+) -> Result<SyncStats> {
+    use crate::protocol::rsync_compat;
+    use tracing::info;
+    
+    info!("Starting push to remote via rsync protocol");
+    // ... 20 more lines of actual code ...
+    Ok(stats)
+}
+```
+// ^ This belongs in /implement, not /plan
+```
+
+**Purpose of Plan**: Break work into manageable tasks so implementation can proceed step-by-step.
+
+**Code Implementation**: Happens during `/implement` phase, not during `/plan`.
+
 ## Plan Structure
 
 Generate a detailed implementation plan with the following structure:

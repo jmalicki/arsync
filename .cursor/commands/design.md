@@ -56,6 +56,64 @@ If context is unclear, the agent will:
 - Request more details about the problem/solution
 - Suggest discussing the design approach first
 
+## Design Document Scope
+
+**IMPORTANT**: Design documents should focus on **architecture, approach, and specifications** - NOT full code implementations.
+
+### What to Include:
+- ✅ **API signatures**: Function/struct definitions with types
+- ✅ **Data structures**: Field layouts and relationships
+- ✅ **Architecture diagrams**: Component interactions
+- ✅ **Algorithm descriptions**: High-level logic flow
+- ✅ **Interface specifications**: What the API should look like
+- ✅ **Examples**: Sample usage showing API design
+- ✅ **Pseudocode**: Illustrative logic (not real implementation)
+
+### What NOT to Include:
+- ❌ **Full function implementations**: Leave for `/implement` phase
+- ❌ **Complete working code**: Design shows structure, not implementation
+- ❌ **Test implementations**: Test descriptions yes, full test code no
+- ❌ **Detailed line-by-line code**: That's implementation work
+
+### Example - Good Design:
+```rust
+// Good: API signature with description
+pub async fn push_via_rsync_protocol(
+    args: &Args,
+    local_path: &Path,
+    connection: SshConnection,
+) -> Result<SyncStats> {
+    // Design: Wire rsync_compat to SSH transport
+    // 1. Call rsync_send() with connection
+    // 2. Handle errors with context
+    // 3. Return stats
+}
+```
+
+### Example - Too Much Implementation:
+```rust
+// Bad: Full implementation in design doc
+pub async fn push_via_rsync_protocol(...) -> Result<SyncStats> {
+    use crate::protocol::rsync_compat;
+    use tracing::info;
+    
+    info!("Starting push to remote via rsync protocol");
+    info!("Local path: {}", local_path.display());
+    
+    let stats = rsync_compat::rsync_send(args, local_path, connection).await
+        .map_err(|e| anyhow::anyhow!("Push via rsync protocol failed: {}", e))?;
+    
+    info!("Push complete: {} files, {} bytes", stats.files_copied, stats.bytes_copied);
+    
+    Ok(stats)
+}
+// ^ This belongs in /implement, not /design
+```
+
+**Purpose of Design**: Plan the architecture and approach so implementation can proceed smoothly.
+
+**Code Implementation**: Happens during `/implement` phase, not during `/design`.
+
 ## Design Document Structure
 
 Generate a comprehensive design document with the following sections:

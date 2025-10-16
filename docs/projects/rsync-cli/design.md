@@ -811,13 +811,9 @@ CMD ["/usr/sbin/sshd", "-D"]
 10. **Minimal exposure**: Only what arsync needs, nothing more
 
 **Test Helper** (`tests/docker/mod.rs`):
-```rust
-use std::process::Command;
-use std::fs;
-use std::path::PathBuf;
-use anyhow::Result;
-use tempfile::TempDir;
 
+**API Design**:
+```rust
 pub struct DockerContainer {
     container_id: String,
     ssh_port: u16,
@@ -826,102 +822,28 @@ pub struct DockerContainer {
 }
 
 impl DockerContainer {
-    pub async fn start() -> Result<Self> {
-        // Create temp directory for ephemeral SSH keys
-        let temp_dir = TempDir::new()?;
-        let ssh_key_path = temp_dir.path().join("test_rsa");
-        
-        // Generate ephemeral SSH key pair (runtime only, never committed)
-        Command::new("ssh-keygen")
-            .args(&[
-                "-t", "rsa",
-                "-b", "2048",
-                "-f", ssh_key_path.to_str().unwrap(),
-                "-N", "",  // No passphrase
-                "-C", "arsync-integration-test-ephemeral"
-            ])
-            .output()?;
-        
-        // Read public key for injection into container
-        let pubkey = fs::read_to_string(format!("{}.pub", ssh_key_path.display()))?;
-        
-        // Build Docker image
-        Command::new("docker")
-            .args(&["build", "-t", "arsync-test", "tests/docker"])
-            .status()?;
-        
-        // Run container with SSH exposed
-        let output = Command::new("docker")
-            .args(&["run", "-d", "-P", "arsync-test"])
-            .output()?;
-        
-        let container_id = String::from_utf8(output.stdout)?.trim().to_string();
-        
-        // Inject public key into container's authorized_keys
-        Command::new("docker")
-            .args(&[
-                "exec",
-                &container_id,
-                "bash", "-c",
-                &format!("echo '{}' > /home/testuser/.ssh/authorized_keys", pubkey.trim())
-            ])
-            .status()?;
-        
-        // Fix permissions inside container
-        Command::new("docker")
-            .args(&[
-                "exec",
-                &container_id,
-                "chown", "-R", "testuser:testuser", "/home/testuser/.ssh"
-            ])
-            .status()?;
-        
-        // Get mapped SSH port
-        let port_output = Command::new("docker")
-            .args(&["port", &container_id, "22"])
-            .output()?;
-        
-        let port_str = String::from_utf8(port_output.stdout)?;
-        let ssh_port = port_str
-            .split(':')
-            .last()
-            .and_then(|p| p.trim().parse().ok())
-            .ok_or_else(|| anyhow::anyhow!("Failed to parse SSH port"))?;
-        
-        // Wait for SSH to be ready
-        std::thread::sleep(std::time::Duration::from_secs(2));
-        
-        Ok(Self { 
-            container_id, 
-            ssh_port,
-            temp_dir,
-            ssh_key_path,
-        })
-    }
+    /// Start container with SSH server and ephemeral keys
+    pub async fn start() -> Result<Self>;
     
-    /// Get SSH connection string for testuser
-    pub fn ssh_connection_string(&self) -> String {
-        format!("testuser@localhost:{}", self.ssh_port)
-    }
+    /// Get SSH connection string
+    pub fn ssh_connection_string(&self) -> String;
     
-    /// Get path to ephemeral SSH private key (for this test only)
-    pub fn ssh_key(&self) -> &Path {
-        &self.ssh_key_path
-    }
+    /// Get path to ephemeral SSH private key
+    pub fn ssh_key(&self) -> &Path;
 }
 
 impl Drop for DockerContainer {
-    fn drop(&mut self) {
-        // Stop and remove container
-        let _ = Command::new("docker")
-            .args(&["rm", "-f", &self.container_id])
-            .status();
-        
-        // temp_dir automatically cleaned up (TempDir Drop impl)
-        // This deletes the ephemeral SSH keys
-    }
+    // Auto-cleanup: Remove container and delete ephemeral keys
 }
 ```
+
+**Implementation Approach**:
+1. Generate ephemeral SSH key pair in TempDir
+2. Build Docker image with hardened SSH config
+3. Start container with random port mapping
+4. Inject public key into container's authorized_keys
+5. Return container handle with SSH connection info
+6. Auto-cleanup on drop (remove container, delete keys)
 
 **Security Properties**:
 1. **Ephemeral keys**: Generated at runtime in temp directory
@@ -932,83 +854,47 @@ impl Drop for DockerContainer {
 6. **Unique per run**: New keys every test run
 
 **Integration Test** (`tests/docker_remote_sync_test.rs`):
+
+**Test Structure**:
 ```rust
-#![cfg(feature = "remote-sync")]
-
-use arsync::protocol::{Location, remote_sync};
-use arsync::cli::Args;
-use std::fs;
-use std::path::Path;
-use std::time::Duration;
-
-mod docker;
+#[compio::test]
+async fn test_push_via_docker_ssh() -> Result<()> {
+    // 1. Skip if Docker not available
+    // 2. Start Docker container with ephemeral SSH keys
+    // 3. Create test data (files with content, metadata)
+    // 4. Configure Args with custom SSH command (ephemeral key, port)
+    // 5. Execute: remote_sync(args, source_loc, dest_loc)
+    // 6. Verify: stats show files transferred
+    // 7. Verify: Files exist in container via docker exec
+    // 8. Verify: Metadata preserved
+    // 9. Cleanup: Auto via Drop
+}
 
 #[compio::test]
-async fn test_push_via_docker_ssh() -> anyhow::Result<()> {
-    // Skip if Docker not available
-    if !docker_available() {
-        println!("Skipping: Docker not available");
-        return Ok(());
-    }
-    
-    // Start Docker container with SSH and ephemeral keys
-    let container = docker::DockerContainer::start().await?;
-    
-    // Create test data locally
-    let temp_dir = tempfile::tempdir()?;
-    let source = temp_dir.path().join("source");
-    fs::create_dir(&source)?;
-    fs::write(source.join("test.txt"), "Hello, Docker!")?;
-    fs::write(source.join("test2.txt"), "More data!")?;
-    
-    // Create Args with custom SSH command (use ephemeral key)
-    let mut args = create_test_args();
-    args.remote.remote_shell = format!(
-        "ssh -i {} -o StrictHostKeyChecking=no -p {}",
-        container.ssh_key().display(),
-        container.ssh_port
-    );
-    
-    // Push to container via SSH
-    let source_loc = Location::Local(source.clone());
-    let dest_loc = Location::parse(&format!("testuser@localhost:/home/testuser/dest"))?;
-    
-    // Execute remote sync (this tests the full flow!)
-    let stats = remote_sync(&args, &source_loc, &dest_loc).await?;
-    
-    // Verify files transferred
-    assert_eq!(stats.files_copied, 2);
-    assert!(stats.bytes_copied > 0);
-    
-    // Verify files exist in container
-    let output = Command::new("docker")
-        .args(&[
-            "exec",
-            &container.container_id,
-            "ls", "-la", "/home/testuser/dest"
-        ])
-        .output()?;
-    
-    let listing = String::from_utf8(output.stdout)?;
-    assert!(listing.contains("test.txt"));
-    assert!(listing.contains("test2.txt"));
-    
-    Ok(())
+async fn test_pull_via_docker_ssh() -> Result<()> {
+    // Similar to push but reversed direction
+}
+
+#[compio::test]
+async fn test_metadata_preservation() -> Result<()> {
+    // Test permissions, timestamps, ownership across SSH
 }
 
 fn docker_available() -> bool {
-    Command::new("docker")
-        .arg("--version")
-        .output()
-        .is_ok()
+    // Check: docker --version
 }
 ```
 
+**Test Flow**:
+1. **Setup**: Start container, generate keys
+2. **Execute**: Call `remote_sync()` with SSH-based Location
+3. **Verify**: Check stats, verify files in container
+4. **Cleanup**: Automatic (Drop trait)
+
 **Key Security Features**:
-- Ephemeral SSH keys generated per test run
+- Ephemeral SSH keys generated per test run (never committed)
 - Keys stored in TempDir (auto-deleted after test)
-- No committed secrets in repository
-- Container uses `-o StrictHostKeyChecking=no` (safe for ephemeral test keys)
+- Container uses `-o StrictHostKeyChecking=no` (safe for ephemeral keys only)
 - Port randomized by Docker (no conflicts)
 - Complete cleanup on test completion or failure
 
