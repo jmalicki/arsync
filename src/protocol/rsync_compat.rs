@@ -2,6 +2,7 @@
 //!
 //! This module implements the actual rsync wire protocol for interoperability
 //! with rsync processes. rsync uses a multiplexed I/O protocol with message tags.
+#![allow(dead_code)] // Protocol implementation not yet fully used
 
 use crate::cli::Args;
 use crate::protocol::rsync::FileEntry;

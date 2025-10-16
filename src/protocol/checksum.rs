@@ -3,6 +3,7 @@
 //! Implements:
 //! - Rolling checksum (Adler-32 with SIMD acceleration) for fast block comparison
 //! - Strong checksum (MD5) for verification
+#![allow(dead_code)] // Protocol implementation not yet fully used
 
 use simd_adler32::Adler32;
 
@@ -136,7 +137,7 @@ mod tests {
 
         // Each window should have a unique checksum (usually)
         for i in 0..checksums.len() {
-            for j in (i + 1)..checksums.len() {
+            for _j in (i + 1)..checksums.len() {
                 // Most windows will be different; some may collide
                 // Just verify we can compute them all consistently
                 let check1 = rolling_checksum(&data[i..i + window_size]);
@@ -180,8 +181,8 @@ mod tests {
         let data1 = b"AB";
         let data2 = b"BA"; // Different data
 
-        let unseeded1 = rolling_checksum(data1);
-        let unseeded2 = rolling_checksum(data2);
+        let _unseeded1 = rolling_checksum(data1);
+        let _unseeded2 = rolling_checksum(data2);
         // May or may not collide (depends on algorithm)
 
         let seed = 0x12345678;

@@ -133,18 +133,21 @@ pub enum Role {
 
 impl Role {
     /// Check if this is the sender role
+    #[allow(dead_code)]
     #[must_use]
     pub const fn is_sender(&self) -> bool {
         matches!(self, Self::Sender)
     }
 
     /// Check if this is the receiver role
+    #[allow(dead_code)]
     #[must_use]
     pub const fn is_receiver(&self) -> bool {
         matches!(self, Self::Receiver)
     }
 
     /// Get the opposite role
+    #[allow(dead_code)]
     #[must_use]
     pub const fn opposite(&self) -> Self {
         match self {
@@ -228,6 +231,7 @@ impl ChecksumSeed {
     }
 
     /// Check if the seed is zero (uninitialized)
+    #[allow(dead_code)]
     #[must_use]
     pub const fn is_zero(&self) -> bool {
         self.seed == 0

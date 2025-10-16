@@ -29,6 +29,7 @@
 //!     Ok(())
 //! }
 //! ```
+#![allow(dead_code)] // Protocol implementation not yet fully used
 
 use compio::io::{AsyncRead, AsyncWrite};
 use std::io;

@@ -240,7 +240,7 @@ fn test_file_entry_encode_decode_roundtrip() {
     assert_eq!(decoded.mode, original.mode);
     assert_eq!(decoded.uid, original.uid);
     assert_eq!(decoded.gid, original.gid);
-    assert_eq!(decoded.is_symlink, false);
+    assert!(!decoded.is_symlink);
 
     println!("✓ File entry roundtrip successful");
     println!("  All fields preserved through encode → decode cycle");
@@ -355,8 +355,8 @@ fn test_mplex_message_format() {
 fn test_mplex_message_size_limits() {
     // rsync uses 3-byte length, max = 16,777,215 bytes
 
-    let max_length = 0xFFFFFF; // 3 bytes can hold up to this
-    let len_bytes = (max_length as u32).to_le_bytes();
+    let max_length: u32 = 0xFFFFFF; // 3 bytes can hold up to this
+    let len_bytes = max_length.to_le_bytes();
 
     let decoded = u32::from_le_bytes([len_bytes[0], len_bytes[1], len_bytes[2], 0]);
     assert_eq!(decoded, max_length);
@@ -514,7 +514,7 @@ fn test_complete_file_list_wire_format() {
     println!("  Format validated: [MSG_FLIST][entry]...[MSG_FLIST][empty]");
 
     // Verify structure
-    assert!(wire_data.len() > 0);
+    assert!(!wire_data.is_empty());
     assert_eq!(&wire_data[wire_data.len() - 4..], &[27, 0, 0, 0]);
 
     println!("✓ Complete file list wire format correct");

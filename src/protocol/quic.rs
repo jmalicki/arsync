@@ -2,6 +2,7 @@
 //!
 //! Implements the SSH-QUIC hybrid protocol where SSH provides authentication
 //! and control channel, while QUIC provides high-performance parallel data transfer.
+#![allow(dead_code)] // Protocol implementation not yet fully used
 
 use crate::cli::Args;
 use crate::protocol::ssh::SshConnection;

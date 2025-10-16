@@ -195,8 +195,9 @@ fn test_version_constants() {
     assert_eq!(MIN_PROTOCOL_VERSION, 27);
     assert_eq!(MAX_PROTOCOL_VERSION, 40);
 
-    assert!(PROTOCOL_VERSION >= MIN_PROTOCOL_VERSION);
-    assert!(PROTOCOL_VERSION <= MAX_PROTOCOL_VERSION);
+    // Compile-time sanity checks (clippy complains but these document invariants)
+    const _: () = assert!(PROTOCOL_VERSION >= MIN_PROTOCOL_VERSION);
+    const _: () = assert!(PROTOCOL_VERSION <= MAX_PROTOCOL_VERSION);
 
     println!("✓ Protocol version constants are valid");
     println!("  Current: {}", PROTOCOL_VERSION);

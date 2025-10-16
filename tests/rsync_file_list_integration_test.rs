@@ -11,6 +11,7 @@ use compio::io::{AsyncRead, AsyncWrite};
 use std::io;
 
 /// Wrapper for rsync process stdin/stdout
+#[allow(dead_code)]
 struct RsyncTransport {
     stdin: compio::process::ChildStdin,
     stdout: compio::process::ChildStdout,
@@ -326,8 +327,8 @@ async fn test_file_list_edge_cases() {
             p if p.len() > 255 => println!("  ✅ Long path ({} bytes) - OK", p.len()),
             p if p.contains(' ') => println!("  ✅ Path with spaces - OK"),
             p if !p.is_ascii() => println!("  ✅ UTF-8 filename - OK"),
-            p if original.size == 0 => println!("  ✅ Empty file - OK"),
-            p if original.size == u64::MAX => println!("  ✅ Large file (u64::MAX) - OK"),
+            _p if original.size == 0 => println!("  ✅ Empty file - OK"),
+            _p if original.size == u64::MAX => println!("  ✅ Large file (u64::MAX) - OK"),
             _ => {}
         }
     }

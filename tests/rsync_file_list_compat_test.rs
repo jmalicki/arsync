@@ -173,7 +173,7 @@ async fn test_receive_file_list_from_rsync() {
     match result {
         Ok(output) => {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
+            let _stdout = String::from_utf8_lossy(&output.stdout);
 
             println!("  ✓ arsync --rsync-compat started successfully");
 

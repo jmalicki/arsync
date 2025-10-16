@@ -2,6 +2,7 @@
 //!
 //! Implements rsync's varint format: 7-bit continuation encoding
 //! used throughout the rsync wire protocol.
+#![allow(dead_code)] // Protocol implementation not yet fully used
 
 use crate::protocol::transport::{self, Transport};
 use anyhow::Result;

@@ -16,6 +16,7 @@
 //!     ↓
 //! io_uring operations
 //! ```
+#![allow(dead_code)] // Protocol implementation not yet fully used
 
 use super::transport::Transport;
 use anyhow::Result;
