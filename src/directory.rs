@@ -17,7 +17,7 @@ use dashmap::DashMap;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 /// Wrapper for shared statistics tracking across async tasks
@@ -212,8 +212,9 @@ impl SharedStats {
 /// ```
 #[derive(Clone)]
 pub struct SharedHardlinkTracker {
-    /// Inner tracker wrapped in Arc<Mutex<>> for thread-safe access
-    inner: Arc<Mutex<FilesystemTracker>>,
+    /// Inner tracker wrapped in Arc for thread-safe shared access
+    /// No Mutex needed - `DashMap` provides interior mutability
+    inner: Arc<FilesystemTracker>,
 }
 
 impl SharedHardlinkTracker {
@@ -225,122 +226,64 @@ impl SharedHardlinkTracker {
     #[must_use]
     pub fn new(tracker: FilesystemTracker) -> Self {
         Self {
-            inner: Arc::new(Mutex::new(tracker)),
+            inner: Arc::new(tracker),
         }
     }
 
+    /// Create a new `SharedHardlinkTracker` with source filesystem set
+    ///
+    /// # Arguments
+    ///
+    /// * `source_filesystem` - Optional source filesystem device ID
+    #[allow(dead_code)]
+    #[must_use]
+    pub fn with_source_filesystem(source_filesystem: Option<u64>) -> Self {
+        let mut tracker = FilesystemTracker::new();
+        if let Some(dev) = source_filesystem {
+            tracker.set_source_filesystem(dev);
+        }
+        Self::new(tracker)
+    }
+
     /// Check if an inode has already been copied
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn is_inode_copied(&self, inode: u64) -> Result<bool> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| {
-                SyncError::FileSystem("Failed to acquire hardlink tracker lock".to_string())
-            })?
-            .is_inode_copied(inode))
+    #[must_use]
+    pub fn is_inode_copied(&self, inode: u64) -> bool {
+        self.inner.is_inode_copied(inode)
     }
 
     /// Get the original path for an inode that has been copied
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn get_original_path_for_inode(&self, inode: u64) -> Result<Option<PathBuf>> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| {
-                SyncError::FileSystem("Failed to acquire hardlink tracker lock".to_string())
-            })?
-            .get_original_path_for_inode(inode))
+    #[must_use]
+    pub fn get_original_path_for_inode(&self, inode: u64) -> Option<PathBuf> {
+        self.inner.get_original_path_for_inode(inode)
     }
 
     /// Mark an inode as copied
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn mark_inode_copied(&self, inode: u64, path: &Path) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| {
-                SyncError::FileSystem("Failed to acquire hardlink tracker lock".to_string())
-            })?
-            .mark_inode_copied(inode, path);
-        Ok(())
+    pub fn mark_inode_copied(&self, inode: u64, path: &Path) {
+        self.inner.mark_inode_copied(inode, path);
     }
 
     #[allow(dead_code)]
     /// Register a file with the hardlink tracker
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn register_file(
-        &self,
-        path: &Path,
-        device_id: u64,
-        inode: u64,
-        link_count: u64,
-    ) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| {
-                SyncError::FileSystem("Failed to acquire hardlink tracker lock".to_string())
-            })?
-            .register_file(path, device_id, inode, link_count);
-        Ok(())
-    }
-
-    #[allow(dead_code)]
-    /// Set the source filesystem device ID
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn set_source_filesystem(&self, device_id: u64) -> Result<()> {
-        self.inner
-            .lock()
-            .map_err(|_| {
-                SyncError::FileSystem("Failed to acquire hardlink tracker lock".to_string())
-            })?
-            .set_source_filesystem(device_id);
-        Ok(())
+    #[must_use]
+    pub fn register_file(&self, path: &Path, device_id: u64, inode: u64, link_count: u64) -> bool {
+        self.inner.register_file(path, device_id, inode, link_count)
     }
 
     #[allow(dead_code)]
     /// Get filesystem tracking statistics
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error if the internal mutex is poisoned.
-    pub fn get_stats(&self) -> Result<FilesystemStats> {
-        Ok(self
-            .inner
-            .lock()
-            .map_err(|_| {
-                SyncError::FileSystem("Failed to acquire hardlink tracker lock".to_string())
-            })?
-            .get_stats())
+    #[must_use]
+    pub fn get_stats(&self) -> FilesystemStats {
+        self.inner.get_stats()
     }
 
     /// Extract the inner `FilesystemTracker` from the shared wrapper
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
-    /// - Multiple references to the Arc exist (cannot unwrap)
-    /// - The internal mutex is poisoned
+    /// This function will return an error if multiple references to the Arc exist.
     pub fn into_inner(self) -> Result<FilesystemTracker> {
-        let inner = Arc::try_unwrap(self.inner).map_err(|_| {
+        Arc::try_unwrap(self.inner).map_err(|_| {
             SyncError::FileSystem("Failed to unwrap Arc - multiple references exist".to_string())
-        })?;
-        inner.into_inner().map_err(|_| {
-            SyncError::FileSystem("Failed to unwrap Mutex - mutex is poisoned".to_string())
         })
     }
 }
@@ -958,7 +901,7 @@ async fn process_file(
     let link_count = metadata.link_count();
 
     // Check if this inode has already been copied (for hardlinks)
-    if link_count > 1 && hardlink_tracker.is_inode_copied(inode_number)? {
+    if link_count > 1 && hardlink_tracker.is_inode_copied(inode_number) {
         handle_existing_hardlink(
             &dst_path,
             &src_path,
@@ -975,7 +918,7 @@ async fn process_file(
             Ok(()) => {
                 stats.increment_files_copied()?;
                 stats.increment_bytes_copied(metadata.len())?;
-                hardlink_tracker.mark_inode_copied(inode_number, dst_path.as_path())?;
+                hardlink_tracker.mark_inode_copied(inode_number, dst_path.as_path());
                 debug!("Copied file: {}", dst_path.display());
             }
             Err(e) => {
@@ -1047,7 +990,7 @@ async fn handle_existing_hardlink(
     );
 
     // Find the original file path for this inode
-    if let Some(original_path) = hardlink_tracker.get_original_path_for_inode(inode_number)? {
+    if let Some(original_path) = hardlink_tracker.get_original_path_for_inode(inode_number) {
         // Create destination directory if needed
         if let Some(parent) = dst_path.parent() {
             if !parent.exists() {

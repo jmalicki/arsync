@@ -102,62 +102,69 @@ Replace HashMap with DashMap in `FilesystemTracker` and simplify `SharedHardlink
 
 ### Steps
 
-- [ ] Decide on wrapper approach
+- [x] Decide on wrapper approach
   - Option A: Keep struct, remove mutex, wrap Arc<FilesystemTracker>
   - Option B: Type alias: `type SharedHardlinkTracker = Arc<FilesystemTracker>`
   - Recommendation: Option A for gradual migration
+  **Note**: Chose Option A - keeps the wrapper for future flexibility.
 
-- [ ] Update `SharedHardlinkTracker` struct (line 217)
+- [x] Update `SharedHardlinkTracker` struct (line 217)
   - Change from `Arc<Mutex<FilesystemTracker>>` to `Arc<FilesystemTracker>`
   - Remove Mutex entirely
+  **Note**: Updated struct and imports (removed `Mutex` import).
 
-- [ ] Update `SharedHardlinkTracker::new()` (lines 227-232)
+- [x] Update `SharedHardlinkTracker::new()` (lines 227-232)
   - Remove `Mutex::new()` wrapper
   - Just use `Arc::new(tracker)`
 
-- [ ] Update `is_inode_copied()` (lines 238-246)
+- [x] Add `SharedHardlinkTracker::with_source_filesystem()`
+  - New constructor that creates tracker with filesystem set
+  - Better API than requiring set_source_filesystem() before wrapping
+  **Note**: User suggestion - much cleaner API!
+
+- [x] Update `is_inode_copied()` (lines 238-246)
   - Remove `Result<bool>` return → `bool`
   - Remove `.lock().map_err(...)` pattern
   - Direct call: `self.inner.is_inode_copied(inode)`
 
-- [ ] Update `get_original_path_for_inode()` (lines 253-262)
+- [x] Update `get_original_path_for_inode()` (lines 253-262)
   - Remove `Result<Option<PathBuf>>` → `Option<PathBuf>`
   - Remove mutex lock error handling
   - Direct call to inner method
 
-- [ ] Update `mark_inode_copied()` (lines 269-277)
+- [x] Update `mark_inode_copied()` (lines 269-277)
   - Remove `Result<()>` → just `()`
   - Remove mutex lock error handling
   - Direct call to inner method
 
-- [ ] Update `register_file()` (lines 285-299)
-  - Remove `Result<()>` return if only for mutex
-  - Direct call to inner method
+- [x] Update `register_file()` (lines 285-299)
+  - Remove `Result<()>` return → `bool`
+  - Direct call to inner method (returns bool like FilesystemTracker)
 
-- [ ] Update `set_source_filesystem()` (lines 307-315)
-  - Remove `Result<()>` return
-  - Direct call to inner method
+- [x] Remove `set_source_filesystem()` (lines 307-315)
+  - Removed entirely - use constructor instead
+  - **Note**: Better handled by `with_source_filesystem()` constructor
 
-- [ ] Update `get_stats()` (lines 323-331)
+- [x] Update `get_stats()` (lines 323-331)
   - Remove `Result<FilesystemStats>` → `FilesystemStats`
   - Direct call to inner method
 
-- [ ] Update `into_inner()` (lines 340-347)
+- [x] Update `into_inner()` (lines 340-347)
   - Keep `Result<>` for Arc::try_unwrap
   - Remove mutex poisoning error case
   - Simplify to just Arc::try_unwrap
 
-- [ ] Update all call sites of SharedHardlinkTracker methods
-  - Remove `?` where method no longer returns Result
-  - Update error handling as needed
-  - Search for: `hardlink_tracker.` in directory.rs
+- [x] Update all call sites of SharedHardlinkTracker methods
+  - Remove `?` where method no longer returns Result (3 locations)
+  - Updated: is_inode_copied, mark_inode_copied, get_original_path_for_inode
+  **Note**: All call sites updated successfully.
 
 ### Quality Checks
 
-- [ ] `/fmt false true` - Format code
-- [ ] `/clippy false false` - Verify no warnings
-- [ ] `/test "directory"` - Run directory tests
-- [ ] `/build "debug" "all" false` - Verify compilation
+- [x] `/fmt false true` - Format code
+- [x] `/clippy false false` - Verify no warnings
+- [x] `/test "directory"` - Run directory tests
+- [x] `/build "debug" "all" false` - Verify compilation
 
 ### Files Modified
 - `src/directory.rs` - SharedHardlinkTracker (lines 214-348, plus call sites)
