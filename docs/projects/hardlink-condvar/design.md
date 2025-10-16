@@ -384,49 +384,90 @@ pub fn signal_copy_complete(&self, ino: u64) {
 - Review `tokio::sync::Notify` implementation
 - Review our `compio-sync::Semaphore` pattern
 
-**Approach 1 - Using Semaphore** (simpler):
+**Implementation - From Scratch** (proper approach):
+
+We'll implement CondVar using the same primitives as Semaphore:
+- `AtomicBool` for notification state
+- `Mutex<VecDeque<Waker>>` for waiting tasks
+- Manual `Future` implementation for `wait()`
+
 ```rust
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+use std::collections::VecDeque;
+use std::task::Waker;
+
 pub struct CondVar {
-    semaphore: Arc<Semaphore>,
+    inner: Arc<CondVarInner>,
+}
+
+struct CondVarInner {
+    /// Whether notification has been signaled
+    notified: AtomicBool,
+    /// Queue of tasks waiting for notification
+    waiters: Mutex<VecDeque<Waker>>,
 }
 
 impl CondVar {
     pub fn new() -> Self {
         Self {
-            semaphore: Arc::new(Semaphore::new(0)),  // 0 permits initially
+            inner: Arc::new(CondVarInner {
+                notified: AtomicBool::new(false),
+                waiters: Mutex::new(VecDeque::new()),
+            }),
         }
     }
     
     pub async fn wait(&self) {
-        // Acquire permit - blocks until notify
-        let _permit = self.semaphore.acquire().await;
-        // Permit dropped immediately
+        WaitFuture {
+            condvar: self.clone(),
+        }.await
     }
     
     pub fn notify_all(&self) {
-        // Add many permits (one per waiter)
-        // Semaphore will release all waiting acquire() calls
-        self.semaphore.add_permits(1000);  // Or track waiter count
+        // Set notified flag
+        self.inner.notified.store(true, Ordering::Release);
+        
+        // Wake all waiters
+        if let Ok(mut waiters) = self.inner.waiters.lock() {
+            for waker in waiters.drain(..) {
+                waker.wake();
+            }
+        }
+    }
+}
+
+struct WaitFuture {
+    condvar: CondVar,
+}
+
+impl Future for WaitFuture {
+    type Output = ();
+    
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<()> {
+        // Check if already notified
+        if self.condvar.inner.notified.load(Ordering::Acquire) {
+            return Poll::Ready(());
+        }
+        
+        // Register waker
+        if let Ok(mut waiters) = self.condvar.inner.waiters.lock() {
+            waiters.push_back(cx.waker().clone());
+        }
+        
+        // Check again (avoid missed notification)
+        if self.condvar.inner.notified.load(Ordering::Acquire) {
+            return Poll::Ready(());
+        }
+        
+        Poll::Pending
     }
 }
 ```
 
-**Approach 2 - Using Event** (if available):
-```rust
-pub struct CondVar {
-    event: Arc<compio::event::Event>,
-}
-
-impl CondVar {
-    pub async fn wait(&self) {
-        self.event.wait().await;
-    }
-    
-    pub fn notify_all(&self) {
-        self.event.notify(usize::MAX);
-    }
-}
-```
+**Key differences from Semaphore**:
+- Semaphore: Counts permits (can be acquired multiple times)
+- CondVar: One-shot notification (all waiters wake on signal)
 
 ### Phase 2: Update HardlinkInfo Structure
 
