@@ -2,6 +2,7 @@
 //!
 //! Validates conversion between DeltaInstructions and rsync token format.
 
+#![cfg(feature = "remote-sync")]
 #![allow(clippy::panic)] // Tests use panic! for assertion failures
 
 use arsync::protocol::rsync::DeltaInstruction;

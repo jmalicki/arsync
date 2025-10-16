@@ -3,6 +3,8 @@
 //! Spawns a real `rsync --server` process and performs a bidirectional handshake
 //! to verify our implementation is compatible with rsync's wire protocol.
 
+#![cfg(feature = "remote-sync")]
+
 use arsync::protocol::handshake::{handshake_sender, MIN_PROTOCOL_VERSION, PROTOCOL_VERSION};
 use arsync::protocol::transport::Transport;
 use compio::io::{AsyncRead, AsyncWrite};

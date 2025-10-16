@@ -2,6 +2,8 @@
 //!
 //! Tests the full flow: handshake → file list → checksums → delta → file reconstruction
 
+#![cfg(feature = "remote-sync")]
+
 use arsync::protocol::checksum::{rolling_checksum_with_seed, strong_checksum};
 use arsync::protocol::handshake::{handshake_receiver, handshake_sender};
 use arsync::protocol::rsync::{apply_delta, generate_block_checksums, generate_delta, FileEntry};

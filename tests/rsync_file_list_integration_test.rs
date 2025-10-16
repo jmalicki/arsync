@@ -2,6 +2,8 @@
 //!
 //! Tests that we can exchange file lists with a real rsync process.
 
+#![cfg(feature = "remote-sync")]
+
 use arsync::protocol::rsync::FileEntry;
 use arsync::protocol::rsync_compat::{
     decode_file_list_rsync, encode_file_list_rsync, MultiplexReader, MultiplexWriter,

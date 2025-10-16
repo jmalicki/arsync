@@ -2,6 +2,8 @@
 //!
 //! Validates that we correctly encode/decode block checksums in rsync wire format.
 
+#![cfg(feature = "remote-sync")]
+
 use arsync::protocol::checksum::{rolling_checksum_with_seed, strong_checksum};
 use arsync::protocol::rsync_compat::{
     receive_block_checksums_rsync, send_block_checksums_rsync, MultiplexReader, MultiplexWriter,

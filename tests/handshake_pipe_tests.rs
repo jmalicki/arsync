@@ -3,6 +3,8 @@
 //! Tests bidirectional handshake communication using Unix pipes and compio runtime.
 //! These tests verify that the handshake protocol works correctly with real async I/O.
 
+#![cfg(feature = "remote-sync")]
+
 use arsync::protocol::handshake::{get_our_capabilities, handshake_receiver, handshake_sender};
 use arsync::protocol::pipe::PipeTransport;
 use compio::io::AsyncWrite;
