@@ -30,7 +30,7 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::task::{Context, Poll, Waker};
 
 /// A compio-compatible async semaphore for bounding concurrency
@@ -66,10 +66,10 @@ use std::task::{Context, Poll, Waker};
 /// }
 /// # }
 /// ```
-#[derive(Clone)]
 pub struct Semaphore {
-    /// Shared state between all clones of this semaphore
-    inner: Arc<SemaphoreInner>,
+    /// Internal state for the semaphore
+    /// Users should wrap in Arc<Semaphore> when sharing between tasks
+    inner: SemaphoreInner,
 }
 
 /// Internal shared state for the semaphore
@@ -117,11 +117,11 @@ impl Semaphore {
     pub fn new(permits: usize) -> Self {
         assert!(permits > 0, "Semaphore must have at least one permit");
         Self {
-            inner: Arc::new(SemaphoreInner {
+            inner: SemaphoreInner {
                 permits: AtomicUsize::new(permits),
                 max_permits: permits,
                 waiters: Mutex::new(VecDeque::new()),
-            }),
+            },
         }
     }
 
@@ -143,11 +143,8 @@ impl Semaphore {
     /// drop(permit);  // Release permit
     /// # }
     /// ```
-    pub async fn acquire(&self) -> SemaphorePermit {
-        AcquireFuture {
-            semaphore: self.clone(),
-        }
-        .await
+    pub async fn acquire(&self) -> SemaphorePermit<'_> {
+        AcquireFuture { semaphore: self }.await
     }
 
     /// Try to acquire a permit without waiting
@@ -169,7 +166,7 @@ impl Semaphore {
     /// assert!(permit2.is_none());  // No permits left
     /// ```
     #[must_use]
-    pub fn try_acquire(&self) -> Option<SemaphorePermit> {
+    pub fn try_acquire(&self) -> Option<SemaphorePermit<'_>> {
         // Fast path: atomic decrement if permits available
         let mut current = self.inner.permits.load(Ordering::Acquire);
 
@@ -185,11 +182,7 @@ impl Semaphore {
                 Ordering::AcqRel,
                 Ordering::Acquire,
             ) {
-                Ok(_) => {
-                    return Some(SemaphorePermit {
-                        semaphore: self.clone(),
-                    })
-                }
+                Ok(_) => return Some(SemaphorePermit { semaphore: self }),
                 Err(actual) => current = actual, // Retry with updated value
             }
         }
@@ -363,9 +356,10 @@ impl Semaphore {
 ///
 /// ```rust,no_run
 /// use compio_sync::Semaphore;
+/// use std::sync::Arc;
 ///
 /// # async fn example() {
-/// let sem = Semaphore::new(10);
+/// let sem = Arc::new(Semaphore::new(10));
 ///
 /// {
 ///     let permit = sem.acquire().await;
@@ -375,12 +369,12 @@ impl Semaphore {
 /// assert_eq!(sem.available_permits(), 10);
 /// # }
 /// ```
-pub struct SemaphorePermit {
+pub struct SemaphorePermit<'a> {
     /// Reference to the semaphore that issued this permit
-    semaphore: Semaphore,
+    semaphore: &'a Semaphore,
 }
 
-impl Drop for SemaphorePermit {
+impl<'a> Drop for SemaphorePermit<'a> {
     fn drop(&mut self) {
         self.semaphore.release();
     }
@@ -392,25 +386,37 @@ impl Drop for SemaphorePermit {
 /// 1. Try the fast path (atomic decrement if permits available)
 /// 2. If no permits, register the task's waker and return `Poll::Pending`
 /// 3. When a permit is released, the waker is called and the future retries
-struct AcquireFuture {
+struct AcquireFuture<'a> {
     /// The semaphore from which to acquire a permit
-    semaphore: Semaphore,
+    semaphore: &'a Semaphore,
 }
 
-impl Future for AcquireFuture {
-    type Output = SemaphorePermit;
+impl<'a> Future for AcquireFuture<'a> {
+    type Output = SemaphorePermit<'a>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        // Try fast path first (lock-free atomic operation)
+        // RACE-FREE PATTERN: Try-register-retry to prevent lost wakeup
+        //
+        // Unlike Condvar, Semaphore uses atomic permits count, so the race is different:
+        // 1. Thread A: try_acquire() → None (permits=0)
+        // 2. **RACE WINDOW** - Thread B releases permit, wakes waiters
+        // 3. Thread A: add_waiter() → Missed the wakeup! ❌
+        //
+        // Solution: Try again AFTER registering waker
+        // Note: add_waiter() locks the queue, but permits are atomic (separate from queue)
+
+        // First try (fast path, lock-free atomic)
         if let Some(permit) = self.semaphore.try_acquire() {
             return Poll::Ready(permit);
         }
 
         // No permits available - register waker for notification
+        // This locks the waiter queue but doesn't check permits atomically
         self.semaphore.add_waiter(cx.waker().clone());
 
-        // Try again immediately in case a permit became available
-        // while we were registering the waker (avoid missed wakeup)
+        // CRITICAL: Try again after registering
+        // If a permit was released while we were adding ourselves to waiters,
+        // we catch it here instead of sleeping forever
         if let Some(permit) = self.semaphore.try_acquire() {
             return Poll::Ready(permit);
         }
@@ -423,6 +429,7 @@ impl Future for AcquireFuture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
 
     #[test]
     fn test_semaphore_new() {
