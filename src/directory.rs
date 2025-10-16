@@ -886,18 +886,59 @@ async fn process_file(
     let (is_copier, maybe_condvar) =
         hardlink_tracker.register_file(&src_path, device_id, inode_number, link_count);
 
-    if is_copier {
-        // We're the copier - copy the file and signal completion
-        debug!("Copying file content (copier): {}", src_path.display());
+    if let Some(condvar) = maybe_condvar {
+        // We're a linker - wait for copier to finish, then create hardlink
+        debug!(
+            "Waiting for copy to complete (linker): {}",
+            src_path.display()
+        );
+
+        // Wait for copier to signal completion
+        condvar.wait().await;
+
+        // Get the destination path from the copier
+        if let Some(original_dst) = hardlink_tracker.get_dst_path_for_inode(inode_number) {
+            if original_dst.as_os_str().is_empty() {
+                // Copier failed - propagate the error instead of silently continuing
+                stats.increment_errors();
+                return Err(SyncError::FileSystem(format!(
+                    "Cannot create hardlink for {}: original copy failed",
+                    src_path.display()
+                )));
+            }
+
+            // Create hardlink (stats updated inside handle_existing_hardlink)
+            handle_existing_hardlink(&dst_path, &original_dst, inode_number, &stats).await?;
+        } else {
+            // This shouldn't happen - if we got a condvar, dst_path should exist
+            stats.increment_errors();
+            return Err(SyncError::FileSystem(format!(
+                "Cannot create hardlink for {}: destination path not found for inode {}",
+                src_path.display(),
+                inode_number
+            )));
+        }
+    } else {
+        // We're either the copier (is_copier=true) or a regular file (link_count=1)
+        // Both paths copy the file content and update stats identically
+        debug!(
+            "Copying file content ({}): {}",
+            if is_copier { "copier" } else { "non-hardlink" },
+            src_path.display()
+        );
 
         match copy_file(&src_path, &dst_path, &metadata_config).await {
             Ok(()) => {
                 stats.increment_files_copied();
                 stats.increment_bytes_copied(metadata.len());
 
-                // Signal all waiting linkers that copy is complete
-                hardlink_tracker.signal_copy_complete(inode_number, dst_path.as_path());
-                debug!("Copied file and signaled linkers: {}", dst_path.display());
+                // If we're the copier for a hardlink, signal waiting linkers
+                if is_copier {
+                    hardlink_tracker.signal_copy_complete(inode_number, dst_path.as_path());
+                    debug!("Copied file and signaled linkers: {}", dst_path.display());
+                } else {
+                    debug!("Copied file: {}", dst_path.display());
+                }
             }
             Err(e) => {
                 // Handle error - controller will either adapt or fail based on configuration
@@ -911,57 +952,10 @@ async fn process_file(
                 );
                 stats.increment_errors();
 
-                // Still signal condvar even on error (with empty dst_path)
-                // This prevents linkers from waiting forever
-                hardlink_tracker.signal_copy_complete(inode_number, Path::new(""));
-            }
-        }
-    } else if let Some(condvar) = maybe_condvar {
-        // We're a linker - wait for copier to finish, then create hardlink
-        debug!(
-            "Waiting for copy to complete (linker): {}",
-            src_path.display()
-        );
-
-        // Wait for copier to signal completion
-        condvar.wait().await;
-
-        // Get the destination path from the copier
-        if let Some(original_dst) = hardlink_tracker.get_dst_path_for_inode(inode_number) {
-            if original_dst.as_os_str().is_empty() {
-                // Copier failed - we should also fail
-                warn!(
-                    "Original copy failed, skipping hardlink creation for {}",
-                    src_path.display()
-                );
-                stats.increment_errors();
-            } else {
-                handle_existing_hardlink(&dst_path, &original_dst, inode_number, &stats).await?;
-            }
-        }
-    } else {
-        // Not a hardlink (link_count == 1) - copy normally
-        debug!(
-            "Copying file content (non-hardlink): {}",
-            src_path.display()
-        );
-
-        match copy_file(&src_path, &dst_path, &metadata_config).await {
-            Ok(()) => {
-                stats.increment_files_copied();
-                stats.increment_bytes_copied(metadata.len());
-                debug!("Copied file: {}", dst_path.display());
-            }
-            Err(e) => {
-                concurrency_controller.handle_error(&e)?;
-
-                warn!(
-                    "Failed to copy file {} -> {}: {}",
-                    src_path.display(),
-                    dst_path.display(),
-                    e
-                );
-                stats.increment_errors();
+                // If we're the copier, signal linkers even on error (prevents deadlock)
+                if is_copier {
+                    hardlink_tracker.signal_copy_complete(inode_number, Path::new(""));
+                }
             }
         }
     }
@@ -1857,5 +1851,47 @@ mod tests {
         assert_eq!(stats.total_files, 1);
         assert_eq!(stats.hardlink_groups, 1);
         assert_eq!(stats.total_hardlinks, 2);
+    }
+
+    /// Test that handle_existing_hardlink updates stats
+    /// This verifies that the linker path properly increments files_copied
+    #[compio::test]
+    async fn test_hardlink_updates_stats() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp directory");
+        let src_file = temp_dir.path().join("src.txt");
+        let dst_file = temp_dir.path().join("dst.txt");
+        let link_file = temp_dir.path().join("link.txt");
+
+        // Create source file
+        std::fs::write(&src_file, "test content").expect("Failed to write file");
+
+        // Create destination file (simulating copier's work)
+        std::fs::write(&dst_file, "test content").expect("Failed to write dst");
+
+        // Test handle_existing_hardlink
+        let stats = Arc::new(SharedStats::new(&DirectoryStats::default()));
+
+        let result = handle_existing_hardlink(&link_file, &dst_file, 12345, &stats).await;
+
+        assert!(result.is_ok(), "handle_existing_hardlink should succeed");
+
+        // CRITICAL: Check that stats were updated
+        let final_stats = Arc::try_unwrap(stats).unwrap().into_inner();
+        assert_eq!(
+            final_stats.files_copied, 1,
+            "handle_existing_hardlink should increment files_copied"
+        );
+
+        // Verify hardlink was actually created
+        assert!(link_file.exists(), "Hardlink should exist");
+        let link_meta = std::fs::metadata(&link_file).expect("Failed to get link metadata");
+        let dst_meta = std::fs::metadata(&dst_file).expect("Failed to get dst metadata");
+        assert_eq!(
+            link_meta.ino(),
+            dst_meta.ino(),
+            "Should be same inode (hardlink)"
+        );
     }
 }
