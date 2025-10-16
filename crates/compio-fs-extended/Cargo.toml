@@ -13,15 +13,11 @@ categories = ["asynchronous", "filesystem"]
 # Core compio dependencies
 compio = { version = "0.16", features = ["macros", "dispatcher"] }
 compio-fs = "0.9"
+compio-io = "0.8"
 
-# io_uring dependencies (must match compio's version)
-io-uring = "0.7"
-
-# System call dependencies
+# Cross-platform deps
 libc = "0.2"
-nix = { version = "0.28", features = ["fs", "user", "time"] }
 filetime = "0.2"
-xattr = "1.0"  # Safe xattr wrapper for operations not in io_uring
 
 # Error handling
 thiserror = "1.0"
@@ -47,6 +43,22 @@ xattr = []
 metrics = []
 # Enable logging integration
 logging = []
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = "0.7"
+nix = { version = "0.28", features = ["fs", "user", "time"] }
+xattr = "1.0"
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+nix = { version = "0.28", features = ["fs", "user", "time"] }
+xattr = "1.0"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+] }
 
 # [[bench]]
 # name = "copy_file_range_bench"

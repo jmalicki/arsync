@@ -4,6 +4,7 @@ use crate::error::{fadvise_error, Result};
 use compio::driver::OpCode;
 use compio::fs::File;
 use compio::runtime::submit;
+#[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
 use std::os::unix::io::AsRawFd;
 use std::pin::Pin;
@@ -117,6 +118,7 @@ impl FadviseOp {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl OpCode for FadviseOp {
     fn create_entry(self: Pin<&mut Self>) -> compio::driver::OpEntry {
         compio::driver::OpEntry::Submission(
@@ -163,6 +165,7 @@ impl OpCode for FadviseOp {
 /// # Ok(())
 /// # }
 /// ```
+#[cfg(target_os = "linux")]
 pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) -> Result<()> {
     let fd = file.as_raw_fd();
 
@@ -174,6 +177,12 @@ pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) 
         Ok(_) => Ok(()),
         Err(e) => Err(fadvise_error(&e.to_string())),
     }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub async fn fadvise(_file: &File, _advice: FadviseAdvice, _offset: i64, _len: i64) -> Result<()> {
+    // Best-effort no-op on non-Linux targets for now
+    Ok(())
 }
 
 #[cfg(test)]

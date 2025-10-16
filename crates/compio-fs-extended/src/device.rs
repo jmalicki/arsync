@@ -30,7 +30,9 @@
 //! ```
 
 use crate::error::{ExtendedError, Result};
+#[cfg(unix)]
 use nix::sys::stat;
+#[cfg(unix)]
 use nix::unistd;
 use std::path::Path;
 
@@ -53,6 +55,7 @@ use std::path::Path;
 /// - Permission is denied
 /// - Invalid mode or device number
 /// - The operation fails due to I/O errors
+#[cfg(unix)]
 pub async fn create_special_file_at_path(path: &Path, mode: u32, dev: u64) -> Result<()> {
     let path = path.to_path_buf();
 
@@ -67,6 +70,13 @@ pub async fn create_special_file_at_path(path: &Path, mode: u32, dev: u64) -> Re
     })
     .await
     .map_err(|e| device_error(&format!("spawn failed: {:?}", e)))?
+}
+
+#[cfg(windows)]
+pub async fn create_special_file_at_path(_path: &Path, _mode: u32, _dev: u64) -> Result<()> {
+    Err(crate::error::device_error(
+        "special files are not supported on Windows",
+    ))
 }
 
 /// Create a named pipe (FIFO) at the given path using async spawn
@@ -86,6 +96,7 @@ pub async fn create_special_file_at_path(path: &Path, mode: u32, dev: u64) -> Re
 /// - The pathname already exists
 /// - Permission is denied
 /// - The operation fails due to I/O errors
+#[cfg(unix)]
 pub async fn create_named_pipe_at_path(path: &Path, mode: u32) -> Result<()> {
     let path = path.to_path_buf();
 
@@ -95,6 +106,13 @@ pub async fn create_named_pipe_at_path(path: &Path, mode: u32) -> Result<()> {
     })
     .await
     .map_err(|e| device_error(&format!("spawn failed: {:?}", e)))?
+}
+
+#[cfg(windows)]
+pub async fn create_named_pipe_at_path(_path: &Path, _mode: u32) -> Result<()> {
+    Err(crate::error::device_error(
+        "mkfifo not supported on Windows (use named pipes APIs)",
+    ))
 }
 
 /// Create a character device at the given path
@@ -117,6 +135,7 @@ pub async fn create_named_pipe_at_path(path: &Path, mode: u32) -> Result<()> {
 /// - Permission is denied
 /// - Invalid device numbers
 /// - The operation fails due to I/O errors
+#[cfg(unix)]
 pub async fn create_char_device_at_path(
     path: &Path,
     mode: u32,
@@ -129,6 +148,18 @@ pub async fn create_char_device_at_path(
     let device_mode = stat::SFlag::S_IFCHR.bits() | (mode & 0o777);
 
     create_special_file_at_path(path, device_mode, dev).await
+}
+
+#[cfg(windows)]
+pub async fn create_char_device_at_path(
+    _path: &Path,
+    _mode: u32,
+    _major: u32,
+    _minor: u32,
+) -> Result<()> {
+    Err(crate::error::device_error(
+        "character devices are not supported on Windows",
+    ))
 }
 
 /// Create a block device at the given path
@@ -151,6 +182,7 @@ pub async fn create_char_device_at_path(
 /// - Permission is denied
 /// - Invalid device numbers
 /// - The operation fails due to I/O errors
+#[cfg(unix)]
 pub async fn create_block_device_at_path(
     path: &Path,
     mode: u32,
@@ -163,6 +195,18 @@ pub async fn create_block_device_at_path(
     let device_mode = stat::SFlag::S_IFBLK.bits() | (mode & 0o777);
 
     create_special_file_at_path(path, device_mode, dev).await
+}
+
+#[cfg(windows)]
+pub async fn create_block_device_at_path(
+    _path: &Path,
+    _mode: u32,
+    _major: u32,
+    _minor: u32,
+) -> Result<()> {
+    Err(crate::error::device_error(
+        "block devices are not supported on Windows",
+    ))
 }
 
 /// Create a Unix domain socket at the given path
@@ -182,10 +226,18 @@ pub async fn create_block_device_at_path(
 /// - The pathname already exists
 /// - Permission is denied
 /// - The operation fails due to I/O errors
+#[cfg(unix)]
 pub async fn create_socket_at_path(path: &Path, mode: u32) -> Result<()> {
     let socket_mode = stat::SFlag::S_IFSOCK.bits() | (mode & 0o777);
 
     create_special_file_at_path(path, socket_mode, 0).await
+}
+
+#[cfg(windows)]
+pub async fn create_socket_at_path(_path: &Path, _mode: u32) -> Result<()> {
+    Err(crate::error::device_error(
+        "AF_UNIX socket node creation is not supported on Windows",
+    ))
 }
 
 /// Error helper for device operations

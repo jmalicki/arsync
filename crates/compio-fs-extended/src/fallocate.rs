@@ -4,6 +4,7 @@ use crate::error::{fallocate_error, Result};
 use compio::driver::OpCode;
 use compio::fs::File;
 use compio::runtime::submit;
+#[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
 use std::os::unix::io::AsRawFd;
 use std::pin::Pin;
@@ -103,6 +104,7 @@ impl FallocateOp {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl OpCode for FallocateOp {
     fn create_entry(self: Pin<&mut Self>) -> compio::driver::OpEntry {
         compio::driver::OpEntry::Submission(
@@ -130,6 +132,7 @@ impl OpCode for FallocateOp {
 /// # Errors
 ///
 /// This function will return an error if the underlying fallocate operation fails.
+#[cfg(target_os = "linux")]
 pub async fn fallocate(file: &File, offset: u64, len: u64, mode: u32) -> Result<()> {
     // Submit io_uring fallocate operation using compio's runtime
     let result = submit(FallocateOp::new(file, offset, len, mode)).await;
@@ -139,6 +142,43 @@ pub async fn fallocate(file: &File, offset: u64, len: u64, mode: u32) -> Result<
         Ok(_) => Ok(()),
         Err(e) => Err(fallocate_error(&e.to_string())),
     }
+}
+
+#[cfg(target_os = "macos")]
+pub async fn fallocate(file: &File, offset: u64, len: u64, _mode: u32) -> Result<()> {
+    // Darwin preallocation via fcntl(F_PREALLOCATE). For now run off-thread.
+    use std::os::fd::AsRawFd;
+    let fd = file.as_raw_fd();
+    compio::runtime::spawn(async move {
+        // SAFETY: invoking libc fcntl with F_PREALLOCATE
+        let fstore = libc::fstore {
+            fst_flags: libc::F_ALLOCATECONTIG,
+            fst_posmode: libc::F_PEOFPOSMODE,
+            fst_offset: offset as i64,
+            fst_length: len as i64,
+            fst_bytesalloc: 0,
+        };
+        let rc = unsafe { libc::fcntl(fd, libc::F_PREALLOCATE, &fstore) };
+        if rc == -1 { Err(fallocate_error(&format!("F_PREALLOCATE failed: {}", std::io::Error::last_os_error()))) } else { Ok(()) }
+    })
+    .await
+    .map_err(|e| fallocate_error(&format!("spawn failed: {e:?}")))?
+}
+
+#[cfg(target_os = "windows")]
+pub async fn fallocate(file: &File, _offset: u64, len: u64, _mode: u32) -> Result<()> {
+    // Preallocate via FILE_ALLOCATION_INFO; extend logical size via SetEndOfFile if needed.
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Foundation::BOOL;
+    use windows_sys::Win32::Storage::FileSystem::{SetEndOfFile, SetFileInformationByHandle, FILE_ALLOCATION_INFO};
+    let handle = file.as_raw_handle();
+    // Safety: construct allocation info
+    let alloc = FILE_ALLOCATION_INFO { AllocationSize: len as i64 };
+    let ok: BOOL = unsafe { SetFileInformationByHandle(handle as _, 19 /*FileAllocationInfo*/, &alloc as *const _ as _, std::mem::size_of::<FILE_ALLOCATION_INFO>() as u32) };
+    if ok == 0 { return Err(fallocate_error("SetFileInformationByHandle(FileAllocationInfo) failed")); }
+    let ok2: BOOL = unsafe { SetEndOfFile(handle as _) };
+    if ok2 == 0 { return Err(fallocate_error("SetEndOfFile failed")); }
+    Ok(())
 }
 
 /// Preallocate space to a file with default mode (allocate space)

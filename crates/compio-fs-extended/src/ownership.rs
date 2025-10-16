@@ -174,6 +174,7 @@
 use crate::error::{filesystem_error, Result};
 use compio::fs::File;
 use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
@@ -413,6 +414,7 @@ impl OwnershipOps for File {
     /// - Only root can change ownership to arbitrary UID/GID
     /// - Users can only change ownership of files they own
     /// - Users can change group ownership to groups they belong to
+    #[cfg(unix)]
     async fn fchown(&self, uid: u32, gid: u32) -> Result<()> {
         use nix::unistd::{fchown as nix_fchown, Gid, Uid};
 
@@ -426,6 +428,11 @@ impl OwnershipOps for File {
         })
         .await
         .map_err(|e| filesystem_error(&format!("spawn failed: {e:?}")))?
+    }
+
+    #[cfg(windows)]
+    async fn fchown(&self, _uid: u32, _gid: u32) -> Result<()> {
+        Err(filesystem_error("fchown not supported on Windows"))
     }
 
     /// Change file ownership using file path
@@ -453,6 +460,7 @@ impl OwnershipOps for File {
     /// - Only root can change ownership to arbitrary UID/GID
     /// - Users can only change ownership of files they own
     /// - Users can change group ownership to groups they belong to
+    #[cfg(unix)]
     async fn chown<P: AsRef<Path>>(path: P, uid: u32, gid: u32) -> Result<()> {
         let path = path.as_ref();
 
@@ -473,6 +481,11 @@ impl OwnershipOps for File {
         })
         .await
         .map_err(|e| filesystem_error(&format!("spawn failed: {e:?}")))?
+    }
+
+    #[cfg(windows)]
+    async fn chown<P: AsRef<Path>>(_path: P, _uid: u32, _gid: u32) -> Result<()> {
+        Err(filesystem_error("chown not supported on Windows"))
     }
 
     /// Preserve ownership from source file to destination file
@@ -507,6 +520,7 @@ impl OwnershipOps for File {
     /// - Only root can change ownership to arbitrary UID/GID
     /// - Users can only change ownership of files they own
     /// - Users can change group ownership to groups they belong to
+    #[cfg(unix)]
     async fn preserve_ownership_from(&self, src: &File) -> Result<()> {
         // Get source file metadata to extract uid/gid
         let src_metadata = src
@@ -519,6 +533,11 @@ impl OwnershipOps for File {
 
         // Apply ownership to destination file
         self.fchown(uid, gid).await
+    }
+
+    #[cfg(windows)]
+    async fn preserve_ownership_from(&self, _src: &File) -> Result<()> {
+        Err(filesystem_error("ownership preservation not supported on Windows"))
     }
 }
 

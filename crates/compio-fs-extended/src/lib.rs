@@ -47,6 +47,8 @@ pub mod ownership;
 pub mod symlink;
 pub mod xattr;
 
+// Platform-specific shims (none required at module level yet)
+
 // Re-export main types
 pub use error::{ExtendedError, Result};
 pub use extended_file::ExtendedFile;

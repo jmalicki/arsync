@@ -2,6 +2,8 @@
 
 use crate::error::{copy_file_range_error, Result};
 use compio::fs::File;
+use compio_io::{AsyncReadAt, AsyncWriteAt};
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 
 /// Trait for copy_file_range operations
@@ -63,6 +65,7 @@ pub trait CopyFileRange {
 /// # Errors
 ///
 /// This function will return an error if the copy_file_range operation fails
+#[cfg(unix)]
 pub async fn copy_file_range_impl(
     src: &File,
     dst: &File,
@@ -100,6 +103,19 @@ pub async fn copy_file_range_impl(
     Ok(result as usize)
 }
 
+#[cfg(windows)]
+pub async fn copy_file_range_impl(
+    _src: &File,
+    _dst: &File,
+    _src_offset: u64,
+    _dst_offset: u64,
+    _len: u64,
+) -> Result<usize> {
+    Err(copy_file_range_error(
+        "copy_file_range syscall is not available on Windows",
+    ))
+}
+
 /// Check if copy_file_range is supported for the given file descriptors
 ///
 /// # Arguments
@@ -111,8 +127,14 @@ pub async fn copy_file_range_impl(
 ///
 /// `true` if copy_file_range is supported, `false` otherwise
 pub async fn is_copy_file_range_supported(src: &File, dst: &File) -> bool {
-    // Try a small copy_file_range operation to test support
-    copy_file_range_impl(src, dst, 0, 0, 0).await.is_ok()
+    #[cfg(unix)]
+    {
+        copy_file_range_impl(src, dst, 0, 0, 0).await.is_ok()
+    }
+    #[cfg(windows)]
+    {
+        false
+    }
 }
 
 /// Get the maximum number of bytes that can be copied in a single copy_file_range operation
@@ -151,17 +173,48 @@ pub async fn copy_file_range_with_fallback(
     dst_offset: u64,
     len: u64,
 ) -> Result<usize> {
-    // Try copy_file_range first
-    match copy_file_range_impl(src, dst, src_offset, dst_offset, len).await {
-        Ok(bytes_copied) => Ok(bytes_copied),
-        Err(_) => {
-            // Fallback to read/write operations
-            // This would need to be implemented using compio's read/write operations
-            Err(copy_file_range_error(
-                "copy_file_range not supported and fallback not implemented",
-            ))
-        }
+    // Try copy_file_range first (Unix), otherwise fallback to async read/write loop
+    #[cfg(unix)]
+    if let Ok(bytes_copied) = copy_file_range_impl(src, dst, src_offset, dst_offset, len).await {
+        return Ok(bytes_copied);
     }
+
+    // IOCP/kqueue-driven fallback using compio::fs async I/O with owned buffers
+    let mut remaining = len;
+    let mut src_off = src_offset;
+    let mut dst_off = dst_offset;
+    let mut total: usize = 0;
+    let mut src_clone = src.clone();
+    let mut dst_clone = dst.clone();
+    let chunk: usize = 1 << 20; // 1 MiB
+
+    while remaining > 0 {
+        let to_read = remaining.min(chunk as u64) as usize;
+        let read_buf = vec![0u8; to_read];
+        let res = src_clone.read_at(read_buf, src_off).await;
+        let (n, mut read_buf) = match res.0 {
+            Ok(n) => (n, res.1),
+            Err(e) => return Err(copy_file_range_error(&format!("fallback read_at failed: {e}"))),
+        };
+        if n == 0 {
+            break;
+        }
+        let mut write_buf = read_buf;
+        if write_buf.len() != n {
+            // Shrink to written length
+            let _ = write_buf.split_off(n);
+        }
+        let wres = dst_clone.write_at(write_buf, dst_off).await;
+        if let Err(e) = wres.0 {
+            return Err(copy_file_range_error(&format!("fallback write_at failed: {e}")));
+        }
+        src_off += n as u64;
+        dst_off += n as u64;
+        remaining -= n as u64;
+        total += n;
+    }
+
+    Ok(total)
 }
 
 #[cfg(test)]

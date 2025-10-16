@@ -4,6 +4,7 @@ use crate::error::{xattr_error, Result};
 use compio::driver::OpCode;
 use compio::fs::File;
 use compio::runtime::submit;
+#[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
 use std::ffi::CString;
 use std::path::Path;
@@ -108,6 +109,7 @@ pub trait XattrOps {
 }
 
 /// io_uring getxattr operation
+#[cfg(target_os = "linux")]
 struct GetXattrOp {
     /// File descriptor
     fd: std::os::unix::io::RawFd,
@@ -117,6 +119,7 @@ struct GetXattrOp {
     buffer: Vec<u8>,
 }
 
+#[cfg(target_os = "linux")]
 impl GetXattrOp {
     /// Create a new GetXattrOp for retrieving an extended attribute
     fn new(fd: std::os::unix::io::RawFd, name: CString, size: usize) -> Self {
@@ -128,6 +131,7 @@ impl GetXattrOp {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl OpCode for GetXattrOp {
     fn create_entry(mut self: Pin<&mut Self>) -> compio::driver::OpEntry {
         compio::driver::OpEntry::Submission(
@@ -143,6 +147,7 @@ impl OpCode for GetXattrOp {
 }
 
 /// io_uring setxattr operation
+#[cfg(target_os = "linux")]
 struct SetXattrOp {
     /// File descriptor
     fd: std::os::unix::io::RawFd,
@@ -152,6 +157,7 @@ struct SetXattrOp {
     value: Vec<u8>,
 }
 
+#[cfg(target_os = "linux")]
 impl SetXattrOp {
     /// Create a new SetXattrOp for setting an extended attribute
     fn new(fd: std::os::unix::io::RawFd, name: CString, value: Vec<u8>) -> Self {
@@ -159,6 +165,7 @@ impl SetXattrOp {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl OpCode for SetXattrOp {
     fn create_entry(self: Pin<&mut Self>) -> compio::driver::OpEntry {
         compio::driver::OpEntry::Submission(
@@ -179,6 +186,7 @@ impl OpCode for SetXattrOp {
 /// # Errors
 ///
 /// This function will return an error if the xattr operation fails
+#[cfg(target_os = "linux")]
 pub async fn get_xattr_impl(file: &File, name: &str) -> Result<Vec<u8>> {
     use std::os::fd::AsRawFd;
 
@@ -220,11 +228,25 @@ pub async fn get_xattr_impl(file: &File, name: &str) -> Result<Vec<u8>> {
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub async fn get_xattr_impl(_file: &File, _name: &str) -> Result<Vec<u8>> {
+    #[cfg(target_os = "macos")]
+    {
+        // Darwin supports xattr via libc; keep path-based helpers for now
+        Err(xattr_error("file-descriptor based xattr not yet implemented on macOS"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Err(xattr_error("xattr unsupported on Windows"))
+    }
+}
+
 /// Implementation of xattr setting using io_uring opcodes
 ///
 /// # Errors
 ///
 /// This function will return an error if the xattr operation fails
+#[cfg(target_os = "linux")]
 pub async fn set_xattr_impl(file: &File, name: &str, value: &[u8]) -> Result<()> {
     use std::os::fd::AsRawFd;
 
@@ -244,6 +266,18 @@ pub async fn set_xattr_impl(file: &File, name: &str, value: &[u8]) -> Result<()>
     }
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub async fn set_xattr_impl(_file: &File, _name: &str, _value: &[u8]) -> Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        Err(xattr_error("file-descriptor based xattr not yet implemented on macOS"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Err(xattr_error("xattr unsupported on Windows"))
+    }
+}
+
 /// Implementation of xattr listing using safe xattr crate
 ///
 /// NOTE: IORING_OP_FLISTXATTR doesn't exist in the Linux kernel (as of 6.x).
@@ -253,9 +287,11 @@ pub async fn set_xattr_impl(file: &File, name: &str, value: &[u8]) -> Result<()>
 /// # Errors
 ///
 /// This function will return an error if the xattr operation fails
+#[cfg(target_os = "linux")]
 pub async fn list_xattr_impl(file: &File) -> Result<Vec<String>> {
     use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
-    use xattr::FileExt; // Extension trait for FD-based xattr operations
+    #[cfg(target_os = "linux")]
+    use xattr::FileExt as _; // bring trait into scope
 
     let fd = file.as_raw_fd();
 
@@ -283,6 +319,18 @@ pub async fn list_xattr_impl(file: &File) -> Result<Vec<String>> {
     .map_err(|e| xattr_error(&format!("spawn failed: {e:?}")))?
 }
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub async fn list_xattr_impl(_file: &File) -> Result<Vec<String>> {
+    #[cfg(target_os = "macos")]
+    {
+        Err(xattr_error("file-descriptor based xattr list not yet implemented on macOS"))
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Err(xattr_error("xattr unsupported on Windows"))
+    }
+}
+
 /// Get an extended attribute value at the given path
 ///
 /// # Arguments
@@ -300,6 +348,7 @@ pub async fn list_xattr_impl(file: &File) -> Result<Vec<String>> {
 /// - The extended attribute doesn't exist
 /// - Permission is denied
 /// - The operation fails due to I/O errors
+#[cfg(unix)]
 pub async fn get_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
     let path_cstr = std::ffi::CString::new(path.to_string_lossy().as_bytes())
         .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
@@ -341,6 +390,11 @@ pub async fn get_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
+#[cfg(windows)]
+pub async fn get_xattr_at_path(_path: &Path, _name: &str) -> Result<Vec<u8>> {
+    Err(xattr_error("xattr unsupported on Windows"))
+}
+
 /// Set an extended attribute value at the given path
 ///
 /// # Arguments
@@ -358,6 +412,7 @@ pub async fn get_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
 /// This function will return an error if:
 /// - Permission is denied
 /// - The operation fails due to I/O errors
+#[cfg(unix)]
 pub async fn set_xattr_at_path(path: &Path, name: &str, value: &[u8]) -> Result<()> {
     let path_cstr = std::ffi::CString::new(path.to_string_lossy().as_bytes())
         .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
@@ -382,6 +437,11 @@ pub async fn set_xattr_at_path(path: &Path, name: &str, value: &[u8]) -> Result<
     Ok(())
 }
 
+#[cfg(windows)]
+pub async fn set_xattr_at_path(_path: &Path, _name: &str, _value: &[u8]) -> Result<()> {
+    Err(xattr_error("xattr unsupported on Windows"))
+}
+
 /// List all extended attributes at the given path
 ///
 /// # Arguments
@@ -397,6 +457,7 @@ pub async fn set_xattr_at_path(path: &Path, name: &str, value: &[u8]) -> Result<
 /// This function will return an error if:
 /// - Permission is denied
 /// - The operation fails due to I/O errors
+#[cfg(unix)]
 pub async fn list_xattr_at_path(path: &Path) -> Result<Vec<String>> {
     let path_cstr = std::ffi::CString::new(path.to_string_lossy().as_bytes())
         .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
@@ -445,6 +506,11 @@ pub async fn list_xattr_at_path(path: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
+#[cfg(windows)]
+pub async fn list_xattr_at_path(_path: &Path) -> Result<Vec<String>> {
+    Err(xattr_error("xattr unsupported on Windows"))
+}
+
 /// Remove an extended attribute
 ///
 /// # Arguments
@@ -462,6 +528,7 @@ pub async fn list_xattr_at_path(path: &Path) -> Result<Vec<String>> {
 /// - The extended attribute doesn't exist
 /// - Permission is denied
 /// - The operation fails due to I/O errors
+#[cfg(unix)]
 pub async fn remove_xattr_at_path(path: &Path, name: &str) -> Result<()> {
     let path_cstr = std::ffi::CString::new(path.to_string_lossy().as_bytes())
         .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
@@ -478,6 +545,11 @@ pub async fn remove_xattr_at_path(path: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+pub async fn remove_xattr_at_path(_path: &Path, _name: &str) -> Result<()> {
+    Err(xattr_error("xattr unsupported on Windows"))
+}
+
 /// Check if extended attributes are supported on the filesystem
 ///
 /// # Arguments
@@ -487,6 +559,7 @@ pub async fn remove_xattr_at_path(path: &Path, name: &str) -> Result<()> {
 /// # Returns
 ///
 /// `true` if extended attributes are supported, `false` otherwise
+#[cfg(unix)]
 pub async fn is_xattr_supported(path: &Path) -> bool {
     // Try to set a test attribute
     let test_name = "user.compio_fs_extended_test";
@@ -500,6 +573,11 @@ pub async fn is_xattr_supported(path: &Path) -> bool {
         }
         Err(_) => false,
     }
+}
+
+#[cfg(windows)]
+pub async fn is_xattr_supported(_path: &Path) -> bool {
+    false
 }
 
 #[cfg(test)]

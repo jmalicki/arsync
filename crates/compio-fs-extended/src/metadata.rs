@@ -40,6 +40,7 @@ use crate::error::{metadata_error, ExtendedError, Result};
 use compio::driver::OpCode;
 use compio::runtime::submit;
 use filetime::{set_file_times, FileTime};
+#[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
 use nix::sys::stat::UtimensatFlags;
 use nix::sys::time::TimeSpec;
@@ -56,6 +57,7 @@ fn proc_fd_path(fd: i32) -> PathBuf {
 }
 
 /// io_uring statx operation for getting file metadata with nanosecond timestamps
+#[cfg(target_os = "linux")]
 pub struct StatxOp {
     /// Directory file descriptor (AT_FDCWD for current directory)
     dirfd: std::os::unix::io::RawFd,
@@ -69,6 +71,7 @@ pub struct StatxOp {
     mask: u32,
 }
 
+#[cfg(target_os = "linux")]
 impl StatxOp {
     /// Create a new statx operation
     ///
@@ -90,6 +93,7 @@ impl StatxOp {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl OpCode for StatxOp {
     fn create_entry(mut self: Pin<&mut Self>) -> compio::driver::OpEntry {
         compio::driver::OpEntry::Submission(
@@ -121,6 +125,7 @@ impl OpCode for StatxOp {
 /// # Errors
 ///
 /// Returns an error if the statx operation fails
+#[cfg(target_os = "linux")]
 pub async fn statx_at(path: &Path) -> Result<(SystemTime, SystemTime)> {
     let path_cstr = CString::new(path.as_os_str().as_bytes())
         .map_err(|e| metadata_error(&format!("Invalid path: {}", e)))?;
@@ -147,6 +152,21 @@ pub async fn statx_at(path: &Path) -> Result<(SystemTime, SystemTime)> {
         }
         Err(e) => Err(metadata_error(&format!("statx failed: {}", e))),
     }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub async fn statx_at(path: &Path) -> Result<(SystemTime, SystemTime)> {
+    // Fallback: std metadata for atime/mtime via filetime crate
+    let meta = compio::fs::metadata(path)
+        .await
+        .map_err(|e| metadata_error(&format!("metadata failed: {e}")))?;
+    let modified = meta
+        .modified()
+        .map_err(|e| metadata_error(&format!("modified failed: {e}")))?;
+    let accessed = meta
+        .accessed()
+        .map_err(|e| metadata_error(&format!("accessed failed: {e}")))?;
+    Ok((accessed, modified))
 }
 
 /// Join a directory file descriptor path with a relative pathname

@@ -2,6 +2,7 @@
 
 use crate::error::{directory_error, Result};
 use compio::fs::File;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -94,6 +95,7 @@ impl DirectoryFd {
     /// Get the raw file descriptor for use with system calls
     ///
     /// This is used internally by `*at` operations that need the raw fd.
+    #[cfg(unix)]
     #[must_use]
     pub fn as_raw_fd(&self) -> std::os::unix::io::RawFd {
         self.file.as_raw_fd()
@@ -129,6 +131,7 @@ impl DirectoryFd {
     /// # Ok(())
     /// # }
     /// ```
+    #[cfg(unix)]
     pub async fn create_directory(&self, name: &str, mode: u32) -> Result<()> {
         // TODO: Implement using io_uring MkdirAt opcode when available
         // For now, use nix with spawn for security
@@ -145,6 +148,17 @@ impl DirectoryFd {
         })
         .await
         .map_err(|e| directory_error(&format!("spawn failed: {:?}", e)))?
+    }
+
+    #[cfg(windows)]
+    pub async fn create_directory(&self, name: &str, _mode: u32) -> Result<()> {
+        let base = self.path.clone();
+        compio::runtime::spawn(async move {
+            std::fs::create_dir(base.join(name))
+                .map_err(|e| directory_error(&format!("create_dir failed: {e}")))
+        })
+        .await
+        .map_err(|e| directory_error(&format!("spawn failed: {e:?}")))?
     }
 }
 
