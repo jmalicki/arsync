@@ -1766,7 +1766,7 @@ mod tests {
         assert_eq!(tracker.get_stats().total_files, 0);
         assert_eq!(tracker.get_stats().hardlink_groups, 0);
 
-        // Test setting source filesystem
+        // Test setting source filesystem (requires mut)
         tracker.set_source_filesystem(123);
         assert!(tracker.is_same_filesystem(123));
         assert!(!tracker.is_same_filesystem(456));
@@ -1775,7 +1775,7 @@ mod tests {
     /// Test FilesystemTracker hardlink detection
     #[compio::test]
     async fn test_filesystem_tracker_hardlinks() {
-        let mut tracker = FilesystemTracker::new();
+        let tracker = FilesystemTracker::new();
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let file1 = temp_dir.path().join("file1.txt");
         let file2 = temp_dir.path().join("file2.txt");
