@@ -41,6 +41,7 @@ num_cpus = "1.0"
 async-recursion = "1.0"
 whoami = "1.0"
 walkdir = "2.0"
+dashmap = "6.1"
 
 # Checksums and hashing for rsync protocol
 simd-adler32 = "0.3"  # SIMD-accelerated Adler-32 (3-5x faster)
