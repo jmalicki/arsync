@@ -27,6 +27,20 @@ This directory contains custom slash commands for Cursor AI to streamline common
 - **`/review`** - Summarize diff and highlight risks, test gaps, CI considerations
   - Example: `/review`
 
+### Planning & Design
+
+- **`/design-doc`** - Create comprehensive design document from context or conversation
+  - Example: `/design-doc` (auto-infer) or `/design-doc "feature-name"`
+
+- **`/implementation-plan`** - Create detailed phase-based implementation plan from context
+  - Example: `/implementation-plan` or `/implementation-plan @docs/design.md`
+
+- **`/implement`** - Execute implementation plan step-by-step, tracking progress
+  - Example: `/implement` or `/implement @docs/implementation-plans/feature.md`
+
+- **`/debug`** - Systematic debugging with disciplined iterative approach
+  - Example: `/debug` or `/debug @src/module.rs "issue description"`
+
 ### Build & Test
 
 - **`/build`** - Build project with specified profile and features
@@ -130,14 +144,29 @@ Before committing or opening a PR:
 
 ## Quick Workflows
 
-### Start a new feature:
+### Design and implement a new feature:
 ```bash
+# 1. Create design document from conversation
+/design-doc "new-feature"
+# Creates: docs/designs/new-feature.md
+
+# 2. Create implementation plan from design
+/implementation-plan @docs/designs/new-feature.md
+# Creates: docs/implementation-plans/new-feature.md
+
+# 3. Create feature branch
 /branch "sync/feat-new-feature" main origin true
-# Make changes...
-/fmt false true
-/clippy false false
-/test "all"
-/smoke
+
+# 4. Execute the plan step-by-step
+/implement @docs/implementation-plans/new-feature.md
+# Works through checkboxes, runs quality checks
+# Add notes if issues arise, commits at checkpoints
+
+# 5. Continue implementing (run multiple times)
+/implement
+# Resumes from last checkpoint, continues
+
+# 6. When complete, create PR
 /commit "feat(sync): add new feature"
 /pr-ready "feat(sync): add new feature"
 /pr-checks
@@ -192,4 +221,8 @@ Commands added:
 - `/clean` - Clean artifacts
 - `/docs` - Documentation building
 - `/release-check` - Release verification
+- `/design-doc` - Generate design documents from conversation
+- `/implementation-plan` - Generate structured implementation plans
+- `/implement` - Execute implementation plans step-by-step
+- `/debug` - Systematic debugging with iterative approach
 
