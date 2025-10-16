@@ -575,8 +575,8 @@ pub struct RsyncBlockChecksum {
 /// Send block checksums in rsync wire format
 ///
 /// rsync format:
-/// - Header: [block_count][block_size][remainder][checksum2_length]
-/// - Then each block: [weak][strong] (no offset/index - implicit!)
+/// - Header: \[block_count\]\[block_size\]\[remainder\]\[checksum2_length\]
+/// - Then each block: \[weak\]\[strong\] (no offset/index - implicit!)
 ///
 /// # Errors
 ///
