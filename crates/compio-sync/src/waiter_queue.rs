@@ -158,7 +158,7 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
-    use std::task::{Context, RawWaker, RawWakerVTable, Wake, Waker};
+    use std::task::{Wake, Waker};
 
     // Helper to create a dummy waker for testing
     struct DummyWaker;

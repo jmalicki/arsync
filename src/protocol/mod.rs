@@ -17,6 +17,10 @@ pub mod handshake;
 #[cfg(feature = "remote-sync")]
 pub mod pipe;
 #[cfg(feature = "remote-sync")]
+pub mod rsync;
+#[cfg(feature = "remote-sync")]
+pub mod rsync_compat;
+#[cfg(feature = "remote-sync")]
 pub mod ssh;
 #[cfg(feature = "remote-sync")]
 pub mod transport;

@@ -43,6 +43,7 @@ use io_uring::{opcode, types};
 use nix::sys::stat::UtimensatFlags;
 use nix::sys::time::TimeSpec;
 use std::ffi::CString;
+use std::os::fd::BorrowedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
@@ -184,29 +185,16 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
         let atime = system_time_to_timespec(accessed)?;
         let mtime = system_time_to_timespec(modified)?;
 
-        nix::sys::stat::futimens(fd, &atime, &mtime)
+        // SAFETY: Caller guarantees fd is valid and won't be closed during this operation.
+        // BorrowedFd::borrow_raw creates a borrowed reference with the correct lifetime.
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
+        nix::sys::stat::futimens(borrowed_fd, &atime, &mtime)
             .map_err(|e| metadata_error(&format!("futimens failed: {}", e)))
     })
     .await
     .map_err(ExtendedError::SpawnJoin)?;
     inner?;
     Ok(())
-}
-
-/// Private trait for types that provide a directory file descriptor
-///
-/// This allows metadata operations to work with any type that can provide
-/// a directory FD, while keeping the implementation details private.
-trait DirectoryFdOps {
-    /// Get the raw directory file descriptor
-    fn as_dirfd(&self) -> std::os::unix::io::RawFd;
-}
-
-/// Implement DirectoryFdOps for DirectoryFd
-impl DirectoryFdOps for DirectoryFd {
-    fn as_dirfd(&self) -> std::os::unix::io::RawFd {
-        self.as_raw_fd()
-    }
 }
 
 /// Get file metadata with nanosecond timestamps using DirectoryFd
@@ -216,7 +204,7 @@ impl DirectoryFdOps for DirectoryFd {
 ///
 /// # Arguments
 ///
-/// * `dir` - Directory file descriptor provider
+/// * `dir` - Directory file descriptor
 /// * `pathname` - Relative path to the file (relative to dir)
 ///
 /// # Returns
@@ -226,12 +214,11 @@ impl DirectoryFdOps for DirectoryFd {
 /// # Errors
 ///
 /// Returns an error if the statx operation fails
-#[allow(private_bounds)]
 pub(crate) async fn statx_impl(
-    dir: &impl DirectoryFdOps,
+    dir: &DirectoryFd,
     pathname: &str,
 ) -> Result<(SystemTime, SystemTime)> {
-    let dir_fd = dir.as_dirfd();
+    let dir_fd = dir.as_raw_fd();
     let path_cstr =
         CString::new(pathname).map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
 
@@ -261,21 +248,18 @@ pub(crate) async fn statx_impl(
 }
 
 /// Change file permissions using DirectoryFd
-#[allow(private_bounds)]
-pub(crate) async fn fchmodat_impl(
-    dir: &impl DirectoryFdOps,
-    pathname: &str,
-    mode: u32,
-) -> Result<()> {
-    let dir_fd = dir.as_dirfd();
+pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) -> Result<()> {
     let pathname_cstring = std::ffi::CString::new(pathname)
         .map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
+    let dir_fd_raw = dir.as_raw_fd();
 
     let inner = compio::runtime::spawn(async move {
         use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
 
+        // SAFETY: dir_fd_raw is valid because DirectoryFd keeps the file open via Arc<File>
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd_raw) };
         fchmodat(
-            Some(dir_fd),
+            borrowed_fd,
             pathname_cstring.as_c_str(),
             Mode::from_bits_truncate(mode),
             FchmodatFlags::FollowSymlink,
@@ -289,22 +273,23 @@ pub(crate) async fn fchmodat_impl(
 }
 
 /// Change file timestamps using DirectoryFd
-#[allow(private_bounds)]
 pub(crate) async fn utimensat_impl(
-    dir: &impl DirectoryFdOps,
+    dir: &DirectoryFd,
     pathname: &str,
     accessed: SystemTime,
     modified: SystemTime,
 ) -> Result<()> {
-    let dir_fd = dir.as_dirfd();
     let pathname_owned = pathname.to_string();
+    let dir_fd_raw = dir.as_raw_fd();
 
     let inner = compio::runtime::spawn(async move {
         let atime = system_time_to_timespec(accessed)?;
         let mtime = system_time_to_timespec(modified)?;
 
+        // SAFETY: dir_fd_raw is valid because DirectoryFd keeps the file open via Arc<File>
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd_raw) };
         nix::sys::stat::utimensat(
-            Some(dir_fd),
+            borrowed_fd,
             pathname_owned.as_str(),
             &atime,
             &mtime,
@@ -319,22 +304,23 @@ pub(crate) async fn utimensat_impl(
 }
 
 /// Change file ownership using DirectoryFd
-#[allow(private_bounds)]
 pub(crate) async fn fchownat_impl(
-    dir: &impl DirectoryFdOps,
+    dir: &DirectoryFd,
     pathname: &str,
     uid: u32,
     gid: u32,
 ) -> Result<()> {
-    let dir_fd = dir.as_dirfd();
     let pathname_owned = pathname.to_string();
+    let dir_fd_raw = dir.as_raw_fd();
 
     let inner = compio::runtime::spawn(async move {
         use nix::fcntl::AtFlags;
         use nix::unistd::{fchownat, Gid, Uid};
 
+        // SAFETY: dir_fd_raw is valid because DirectoryFd keeps the file open via Arc<File>
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd_raw) };
         fchownat(
-            Some(dir_fd),
+            borrowed_fd,
             pathname_owned.as_str(),
             Some(Uid::from_raw(uid)),
             Some(Gid::from_raw(gid)),

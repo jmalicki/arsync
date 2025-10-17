@@ -2,6 +2,7 @@
 
 use crate::error::{directory_error, Result};
 use compio::fs::File;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -130,14 +131,23 @@ impl DirectoryFd {
     /// # }
     /// ```
     pub async fn create_directory(&self, name: &str, mode: u32) -> Result<()> {
+        use std::os::fd::BorrowedFd;
+
         // TODO: Implement using io_uring MkdirAt opcode when available
         // For now, use nix with spawn for security
         let dir_fd = self.as_raw_fd();
         let name_owned = name.to_string();
 
         compio::runtime::spawn(async move {
+            // SAFETY: The raw fd is valid for the duration of this call because:
+            // 1. DirectoryFd holds an Arc<File> keeping the fd open
+            // 2. The spawned task completes before DirectoryFd is dropped
+            // 3. BorrowedFd::borrow_raw creates a properly scoped borrowed reference
+            // We use raw fd here because BorrowedFd from as_fd() has a non-'static lifetime,
+            // but spawn requires 'static. This is the standard pattern for moving fds into tasks.
+            let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd) };
             nix::sys::stat::mkdirat(
-                Some(dir_fd),
+                borrowed_fd,
                 std::path::Path::new(&name_owned),
                 nix::sys::stat::Mode::from_bits_truncate(mode),
             )
@@ -387,6 +397,12 @@ impl Clone for DirectoryFd {
             file: Arc::clone(&self.file),
             path: self.path.clone(),
         }
+    }
+}
+
+impl AsFd for DirectoryFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.file.as_fd()
     }
 }
 

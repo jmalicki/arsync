@@ -162,28 +162,11 @@ pub async fn create_symlink_impl(_file: &File, _target: &Path) -> Result<()> {
 // Note: Basic symlink operations are provided by std::fs or compio::fs
 // This module focuses on io_uring operations and secure *at variants
 
-/// Private trait for types that provide a directory file descriptor
-///
-/// This allows symlink operations to work with any type that can provide
-/// a directory FD, while keeping the implementation details private.
-trait DirectoryFdOps {
-    /// Get the raw directory file descriptor
-    fn as_dirfd(&self) -> std::os::unix::io::RawFd;
-}
-
-/// Implement DirectoryFdOps for DirectoryFd
-impl DirectoryFdOps for crate::directory::DirectoryFd {
-    fn as_dirfd(&self) -> std::os::unix::io::RawFd {
-        self.as_raw_fd()
-    }
-}
-
 /// Create a symbolic link using DirectoryFd
 ///
 /// Uses io_uring `symlinkat(2)` with directory FD and relative path.
-#[allow(private_bounds)]
 pub(crate) async fn symlinkat_impl(
-    dir: &impl DirectoryFdOps,
+    dir: &crate::directory::DirectoryFd,
     target: &str,
     link_name: &str,
 ) -> Result<()> {
@@ -195,7 +178,7 @@ pub(crate) async fn symlinkat_impl(
     let op = SymlinkOp {
         target: target_cstr,
         link_path: link_path_cstr,
-        dir_fd: Some(dir.as_dirfd()),
+        dir_fd: Some(dir.as_raw_fd()),
     };
 
     // Submit io_uring symlink operation
@@ -210,16 +193,19 @@ pub(crate) async fn symlinkat_impl(
 /// Read a symbolic link using DirectoryFd
 ///
 /// Uses `readlinkat(2)` with directory FD and relative path.
-#[allow(private_bounds)]
 pub(crate) async fn readlinkat_impl(
-    dir: &impl DirectoryFdOps,
+    dir: &crate::directory::DirectoryFd,
     link_name: &str,
 ) -> Result<std::path::PathBuf> {
+    use std::os::fd::BorrowedFd;
+
     let link_name = link_name.to_string();
-    let dir_fd_raw = dir.as_dirfd();
+    let dir_fd_raw = dir.as_raw_fd();
 
     let os_string = compio::runtime::spawn(async move {
-        fcntl::readlinkat(Some(dir_fd_raw), std::path::Path::new(&link_name))
+        // SAFETY: dir_fd_raw is valid because DirectoryFd keeps the file open via Arc<File>
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd_raw) };
+        fcntl::readlinkat(borrowed_fd, std::path::Path::new(&link_name))
     })
     .await
     .map_err(ExtendedError::SpawnJoin)?;
