@@ -550,6 +550,9 @@ impl OwnershipOps for File {
     }
 }
 
+// TODO: Add symlink-aware ownership operations (lchown variants)
+// after writing RED tests that demonstrate current behavior
+
 #[cfg(test)]
 mod tests {
     //! Comprehensive test suite for file ownership operations
