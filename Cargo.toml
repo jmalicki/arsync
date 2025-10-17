@@ -46,7 +46,6 @@ walkdir = "2.0"
 # Checksums and hashing for rsync protocol
 simd-adler32 = "0.3"  # SIMD-accelerated Adler-32 (3-5x faster)
 md5 = "0.8"
-blake3 = "1.5"
 
 # File metadata manipulation
 filetime = "0.2"
