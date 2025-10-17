@@ -10,12 +10,18 @@
 //! - `ConcurrencyOptions` - Configuration for concurrency control (owned by this module)
 //! - `AdaptiveConcurrencyController` - Runtime controller that uses the options
 
-use crate::directory::SharedSemaphore;
 use crate::error::SyncError;
+use compio_sync::Semaphore;
 use std::io::ErrorKind;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+
+/// Type alias for a shared semaphore wrapped in `Arc`
+///
+/// This is used internally for concurrency control. Users should wrap
+/// `Semaphore` in `Arc` when sharing across tasks.
+type SharedSemaphore = Arc<Semaphore>;
 use tracing::warn;
 
 // ============================================================================
@@ -100,6 +106,7 @@ impl ConcurrencyOptions {
 /// file descriptor exhaustion (EMFILE) is detected, then gradually
 /// increases it again when resources are available.
 #[derive(Clone)]
+#[allow(dead_code)]
 pub struct AdaptiveConcurrencyController {
     /// The underlying semaphore
     semaphore: SharedSemaphore,
@@ -113,6 +120,7 @@ pub struct AdaptiveConcurrencyController {
     fail_on_exhaustion: bool,
 }
 
+#[allow(dead_code)]
 impl AdaptiveConcurrencyController {
     /// Create a new adaptive controller from options
     ///
@@ -122,7 +130,7 @@ impl AdaptiveConcurrencyController {
     #[must_use]
     pub fn new(options: &ConcurrencyOptions) -> Self {
         Self {
-            semaphore: SharedSemaphore::new(options.max_files_in_flight()),
+            semaphore: Arc::new(Semaphore::new(options.max_files_in_flight())),
             emfile_errors: Arc::new(AtomicUsize::new(0)),
             emfile_warned: Arc::new(AtomicBool::new(false)),
             min_permits: options.min_permits(),
