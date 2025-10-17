@@ -1,0 +1,4 @@
+This is feature A - a test file for stacked PR testing.
+
+This file is part of the base feature that feature-B will build upon.
+
