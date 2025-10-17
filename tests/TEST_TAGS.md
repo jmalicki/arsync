@@ -45,7 +45,7 @@ Tests are organized by naming convention and can be filtered using expressions:
 ### Quick feedback - run fast tests only
 ```bash
 # Default: skips integration, performance, rsync (the slow tests)
-cargo nextest run -E 'not(test(integration) | test(performance) | test(rsync))'
+cargo nextest run -E 'not(test(integration)) and not(test(performance)) and not(test(rsync))'
 ```
 
 ### Run specific categories
@@ -190,7 +190,7 @@ jobs:
         uses: taiki-e/install-action@nextest
       
       - name: Run fast tests
-        run: cargo nextest run -E 'not(test(integration) | test(performance) | test(rsync))'
+        run: cargo nextest run -E 'not(test(integration)) and not(test(performance)) and not(test(rsync))'
       
       - name: Run integration tests
         run: cargo nextest run -E 'test(/integration/)'
