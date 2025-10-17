@@ -8,7 +8,7 @@ use compio::fs::File;
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
 #[cfg(target_os = "linux")]
 use std::pin::Pin;

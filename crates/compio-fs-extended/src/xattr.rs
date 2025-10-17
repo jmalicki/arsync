@@ -510,7 +510,17 @@ pub async fn list_xattr_at_path(path: &Path) -> Result<Vec<String>> {
         .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
 
     // Get the size first
-    let size = unsafe { libc::listxattr(path_cstr.as_ptr(), std::ptr::null_mut(), 0) };
+    // Note: macOS listxattr has an extra options argument
+    let size = unsafe {
+        #[cfg(target_os = "macos")]
+        {
+            libc::listxattr(path_cstr.as_ptr(), std::ptr::null_mut(), 0, 0)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            libc::listxattr(path_cstr.as_ptr(), std::ptr::null_mut(), 0)
+        }
+    };
 
     if size < 0 {
         let errno = std::io::Error::last_os_error();
@@ -524,11 +534,23 @@ pub async fn list_xattr_at_path(path: &Path) -> Result<Vec<String>> {
     // Allocate buffer and get the list
     let mut buffer = vec![0u8; size as usize];
     let actual_size = unsafe {
-        libc::listxattr(
-            path_cstr.as_ptr(),
-            buffer.as_mut_ptr() as *mut libc::c_char,
-            buffer.len(),
-        )
+        #[cfg(target_os = "macos")]
+        {
+            libc::listxattr(
+                path_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_char,
+                buffer.len(),
+                0, // options
+            )
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            libc::listxattr(
+                path_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_char,
+                buffer.len(),
+            )
+        }
     };
 
     if actual_size < 0 {
@@ -579,7 +601,17 @@ pub async fn remove_xattr_at_path(path: &Path, name: &str) -> Result<()> {
     let name_cstr =
         std::ffi::CString::new(name).map_err(|e| xattr_error(&format!("Invalid name: {}", e)))?;
 
-    let result = unsafe { libc::removexattr(path_cstr.as_ptr(), name_cstr.as_ptr()) };
+    // Note: macOS removexattr has an extra options argument
+    let result = unsafe {
+        #[cfg(target_os = "macos")]
+        {
+            libc::removexattr(path_cstr.as_ptr(), name_cstr.as_ptr(), 0)
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            libc::removexattr(path_cstr.as_ptr(), name_cstr.as_ptr())
+        }
+    };
 
     if result != 0 {
         let errno = std::io::Error::last_os_error();
