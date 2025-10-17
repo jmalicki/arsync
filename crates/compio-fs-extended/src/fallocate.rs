@@ -77,6 +77,7 @@ pub mod mode {
 }
 
 /// Custom fallocate operation that implements compio's OpCode trait
+#[cfg(target_os = "linux")]
 pub struct FallocateOp {
     /// File descriptor to apply fallocate to
     fd: i32,
@@ -88,6 +89,7 @@ pub struct FallocateOp {
     mode: i32,
 }
 
+#[cfg(target_os = "linux")]
 impl FallocateOp {
     /// Create a new FallocateOp for io_uring submission
     ///

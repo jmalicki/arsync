@@ -56,8 +56,11 @@ use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
+#[cfg(unix)]
 use std::path::Path;
+#[cfg(target_os = "linux")]
 use std::pin::Pin;
+#[cfg(unix)]
 use std::time::SystemTime;
 
 /// io_uring statx operation for getting file metadata with nanosecond timestamps

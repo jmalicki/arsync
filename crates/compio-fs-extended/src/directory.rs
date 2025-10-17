@@ -160,8 +160,9 @@ impl DirectoryFd {
     #[cfg(windows)]
     pub async fn create_directory(&self, name: &str, _mode: u32) -> Result<()> {
         let base = self.path.clone();
+        let name_owned = name.to_string();
         compio::runtime::spawn(async move {
-            std::fs::create_dir(base.join(name))
+            std::fs::create_dir(base.join(name_owned))
                 .map_err(|e| directory_error(&format!("create_dir failed: {e}")))
         })
         .await

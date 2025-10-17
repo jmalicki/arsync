@@ -1,13 +1,17 @@
 //! Extended attributes (xattr) operations using io_uring opcodes
 
 use crate::error::{xattr_error, Result};
+#[cfg(target_os = "linux")]
 use compio::driver::OpCode;
 use compio::fs::File;
+#[cfg(target_os = "linux")]
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
 use std::path::Path;
+#[cfg(target_os = "linux")]
 use std::pin::Pin;
 
 /// Trait for xattr operations

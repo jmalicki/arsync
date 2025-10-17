@@ -15,6 +15,7 @@ use nix::unistd;
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
 use std::path::Path;
+#[cfg(target_os = "linux")]
 use std::pin::Pin;
 
 /// Custom symlink operation that implements compio's OpCode trait
