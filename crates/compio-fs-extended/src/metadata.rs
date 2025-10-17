@@ -42,7 +42,7 @@ use crate::error::{metadata_error, ExtendedError, Result};
 use compio::driver::OpCode;
 #[cfg(unix)]
 use compio::fs::File;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
 use io_uring::{opcode, types};

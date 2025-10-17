@@ -113,7 +113,8 @@ impl ExtendedFile {
     }
 }
 
-// Implement Fadvise trait
+// Implement Fadvise trait (Linux-only)
+#[cfg(target_os = "linux")]
 impl Fadvise for ExtendedFile {
     async fn fadvise(&self, advice: FadviseAdvice, offset: i64, len: i64) -> Result<()> {
         // Delegate to the fadvise module implementation

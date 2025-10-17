@@ -146,10 +146,11 @@ impl DirectoryFd {
             // 2. The spawned task completes before DirectoryFd is dropped
             // We use raw fd here because BorrowedFd from as_fd() has a non-'static lifetime,
             // but spawn requires 'static. This is the standard pattern for moving fds into tasks.
+            // Note: mode_t is u16 on macOS, u32 on Linux - cast to platform's type
             nix::sys::stat::mkdirat(
                 Some(dir_fd),
                 std::path::Path::new(&name_owned),
-                nix::sys::stat::Mode::from_bits_truncate(mode),
+                nix::sys::stat::Mode::from_bits_truncate(mode as nix::libc::mode_t),
             )
             .map_err(|e| directory_error(&format!("mkdirat failed for '{}': {}", name_owned, e)))
         })

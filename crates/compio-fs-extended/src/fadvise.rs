@@ -37,9 +37,12 @@
 //! For now, keeping Unix-only to maintain clean semantics and avoid
 //! surprising cross-platform behavior differences.
 
-use crate::error::{fadvise_error, Result};
+#[cfg(target_os = "linux")]
+use crate::error::fadvise_error;
+use crate::error::Result;
 #[cfg(target_os = "linux")]
 use compio::driver::OpCode;
+#[cfg(target_os = "linux")]
 use compio::fs::File;
 #[cfg(target_os = "linux")]
 use compio::runtime::submit;
@@ -50,8 +53,9 @@ use std::os::unix::io::AsRawFd;
 #[cfg(target_os = "linux")]
 use std::pin::Pin;
 
-/// Trait for fadvise operations using io_uring
+/// Trait for fadvise operations using io_uring (Linux-only)
 #[allow(async_fn_in_trait)]
+#[cfg(target_os = "linux")]
 pub trait Fadvise {
     /// Provide advice about file access patterns to the kernel using io_uring
     ///

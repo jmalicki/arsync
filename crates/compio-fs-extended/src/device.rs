@@ -61,8 +61,9 @@ pub async fn create_special_file_at_path(path: &Path, mode: u32, dev: u64) -> Re
 
     compio::runtime::spawn(async move {
         // Extract S_IF* type bits and permission bits separately
-        let sflag = stat::SFlag::from_bits_truncate(mode & !0o777);
-        let perm = stat::Mode::from_bits_truncate(mode & 0o777);
+        // Note: mode_t is u16 on macOS, u32 on Linux - cast to platform's type
+        let sflag = stat::SFlag::from_bits_truncate((mode & !0o777) as nix::libc::mode_t);
+        let perm = stat::Mode::from_bits_truncate((mode & 0o777) as nix::libc::mode_t);
 
         stat::mknod(&path, sflag, perm, dev)
             .map_err(|e| device_error(&format!("mknod failed: {}", e)))
@@ -95,8 +96,12 @@ pub async fn create_named_pipe_at_path(path: &Path, mode: u32) -> Result<()> {
     let path = path.to_path_buf();
 
     compio::runtime::spawn(async move {
-        unistd::mkfifo(&path, stat::Mode::from_bits_truncate(mode & 0o777))
-            .map_err(|e| device_error(&format!("mkfifo failed: {}", e)))
+        // Note: mode_t is u16 on macOS, u32 on Linux - cast to platform's type
+        unistd::mkfifo(
+            &path,
+            stat::Mode::from_bits_truncate((mode & 0o777) as nix::libc::mode_t),
+        )
+        .map_err(|e| device_error(&format!("mkfifo failed: {}", e)))
     })
     .await
     .map_err(|e| device_error(&format!("spawn failed: {:?}", e)))?
