@@ -11,9 +11,21 @@ use std::path::PathBuf;
 
 // Protocol implementation modules (only available with remote-sync feature)
 #[cfg(feature = "remote-sync")]
+pub mod checksum;
+#[cfg(feature = "remote-sync")]
+pub mod handshake;
+#[cfg(feature = "remote-sync")]
 pub mod pipe;
 #[cfg(feature = "remote-sync")]
+pub mod rsync;
+#[cfg(feature = "remote-sync")]
+pub mod rsync_compat;
+#[cfg(feature = "remote-sync")]
+pub mod ssh;
+#[cfg(feature = "remote-sync")]
 pub mod transport;
+#[cfg(feature = "remote-sync")]
+pub mod varint;
 
 /// Parsed location (local or remote)
 #[derive(Debug, Clone)]
