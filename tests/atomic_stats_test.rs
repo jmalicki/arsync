@@ -3,7 +3,8 @@
 //! This module tests that the atomic statistics counters work correctly
 //! under concurrent access without requiring locks.
 
-use arsync::directory::{DirectoryStats, SharedStats};
+use arsync::directory::DirectoryStats;
+use arsync::stats::SharedStats;
 use std::sync::Arc;
 
 /// Test basic atomic stats increment
