@@ -159,29 +159,15 @@ pub async fn create_symlink_impl(_file: &File, _target: &Path) -> Result<()> {
     ))
 }
 
-/// Create a symbolic link at the given path
-///
-/// # Arguments
-///
-/// * `link_path` - Path where the symbolic link will be created
-/// * `target` - Target path for the symbolic link
-///
-/// # Returns
-///
-/// `Ok(())` if the symbolic link was created successfully
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - The link path already exists
-/// - The target path is invalid
-/// - Permission is denied
-/// - The operation fails due to I/O errors
 // Note: Basic symlink operations are provided by std::fs or compio::fs
 // This module focuses on io_uring operations and secure *at variants
 
 /// Private trait for types that provide a directory file descriptor
+///
+/// This allows symlink operations to work with any type that can provide
+/// a directory FD, while keeping the implementation details private.
 trait DirectoryFdOps {
+    /// Get the raw directory file descriptor
     fn as_dirfd(&self) -> std::os::unix::io::RawFd;
 }
 

@@ -205,13 +205,10 @@ mod tests {
 
         // Test fallocate
         let result = fallocate(&file, 0, 1024, mode::DEFAULT).await;
-        match result {
-            Ok(_) => println!("fallocate succeeded"),
-            Err(e) => {
-                println!("fallocate failed: {}", e);
-                panic!("fallocate failed: {}", e);
-            }
+        if let Err(ref e) = result {
+            println!("fallocate failed: {}", e);
         }
+        assert!(result.is_ok(), "fallocate should succeed");
     }
 
     #[compio::test]

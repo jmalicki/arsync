@@ -156,6 +156,10 @@ impl DirectoryFd {
     ///
     /// * `accessed` - New access time
     /// * `modified` - New modification time
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
     pub async fn set_times(
         &self,
         accessed: std::time::SystemTime,
@@ -174,6 +178,10 @@ impl DirectoryFd {
     /// # Arguments
     ///
     /// * `permissions` - New permissions for the directory
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
     pub async fn set_permissions(&self, permissions: compio::fs::Permissions) -> Result<()> {
         self.as_file()
             .set_permissions(permissions)
@@ -192,6 +200,10 @@ impl DirectoryFd {
     ///
     /// * `uid` - New user ID
     /// * `gid` - New group ID
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
     pub async fn set_ownership(&self, uid: u32, gid: u32) -> Result<()> {
         use crate::ownership::OwnershipOps;
         self.as_file()
@@ -211,6 +223,10 @@ impl DirectoryFd {
     /// # Arguments
     ///
     /// * `pathname` - Relative path to the file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file doesn't exist or I/O errors occur.
     pub async fn statx(
         &self,
         pathname: &str,
@@ -226,6 +242,10 @@ impl DirectoryFd {
     ///
     /// * `pathname` - Relative path to the file
     /// * `mode` - New file permissions (e.g., 0o644)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, file not found).
     pub async fn fchmodat(&self, pathname: &str, mode: u32) -> Result<()> {
         crate::metadata::fchmodat_impl(self, pathname, mode).await
     }
@@ -239,6 +259,10 @@ impl DirectoryFd {
     /// * `pathname` - Relative path to the file
     /// * `accessed` - New access time
     /// * `modified` - New modification time
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, file not found).
     pub async fn utimensat(
         &self,
         pathname: &str,
@@ -257,6 +281,10 @@ impl DirectoryFd {
     /// * `pathname` - Relative path to the file
     /// * `uid` - New user ID
     /// * `gid` - New group ID
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, file not found).
     pub async fn fchownat(&self, pathname: &str, uid: u32, gid: u32) -> Result<()> {
         crate::metadata::fchownat_impl(self, pathname, uid, gid).await
     }
@@ -273,6 +301,10 @@ impl DirectoryFd {
     ///
     /// * `target` - Target path of the symbolic link
     /// * `link_name` - Name of the symbolic link (relative to this directory)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the link already exists or permission is denied.
     pub async fn symlinkat(&self, target: &str, link_name: &str) -> Result<()> {
         crate::symlink::symlinkat_impl(self, target, link_name).await
     }
@@ -284,6 +316,10 @@ impl DirectoryFd {
     /// # Arguments
     ///
     /// * `link_name` - Name of the symbolic link (relative to this directory)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the link doesn't exist or is not a symbolic link.
     pub async fn readlinkat(&self, link_name: &str) -> Result<std::path::PathBuf> {
         crate::symlink::readlinkat_impl(self, link_name).await
     }

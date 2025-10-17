@@ -198,6 +198,7 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
 /// This allows metadata operations to work with any type that can provide
 /// a directory FD, while keeping the implementation details private.
 trait DirectoryFdOps {
+    /// Get the raw directory file descriptor
     fn as_dirfd(&self) -> std::os::unix::io::RawFd;
 }
 
