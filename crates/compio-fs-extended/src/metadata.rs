@@ -43,7 +43,7 @@ use io_uring::{opcode, types};
 use nix::sys::stat::UtimensatFlags;
 use nix::sys::time::TimeSpec;
 use std::ffi::CString;
-use std::os::fd::BorrowedFd;
+use std::os::fd::{AsFd, BorrowedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
@@ -251,15 +251,13 @@ pub(crate) async fn statx_impl(
 pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) -> Result<()> {
     let pathname_cstring = std::ffi::CString::new(pathname)
         .map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
-    let dir_fd_raw = dir.as_raw_fd();
+    let dir = dir.clone();
 
-    let inner = compio::runtime::spawn(async move {
+    compio::runtime::spawn_blocking(move || {
         use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
 
-        // SAFETY: dir_fd_raw is valid because DirectoryFd keeps the file open via Arc<File>
-        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd_raw) };
         fchmodat(
-            borrowed_fd,
+            dir.as_fd(),
             pathname_cstring.as_c_str(),
             Mode::from_bits_truncate(mode),
             FchmodatFlags::FollowSymlink,
@@ -267,9 +265,7 @@ pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) 
         .map_err(|e| metadata_error(&format!("fchmodat failed: {}", e)))
     })
     .await
-    .map_err(ExtendedError::SpawnJoin)?;
-    inner?;
-    Ok(())
+    .unwrap_or_else(|e| std::panic::resume_unwind(e))
 }
 
 /// Change file timestamps using DirectoryFd
@@ -280,16 +276,14 @@ pub(crate) async fn utimensat_impl(
     modified: SystemTime,
 ) -> Result<()> {
     let pathname_owned = pathname.to_string();
-    let dir_fd_raw = dir.as_raw_fd();
+    let dir = dir.clone();
 
-    let inner = compio::runtime::spawn(async move {
+    compio::runtime::spawn_blocking(move || {
         let atime = system_time_to_timespec(accessed)?;
         let mtime = system_time_to_timespec(modified)?;
 
-        // SAFETY: dir_fd_raw is valid because DirectoryFd keeps the file open via Arc<File>
-        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd_raw) };
         nix::sys::stat::utimensat(
-            borrowed_fd,
+            dir.as_fd(),
             pathname_owned.as_str(),
             &atime,
             &mtime,
@@ -298,9 +292,7 @@ pub(crate) async fn utimensat_impl(
         .map_err(|e| metadata_error(&format!("utimensat failed: {}", e)))
     })
     .await
-    .map_err(ExtendedError::SpawnJoin)?;
-    inner?;
-    Ok(())
+    .unwrap_or_else(|e| std::panic::resume_unwind(e))
 }
 
 /// Change file ownership using DirectoryFd
@@ -311,16 +303,14 @@ pub(crate) async fn fchownat_impl(
     gid: u32,
 ) -> Result<()> {
     let pathname_owned = pathname.to_string();
-    let dir_fd_raw = dir.as_raw_fd();
+    let dir = dir.clone();
 
-    let inner = compio::runtime::spawn(async move {
+    compio::runtime::spawn_blocking(move || {
         use nix::fcntl::AtFlags;
         use nix::unistd::{fchownat, Gid, Uid};
 
-        // SAFETY: dir_fd_raw is valid because DirectoryFd keeps the file open via Arc<File>
-        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd_raw) };
         fchownat(
-            borrowed_fd,
+            dir.as_fd(),
             pathname_owned.as_str(),
             Some(Uid::from_raw(uid)),
             Some(Gid::from_raw(gid)),
@@ -329,7 +319,5 @@ pub(crate) async fn fchownat_impl(
         .map_err(|e| metadata_error(&format!("fchownat failed: {}", e)))
     })
     .await
-    .map_err(ExtendedError::SpawnJoin)?;
-    inner?;
-    Ok(())
+    .unwrap_or_else(|e| std::panic::resume_unwind(e))
 }

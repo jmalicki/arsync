@@ -1,12 +1,13 @@
 //! Symlink operations for creating and reading symbolic links
 
-use crate::error::{symlink_error, ExtendedError, Result};
+use crate::error::{symlink_error, Result};
 use compio::driver::OpCode;
 use compio::fs::File;
 use compio::runtime::submit;
 use io_uring::{opcode, types};
 use nix::fcntl;
 use std::ffi::CString;
+use std::os::fd::AsFd;
 use std::path::Path;
 use std::pin::Pin;
 
@@ -197,18 +198,14 @@ pub(crate) async fn readlinkat_impl(
     dir: &crate::directory::DirectoryFd,
     link_name: &str,
 ) -> Result<std::path::PathBuf> {
-    use std::os::fd::BorrowedFd;
-
     let link_name = link_name.to_string();
-    let dir_fd_raw = dir.as_raw_fd();
+    let dir = dir.clone();
 
-    let os_string = compio::runtime::spawn(async move {
-        // SAFETY: dir_fd_raw is valid because DirectoryFd keeps the file open via Arc<File>
-        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd_raw) };
-        fcntl::readlinkat(borrowed_fd, std::path::Path::new(&link_name))
+    let os_string = compio::runtime::spawn_blocking(move || {
+        fcntl::readlinkat(dir.as_fd(), std::path::Path::new(&link_name))
     })
     .await
-    .map_err(ExtendedError::SpawnJoin)?;
+    .unwrap_or_else(|e| std::panic::resume_unwind(e));
 
     Ok(std::path::PathBuf::from(
         os_string.map_err(|e| symlink_error(&e.to_string()))?,
