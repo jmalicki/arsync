@@ -50,13 +50,13 @@ use io_uring::{opcode, types};
 use nix::sys::stat::UtimensatFlags;
 #[cfg(unix)]
 use nix::sys::time::TimeSpec;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::path::Path;
 #[cfg(target_os = "linux")]
 use std::pin::Pin;

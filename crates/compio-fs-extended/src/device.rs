@@ -60,13 +60,12 @@ pub async fn create_special_file_at_path(path: &Path, mode: u32, dev: u64) -> Re
     let path = path.to_path_buf();
 
     compio::runtime::spawn(async move {
-        stat::mknod(
-            &path,
-            stat::SFlag::from_bits_truncate(mode),
-            stat::Mode::from_bits_truncate(mode & 0o777),
-            dev,
-        )
-        .map_err(|e| device_error(&format!("mknod failed: {}", e)))
+        // Extract S_IF* type bits and permission bits separately
+        let sflag = stat::SFlag::from_bits_truncate(mode & !0o777);
+        let perm = stat::Mode::from_bits_truncate(mode & 0o777);
+
+        stat::mknod(&path, sflag, perm, dev)
+            .map_err(|e| device_error(&format!("mknod failed: {}", e)))
     })
     .await
     .map_err(|e| device_error(&format!("spawn failed: {:?}", e)))?
@@ -145,7 +144,7 @@ pub async fn create_char_device_at_path(
     let dev = ((major as u64 & 0xfff) << 8)
         | (minor as u64 & 0xff)
         | (((major as u64 >> 12) & 0xfffff) << 32);
-    let device_mode = stat::SFlag::S_IFCHR.bits() | (mode & 0o777);
+    let device_mode = stat::SFlag::S_IFCHR.bits() as u32 | (mode & 0o777);
 
     create_special_file_at_path(path, device_mode, dev).await
 }
