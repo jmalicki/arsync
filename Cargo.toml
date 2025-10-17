@@ -23,7 +23,7 @@ members = ["crates/compio-fs-extended", "crates/compio-sync"]
 
 [dependencies]
 # Core async runtime
-compio = { version = "0.16", features = ["macros", "dispatcher"] }
+compio = { version = "0.16", features = ["macros", "dispatcher", "process"] }
 futures = "0.3"
 
 # CLI and error handling
@@ -40,6 +40,11 @@ indicatif = "0.18"
 num_cpus = "1.0"
 async-recursion = "1.0"
 dashmap = "6.1"
+
+# Checksums and hashing for rsync protocol
+simd-adler32 = "0.3"  # SIMD-accelerated Adler-32 (3-5x faster)
+md5 = "0.7"
+blake3 = "1.5"
 
 # i18n (internationalization)
 fluent = "0.17"
