@@ -1,5 +1,30 @@
 # Test Suite Guidelines
 
+## Test Categories and Running Tests
+
+Tests are organized by category for efficient development workflows. See:
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** - Quick commands cheat sheet
+- **[TEST_TAGS.md](TEST_TAGS.md)** - Complete guide to test categories and cargo-nextest
+
+### Quick Start
+
+Install nextest (one-time):
+```bash
+cargo install cargo-nextest --locked
+```
+
+Run fast tests (recommended during development):
+```bash
+cargo make test-fast
+# or: cargo nextest run -E 'not(test(/integration|performance|rsync/))'
+```
+
+Run all tests:
+```bash
+cargo make nextest
+# or: cargo nextest run
+```
+
 ## Timeouts to prevent hangs
 
 compio-based tests can hang if an async task or I/O submission/completion pipeline stalls. To harden the suite:

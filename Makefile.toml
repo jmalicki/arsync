@@ -35,6 +35,60 @@ description = "Run integration tests only"
 command = "cargo"
 args = ["test", "--test", "integration_tests"]
 
+# cargo-nextest tasks for better test running
+[tasks.nextest]
+description = "Run all tests with nextest"
+command = "cargo"
+args = ["nextest", "run"]
+
+[tasks.nextest-fast]
+alias = "test-fast"
+
+[tasks.test-fast]
+description = "Run fast tests only (exclude integration, performance, rsync)"
+command = "cargo"
+args = ["nextest", "run", "-E", "not(test(/integration|performance|rsync/))"]
+
+[tasks.test-int]
+description = "Run integration tests with nextest"
+command = "cargo"
+args = ["nextest", "run", "-E", "test(/integration/)"]
+
+[tasks.test-perf]
+description = "Run performance tests with nextest"
+command = "cargo"
+args = ["nextest", "run", "-E", "test(/performance/)"]
+
+[tasks.test-meta]
+description = "Run metadata tests with nextest"
+command = "cargo"
+args = ["nextest", "run", "-E", "test(/metadata/)"]
+
+[tasks.test-xattr]
+description = "Run xattr tests with nextest"
+command = "cargo"
+args = ["nextest", "run", "-E", "test(/xattr/)"]
+
+[tasks.test-rsync]
+description = "Run rsync protocol tests with nextest"
+command = "cargo"
+args = ["nextest", "run", "-E", "test(/rsync/)"]
+
+[tasks.test-list]
+description = "List all available tests"
+command = "cargo"
+args = ["nextest", "list"]
+
+[tasks.test-list-int]
+description = "List integration tests"
+command = "cargo"
+args = ["nextest", "list", "-E", "test(/integration/)"]
+
+[tasks.test-ci]
+description = "Run tests with CI profile (retries, JUnit output)"
+command = "cargo"
+args = ["nextest", "run", "--profile", "ci"]
+
 [tasks.check]
 description = "Run cargo check to verify compilation"
 command = "cargo"
