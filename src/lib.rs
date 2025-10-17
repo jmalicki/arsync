@@ -55,12 +55,14 @@ pub mod io_uring;
 pub mod metadata;
 pub mod progress;
 pub mod protocol;
+pub mod stats;
 pub mod sync;
 
 // Re-export commonly used types
 pub use directory::FilesystemTracker;
 pub use error::{Result, SyncError};
 pub use progress::ProgressTracker;
+pub use stats::SharedStats;
 
 // Re-export semaphore from compio-sync crate
 pub use compio_sync::Semaphore;

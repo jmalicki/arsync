@@ -16,6 +16,7 @@ mod i18n;
 mod io_uring;
 mod metadata;
 mod progress;
+mod stats;
 mod sync;
 
 use cli::Args;
