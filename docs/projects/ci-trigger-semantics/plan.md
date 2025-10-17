@@ -111,11 +111,13 @@ The design document outlines 5 critical test scenarios. We'll verify each:
 - [ ] **Verify**: Check Actions tab shows `push` event type
 
 #### Test Case 2: PR Targeting Main
-- [ ] Create a feature branch
-- [ ] Make changes and push
-- [ ] Create PR targeting main
-- [ ] **Expected**: ONE CI run via `pull_request` event
-- [ ] **Verify**: PR shows CI check, Actions shows `pull_request` event type
+- [x] Create a feature branch
+- [x] Make changes and push
+- [x] Create PR targeting main (PR #75)
+- [x] **Expected**: ONE CI run via `pull_request` event
+- [x] **Verify**: PR shows CI check, Actions shows `pull_request` event type
+  **Note**: ✅ VERIFIED! PR #75 triggered `pull_request` event (run ID: 18604374053).
+  No duplicate `push` event. Previous `push` event was from old config before PR creation.
 
 #### Test Case 3: Stacked PR (Critical Test)
 - [ ] Create feature-A branch and push
