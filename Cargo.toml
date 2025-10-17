@@ -44,7 +44,6 @@ dashmap = "6.1"
 # Checksums and hashing for rsync protocol
 simd-adler32 = "0.3"  # SIMD-accelerated Adler-32 (3-5x faster)
 md5 = "0.7"
-blake3 = "1.5"
 
 # i18n (internationalization)
 fluent = "0.17"
