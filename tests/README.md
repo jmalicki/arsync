@@ -16,7 +16,7 @@ cargo install cargo-nextest --locked
 Run fast tests (recommended during development):
 ```bash
 cargo make test-fast
-# or: cargo nextest run -E 'not(test(integration)) & not(test(performance)) & not(test(rsync))'
+# or: cargo nextest run -E '!test(integration) & !test(performance) & !test(rsync)'
 ```
 
 Run all tests:

@@ -109,7 +109,7 @@ jobs:
     - name: Run fast tests (unit tests, quick checks)
       run: |
         cargo nextest run --profile ci --all-features \
-          -E 'not(test(integration)) & not(test(performance)) & not(test(rsync))'
+          -E '!test(integration) & !test(performance) & !test(rsync)'
     
     - name: Run doc tests
       run: cargo test --all-features --doc
