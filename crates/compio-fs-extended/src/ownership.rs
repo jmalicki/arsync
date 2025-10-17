@@ -174,6 +174,7 @@
 
 use crate::error::{filesystem_error, Result};
 use compio::fs::File;
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
 #[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
