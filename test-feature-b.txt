@@ -1,0 +1,8 @@
+This is feature B - builds on top of feature A.
+
+This file demonstrates the stacked PR workflow:
+- feature-A adds base functionality
+- feature-B (this branch) adds additional functionality on top
+
+The critical test: Does CI run when we create a PR targeting feature-A (not main)?
+
