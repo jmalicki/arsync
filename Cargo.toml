@@ -61,6 +61,9 @@ compio-fs-extended = { path = "crates/compio-fs-extended", features = ["xattr"] 
 # Async synchronization primitives
 compio-sync = { path = "crates/compio-sync" }
 
+# Remote sync dependencies (optional)
+rand = { version = "0.9.2", optional = true }
+
 # Build dependencies
 [build-dependencies]
 cc = "1.0"
@@ -93,7 +96,7 @@ cargo-audit = "0.21"
 [features]
 default = ["remote-sync"]
 benchmarks = ["criterion"]
-remote-sync = []
+remote-sync = ["rand"]
 
 [profile.release]
 lto = true

@@ -13,6 +13,8 @@ use std::path::PathBuf;
 #[cfg(feature = "remote-sync")]
 pub mod checksum;
 #[cfg(feature = "remote-sync")]
+pub mod handshake;
+#[cfg(feature = "remote-sync")]
 pub mod pipe;
 #[cfg(feature = "remote-sync")]
 pub mod ssh;
