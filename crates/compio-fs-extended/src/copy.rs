@@ -116,27 +116,6 @@ pub async fn copy_file_range_impl(
     ))
 }
 
-/// Check if copy_file_range is supported for the given file descriptors
-///
-/// # Arguments
-///
-/// * `src` - Source file
-/// * `dst` - Destination file
-///
-/// # Returns
-///
-/// `true` if copy_file_range is supported, `false` otherwise
-pub async fn is_copy_file_range_supported(src: &File, dst: &File) -> bool {
-    #[cfg(unix)]
-    {
-        copy_file_range_impl(src, dst, 0, 0, 0).await.is_ok()
-    }
-    #[cfg(windows)]
-    {
-        false
-    }
-}
-
 /// Get the maximum number of bytes that can be copied in a single copy_file_range operation
 ///
 /// # Returns
@@ -259,24 +238,5 @@ mod tests {
                 println!("copy_file_range not supported on this filesystem");
             }
         }
-    }
-
-    #[compio::test]
-    async fn test_is_copy_file_range_supported() {
-        let temp_dir = TempDir::new().unwrap();
-        let src_path = temp_dir.path().join("source.txt");
-        let dst_path = temp_dir.path().join("destination.txt");
-
-        // Create source file
-        write(&src_path, "test").unwrap();
-
-        // Open files
-        let src_file = File::open(&src_path).await.unwrap();
-        let dst_file = File::create(&dst_path).await.unwrap();
-
-        // Test support detection
-        let supported = is_copy_file_range_supported(&src_file, &dst_file).await;
-        // This might be true or false depending on the filesystem
-        println!("copy_file_range supported: {}", supported);
     }
 }

@@ -556,36 +556,6 @@ pub async fn remove_xattr_at_path(_path: &Path, _name: &str) -> Result<()> {
     Err(xattr_error("xattr unsupported on Windows"))
 }
 
-/// Check if extended attributes are supported on the filesystem
-///
-/// # Arguments
-///
-/// * `path` - Path to check
-///
-/// # Returns
-///
-/// `true` if extended attributes are supported, `false` otherwise
-#[cfg(unix)]
-pub async fn is_xattr_supported(path: &Path) -> bool {
-    // Try to set a test attribute
-    let test_name = "user.compio_fs_extended_test";
-    let test_value = b"test";
-
-    match set_xattr_at_path(path, test_name, test_value).await {
-        Ok(_) => {
-            // Clean up the test attribute
-            let _ = remove_xattr_at_path(path, test_name).await;
-            true
-        }
-        Err(_) => false,
-    }
-}
-
-#[cfg(windows)]
-pub async fn is_xattr_supported(_path: &Path) -> bool {
-    false
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -593,6 +563,7 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
+    #[cfg(unix)]
     async fn test_xattr_operations() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
@@ -600,12 +571,9 @@ mod tests {
         // Create test file
         fs::write(&file_path, "test content").unwrap();
 
-        // Test xattr support
-        if is_xattr_supported(&file_path).await {
-            // Test set and get
-            set_xattr_at_path(&file_path, "user.test", b"test_value")
-                .await
-                .unwrap();
+        // Try xattr operations - they may fail if filesystem doesn't support xattrs
+        if let Ok(()) = set_xattr_at_path(&file_path, "user.test", b"test_value").await {
+            // Test get
             let value = get_xattr_at_path(&file_path, "user.test").await.unwrap();
             assert_eq!(value, b"test_value");
 
@@ -618,20 +586,7 @@ mod tests {
             let names_after = list_xattr_at_path(&file_path).await.unwrap();
             assert!(!names_after.contains(&"user.test".to_string()));
         } else {
-            println!("Extended attributes not supported on this filesystem");
+            println!("Extended attributes not supported on this filesystem - test skipped");
         }
-    }
-
-    #[tokio::test]
-    async fn test_xattr_support_detection() {
-        let temp_dir = TempDir::new().unwrap();
-        let file_path = temp_dir.path().join("test.txt");
-
-        // Create test file
-        fs::write(&file_path, "test content").unwrap();
-
-        // Test support detection
-        let supported = is_xattr_supported(&file_path).await;
-        println!("xattr supported: {}", supported);
     }
 }
