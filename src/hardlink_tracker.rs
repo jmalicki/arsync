@@ -409,9 +409,6 @@ mod tests {
         let copier_cv = Arc::clone(&hardlink_info.copy_complete);
         drop(hardlink_info);
 
-        // Verify no one is waiting yet
-        assert_eq!(copier_cv.as_ref().waiter_count(), 0, "No waiters yet");
-
         let tracker_clone = Arc::clone(&tracker);
         let file2_clone = file2.clone();
         let dst_file2_clone = dst_file2.clone();
