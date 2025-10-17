@@ -17,11 +17,18 @@ pub mod handshake;
 #[cfg(feature = "remote-sync")]
 pub mod pipe;
 #[cfg(feature = "remote-sync")]
+pub mod rsync;
+#[cfg(feature = "remote-sync")]
+pub mod rsync_compat;
+#[cfg(feature = "remote-sync")]
 pub mod ssh;
 #[cfg(feature = "remote-sync")]
 pub mod transport;
 #[cfg(feature = "remote-sync")]
 pub mod varint;
+
+#[cfg(feature = "quic")]
+pub mod quic;
 
 /// Parsed location (local or remote)
 #[derive(Debug, Clone)]

@@ -40,11 +40,16 @@ indicatif = "0.18"
 num_cpus = "1.0"
 async-recursion = "1.0"
 dashmap = "6.1"
+whoami = "1.0"
+walkdir = "2.0"
 
 # Checksums and hashing for rsync protocol
 simd-adler32 = "0.3"  # SIMD-accelerated Adler-32 (3-5x faster)
 md5 = "0.7"
 blake3 = "1.5"
+
+# File metadata manipulation
+filetime = "0.2"
 
 # i18n (internationalization)
 fluent = "0.17"
@@ -63,6 +68,10 @@ compio-fs-extended = { path = "crates/compio-fs-extended", features = ["xattr"] 
 compio-sync = { path = "crates/compio-sync" }
 
 # Remote sync dependencies (optional)
+tokio = { version = "1.0", features = ["process", "io-util", "rt", "fs", "macros"], optional = true }
+async-trait = { version = "0.1", optional = true }
+quinn = { version = "0.11", optional = true }
+rustls = { version = "0.23", optional = true }
 rand = { version = "0.9.2", optional = true }
 
 # Build dependencies
@@ -97,7 +106,9 @@ cargo-audit = "0.21"
 [features]
 default = ["remote-sync"]
 benchmarks = ["criterion"]
-remote-sync = ["rand"]
+remote-sync = ["tokio", "async-trait", "rand"]
+quic = ["remote-sync", "quinn", "rustls"]
+rand = ["dep:rand"]
 
 [profile.release]
 lto = true
