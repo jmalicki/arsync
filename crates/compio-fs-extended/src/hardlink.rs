@@ -3,7 +3,9 @@
 use crate::error::{hardlink_error, Result};
 use compio::driver::OpCode;
 use compio::fs::File;
+#[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
+#[cfg(unix)]
 use std::ffi::CString;
 use std::path::Path;
 use std::pin::Pin;

@@ -41,10 +41,15 @@ use compio::fs::File;
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
+#[cfg(unix)]
 use nix::sys::stat::UtimensatFlags;
+#[cfg(unix)]
 use nix::sys::time::TimeSpec;
+#[cfg(unix)]
 use std::ffi::CString;
+#[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 use std::pin::Pin;
