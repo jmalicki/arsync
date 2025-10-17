@@ -11,6 +11,7 @@ use io_uring::{opcode, types};
 #[cfg(unix)]
 use nix::fcntl;
 #[cfg(all(unix, not(target_os = "linux")))]
+#[allow(unused_imports)] // Used in symlinkat_impl on macOS/BSD
 use nix::unistd;
 #[cfg(target_os = "linux")]
 use std::ffi::CString;
