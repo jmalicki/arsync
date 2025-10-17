@@ -13,9 +13,7 @@
 //!
 //! File descriptor-based operations (for already-open files):
 //!
-//! - **fchmod**: Change permissions on an open file
-//! - **futimens_fd**: Change timestamps on an open file
-//! - **fchown**: Change ownership on an open file
+//! - **futimens_fd**: Change timestamps on an open file (Note: use File::set_permissions and OwnershipOps for permissions/ownership)
 //!
 //! # Usage
 //!
@@ -41,22 +39,15 @@ use crate::error::{metadata_error, ExtendedError, Result};
 use compio::driver::OpCode;
 use compio::fs::File;
 use compio::runtime::submit;
-use filetime::{set_file_times, FileTime};
 use io_uring::{opcode, types};
 use nix::sys::stat::UtimensatFlags;
 use nix::sys::time::TimeSpec;
 use std::ffi::CString;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::pin::Pin;
 use std::time::SystemTime;
-
-/// Get the /proc/self/fd path for a file descriptor
-fn proc_fd_path(fd: i32) -> PathBuf {
-    PathBuf::from(format!("/proc/self/fd/{}", fd))
-}
 
 /// io_uring statx operation for getting file metadata with nanosecond timestamps
 pub struct StatxOp {
@@ -200,96 +191,6 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
     .map_err(ExtendedError::SpawnJoin)?;
     inner?;
     Ok(())
-}
-
-/// Change file permissions using file descriptor (more efficient)
-///
-/// # Arguments
-///
-/// * `file` - File reference
-/// * `mode` - New file permissions (e.g., 0o644)
-///
-/// # Returns
-///
-/// `Ok(())` if the permissions were changed successfully
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - Invalid file descriptor
-/// - Permission is denied
-/// - Invalid mode value
-/// - The operation fails due to I/O errors
-pub async fn fchmod(file: &File, mode: u32) -> Result<()> {
-    let fd = file.as_raw_fd();
-    let inner = compio::runtime::spawn(async move {
-        let path = proc_fd_path(fd);
-        let mut perms = std::fs::metadata(&path)?.permissions();
-        perms.set_mode(mode);
-        std::fs::set_permissions(&path, perms)
-    })
-    .await
-    .map_err(ExtendedError::SpawnJoin)?;
-    inner?;
-    Ok(())
-}
-
-/// Change file timestamps using file descriptor (more efficient)
-///
-/// # Arguments
-///
-/// * `file` - File reference
-/// * `accessed` - New access time
-/// * `modified` - New modification time
-///
-/// # Returns
-///
-/// `Ok(())` if the timestamps were changed successfully
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - Invalid file descriptor
-/// - Permission is denied
-/// - Invalid timestamp values
-/// - The operation fails due to I/O errors
-pub async fn futimes(file: &File, accessed: SystemTime, modified: SystemTime) -> Result<()> {
-    let fd = file.as_raw_fd();
-    let inner = compio::runtime::spawn(async move {
-        let path = proc_fd_path(fd);
-        let atime = FileTime::from(accessed);
-        let mtime = FileTime::from(modified);
-        set_file_times(&path, atime, mtime)
-    })
-    .await
-    .map_err(ExtendedError::SpawnJoin)?;
-    inner?;
-    Ok(())
-}
-
-/// Change file ownership using file descriptor (more efficient)
-///
-/// # Arguments
-///
-/// * `file` - File reference
-/// * `uid` - New user ID (use -1 to not change)
-/// * `gid` - New group ID (use -1 to not change)
-///
-/// # Returns
-///
-/// `Ok(())` if the ownership was changed successfully
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - Invalid file descriptor
-/// - Permission is denied
-/// - Invalid user/group IDs
-/// - The operation fails due to I/O errors
-pub async fn fchown(_file: &File, _uid: u32, _gid: u32) -> Result<()> {
-    Err(metadata_error(
-        "chown is not supported via std::fs; enable a libc-based path if required",
-    ))
 }
 
 /// Private trait for types that provide a directory file descriptor

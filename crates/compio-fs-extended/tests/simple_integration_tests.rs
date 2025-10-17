@@ -145,7 +145,9 @@ async fn test_metadata_basic() {
 
     // Test file descriptor-based metadata operations
     let file = File::open(&file_path).await.unwrap();
-    metadata::fchmod(&file, 0o644).await.unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    let perms = compio::fs::Permissions::from_mode(0o644);
+    file.set_permissions(perms).await.unwrap();
 }
 
 /// Test device file operations
