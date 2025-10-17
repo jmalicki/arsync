@@ -262,62 +262,63 @@ impl DirectoryFd {
         crate::metadata::statx_impl(self, pathname).await
     }
 
-    /// Change file permissions for a child file
+    /// Change file permissions without following symlinks
     ///
-    /// Uses `fchmodat(2)` with directory FD and relative path (TOCTOU-safe).
+    /// Uses `fchmodat(2)` with `AT_SYMLINK_NOFOLLOW`.
+    /// On Linux: no-op (symlink permissions are always 0777 and ignored).
     ///
     /// # Arguments
     ///
-    /// * `pathname` - Relative path to the file
+    /// * `pathname` - Relative path to the file or symlink
     /// * `mode` - New file permissions (e.g., 0o644)
     ///
     /// # Errors
     ///
-    /// Returns an error if the operation fails (e.g., permission denied, file not found).
+    /// Returns an error if the operation fails.
     #[cfg(unix)]
-    pub async fn fchmodat(&self, pathname: &str, mode: u32) -> Result<()> {
-        crate::metadata::fchmodat_impl(self, pathname, mode).await
+    pub async fn lfchmodat(&self, pathname: &str, mode: u32) -> Result<()> {
+        crate::metadata::lfchmodat_impl(self, pathname, mode).await
     }
 
-    /// Change file timestamps for a child file
+    /// Change file timestamps without following symlinks
     ///
-    /// Uses `utimensat(2)` with directory FD and relative path (TOCTOU-safe).
+    /// Uses `utimensat(2)` with `AT_SYMLINK_NOFOLLOW` flag.
     ///
     /// # Arguments
     ///
-    /// * `pathname` - Relative path to the file
+    /// * `pathname` - Relative path to the file or symlink
     /// * `accessed` - New access time
     /// * `modified` - New modification time
     ///
     /// # Errors
     ///
-    /// Returns an error if the operation fails (e.g., permission denied, file not found).
+    /// Returns an error if the operation fails.
     #[cfg(unix)]
-    pub async fn utimensat(
+    pub async fn lutimensat(
         &self,
         pathname: &str,
         accessed: std::time::SystemTime,
         modified: std::time::SystemTime,
     ) -> Result<()> {
-        crate::metadata::utimensat_impl(self, pathname, accessed, modified).await
+        crate::metadata::lutimensat_impl(self, pathname, accessed, modified).await
     }
 
-    /// Change file ownership for a child file
+    /// Change file ownership without following symlinks
     ///
-    /// Uses `fchownat(2)` with directory FD and relative path (TOCTOU-safe).
+    /// Uses `fchownat(2)` with `AT_SYMLINK_NOFOLLOW` flag.
     ///
     /// # Arguments
     ///
-    /// * `pathname` - Relative path to the file
+    /// * `pathname` - Relative path to the file or symlink
     /// * `uid` - New user ID
     /// * `gid` - New group ID
     ///
     /// # Errors
     ///
-    /// Returns an error if the operation fails (e.g., permission denied, file not found).
+    /// Returns an error if the operation fails.
     #[cfg(unix)]
-    pub async fn fchownat(&self, pathname: &str, uid: u32, gid: u32) -> Result<()> {
-        crate::metadata::fchownat_impl(self, pathname, uid, gid).await
+    pub async fn lfchownat(&self, pathname: &str, uid: u32, gid: u32) -> Result<()> {
+        crate::metadata::lfchownat_impl(self, pathname, uid, gid).await
     }
 
     // ========================================================================

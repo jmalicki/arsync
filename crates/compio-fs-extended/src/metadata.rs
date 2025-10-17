@@ -267,7 +267,17 @@ pub(crate) async fn statx_impl(
 
 /// Change file permissions using DirectoryFd
 #[cfg(unix)]
-pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) -> Result<()> {
+/// Change file permissions without following symlinks (symlink-aware)
+#[cfg(target_os = "linux")]
+pub(crate) async fn lfchmodat_impl(_dir: &DirectoryFd, _pathname: &str, _mode: u32) -> Result<()> {
+    // No-op on Linux: symlink permissions are always 0777 and ignored by kernel
+    // This function exists for API consistency with macOS
+    Ok(())
+}
+
+/// Change file permissions without following symlinks (symlink-aware) - macOS/Unix
+#[cfg(all(unix, not(target_os = "linux")))]
+pub(crate) async fn lfchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) -> Result<()> {
     let pathname_cstring = std::ffi::CString::new(pathname)
         .map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
     let dir_fd = dir.as_raw_fd();
@@ -279,9 +289,9 @@ pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) 
             Some(dir_fd),
             pathname_cstring.as_c_str(),
             Mode::from_bits_truncate(mode as nix::libc::mode_t),
-            FchmodatFlags::FollowSymlink,
+            FchmodatFlags::NoFollowSymlink, // Don't follow symlinks!
         )
-        .map_err(|e| metadata_error(&format!("fchmodat failed: {}", e)))
+        .map_err(|e| metadata_error(&format!("lfchmodat failed: {}", e)))
     };
 
     #[cfg(feature = "cheap_calls_sync")]
@@ -299,7 +309,8 @@ pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) 
 
 /// Change file timestamps using DirectoryFd
 #[cfg(unix)]
-pub(crate) async fn utimensat_impl(
+/// Change file timestamps without following symlinks (symlink-aware)
+pub(crate) async fn lutimensat_impl(
     dir: &DirectoryFd,
     pathname: &str,
     accessed: SystemTime,
@@ -317,9 +328,9 @@ pub(crate) async fn utimensat_impl(
             pathname_owned.as_str(),
             &atime,
             &mtime,
-            UtimensatFlags::FollowSymlink,
+            UtimensatFlags::NoFollowSymlink, // Don't follow symlinks!
         )
-        .map_err(|e| metadata_error(&format!("utimensat failed: {}", e)))
+        .map_err(|e| metadata_error(&format!("lutimensat failed: {}", e)))
     };
 
     #[cfg(feature = "cheap_calls_sync")]
@@ -335,9 +346,9 @@ pub(crate) async fn utimensat_impl(
     }
 }
 
-/// Change file ownership using DirectoryFd
+/// Change file ownership without following symlinks (symlink-aware)
 #[cfg(unix)]
-pub(crate) async fn fchownat_impl(
+pub(crate) async fn lfchownat_impl(
     dir: &DirectoryFd,
     pathname: &str,
     uid: u32,
@@ -355,9 +366,9 @@ pub(crate) async fn fchownat_impl(
             pathname_owned.as_str(),
             Some(Uid::from_raw(uid)),
             Some(Gid::from_raw(gid)),
-            AtFlags::empty(), // Follow symlinks by default (no AT_SYMLINK_NOFOLLOW)
+            AtFlags::AT_SYMLINK_NOFOLLOW, // Don't follow symlinks!
         )
-        .map_err(|e| metadata_error(&format!("fchownat failed: {}", e)))
+        .map_err(|e| metadata_error(&format!("lfchownat failed: {}", e)))
     };
 
     #[cfg(feature = "cheap_calls_sync")]

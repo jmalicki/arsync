@@ -7,13 +7,12 @@ use compio_fs_extended::directory::DirectoryFd;
 use std::os::unix::fs::MetadataExt;
 use tempfile::TempDir;
 
-/// Test: Does DirectoryFd::fchownat follow symlinks?
+/// Test: Verify lfchownat doesn't follow symlinks (GREEN test)
 ///
-/// This test will tell us if the current implementation follows symlinks.
-/// Expected: Currently uses AtFlags::empty() which FOLLOWS symlinks.
+/// This test should PASS after implementing AT_SYMLINK_NOFOLLOW.
 #[compio::test]
 #[cfg(unix)]
-async fn test_current_fchownat_behavior_with_symlinks() {
+async fn test_lfchownat_does_not_follow_symlinks() {
     let temp_dir = TempDir::new().unwrap();
     let target = temp_dir.path().join("target.txt");
     let link = temp_dir.path().join("link");
@@ -35,15 +34,16 @@ async fn test_current_fchownat_behavior_with_symlinks() {
     // Open DirectoryFd
     let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
-    // Try to change ownership via fchownat on the symlink
-    // Current implementation uses AtFlags::empty() which FOLLOWS symlinks
+    // Try to change ownership via lfchownat on the symlink
+    // New implementation uses AT_SYMLINK_NOFOLLOW which DOESN'T follow symlinks
     let result = dir_fd
-        .fchownat("link", target_uid_before, target_gid_before)
+        .lfchownat("link", target_uid_before, target_gid_before)
         .await;
 
     if result.is_err() {
-        println!("fchownat failed (expected if not root): {:?}", result);
-        println!("Can't fully test ownership behavior without root");
+        println!("lfchownat failed (expected if not root): {:?}", result);
+        println!("Can't fully test ownership behavior without root privileges");
+        println!("But if it runs, it should use AT_SYMLINK_NOFOLLOW (correct!)");
         return;
     }
 
@@ -63,23 +63,20 @@ async fn test_current_fchownat_behavior_with_symlinks() {
         link_uid_after, target_uid_after
     );
 
-    // If target changed but symlink didn't, it follows symlinks
-    if target_uid_after != target_uid_before && link_uid_after == link_uid_before {
-        println!("❌ CONFIRMED: fchownat FOLLOWS symlinks (operates on target)");
-    } else if link_uid_after != link_uid_before && target_uid_after == target_uid_before {
-        println!("✅ SURPRISE: fchownat does NOT follow symlinks!");
-    } else {
-        println!("⚠️  Inconclusive (both or neither changed)");
+    // If symlink changed but target didn't, it's correct!
+    if link_uid_after != link_uid_before && target_uid_after == target_uid_before {
+        println!("✅ CORRECT: lfchownat does NOT follow symlinks!");
+    } else if target_uid_after != target_uid_before {
+        panic!("BUG: lfchownat still follows symlinks (target changed)!");
     }
 }
 
-/// Test: Does DirectoryFd::utimensat follow symlinks?
+/// Test: Verify lutimensat doesn't follow symlinks (GREEN test)
 ///
-/// This will reveal if utimensat operates on symlink or target.
-/// Expected: Currently uses FollowSymlink flag.
+/// This test should PASS after changing to NoFollowSymlink flag.
 #[compio::test]
 #[cfg(unix)]
-async fn test_current_utimensat_behavior_with_symlinks() {
+async fn test_lutimensat_does_not_follow_symlinks() {
     use std::time::{Duration, SystemTime};
 
     let temp_dir = TempDir::new().unwrap();
@@ -109,9 +106,9 @@ async fn test_current_utimensat_behavior_with_symlinks() {
     // Open DirectoryFd
     let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
-    // Set new timestamp via utimensat on the symlink path
+    // Set new timestamp via lutimensat on the symlink path
     let new_time = SystemTime::now() - Duration::from_secs(86400); // 1 day ago
-    dir_fd.utimensat("link", new_time, new_time).await.unwrap();
+    dir_fd.lutimensat("link", new_time, new_time).await.unwrap();
 
     // Check: Did it change the symlink or the target?
     let link_metadata_after = std::fs::symlink_metadata(&link).unwrap();
@@ -125,33 +122,34 @@ async fn test_current_utimensat_behavior_with_symlinks() {
         link_mtime_after, target_mtime_after
     );
 
-    // If target changed but symlink didn't, it follows symlinks
-    if target_mtime_after != target_mtime_before && link_mtime_after == link_mtime_before {
-        println!("❌ CONFIRMED: utimensat FOLLOWS symlinks (changed target, not link)");
+    // If symlink changed but target didn't, it's correct!
+    if link_mtime_after != link_mtime_before && target_mtime_after == target_mtime_before {
+        println!("✅ CORRECT: lutimensat does NOT follow symlinks!");
+        println!(
+            "   Symlink mtime changed: {} → {}",
+            link_mtime_before, link_mtime_after
+        );
+        println!("   Target mtime unchanged: {}", target_mtime_before);
+    } else if target_mtime_after != target_mtime_before && link_mtime_after == link_mtime_before {
         panic!(
-            "BUG CONFIRMED: DirectoryFd::utimensat follows symlinks! \
-             Target mtime changed from {} to {}, but symlink mtime stayed {}",
+            "BUG: lutimensat still follows symlinks! \
+             Target mtime changed: {} → {}, symlink unchanged: {}",
             target_mtime_before, target_mtime_after, link_mtime_after
         );
-    } else if link_mtime_after != link_mtime_before && target_mtime_after == target_mtime_before {
-        println!("✅ SURPRISE: utimensat does NOT follow symlinks!");
     } else if link_mtime_after != link_mtime_before && target_mtime_after != target_mtime_before {
-        println!("⚠️  BOTH changed - utimensat may have affected both?");
+        panic!("BUG: Both changed - something is wrong!");
     } else {
-        println!("⚠️  Inconclusive");
+        panic!("BUG: Neither changed - lutimensat didn't work!");
     }
 }
 
-/// Test: Does DirectoryFd::fchmodat follow symlinks?
+/// Test: Verify lfchmodat doesn't follow symlinks (GREEN test)
 ///
-/// This will reveal if fchmodat operates on symlink or target.
-/// Expected: Currently uses FollowSymlink flag.
-///
-/// Note: On Linux, symlink permissions are always 0777 and ignored,
-/// so this test documents that behavior.
+/// On Linux: Always succeeds (no-op, symlinks always 0777)
+/// On macOS: Uses NoFollowSymlink flag
 #[compio::test]
 #[cfg(unix)]
-async fn test_current_fchmodat_behavior_with_symlinks() {
+async fn test_lfchmodat_does_not_follow_symlinks() {
     use std::os::unix::fs::PermissionsExt;
 
     let temp_dir = TempDir::new().unwrap();
@@ -181,8 +179,8 @@ async fn test_current_fchmodat_behavior_with_symlinks() {
     // Open DirectoryFd
     let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
-    // Try to change permissions via fchmodat on the symlink path
-    dir_fd.fchmodat("link", 0o644).await.unwrap();
+    // Try to change permissions via lfchmodat on the symlink path
+    dir_fd.lfchmodat("link", 0o644).await.unwrap();
 
     // Check: Did it change the symlink or the target?
     let target_perms_after = std::fs::metadata(&target).unwrap().permissions().mode() & 0o777;
@@ -207,14 +205,23 @@ async fn test_current_fchmodat_behavior_with_symlinks() {
         assert_eq!(link_perms_after, 0o777, "Linux symlinks always 0777 after");
     }
 
-    // If target changed, it follows symlinks
-    if target_perms_after != target_perms_before {
-        println!("❌ CONFIRMED: fchmodat FOLLOWS symlinks (changed target)");
+    // On Linux: target should NOT change (lfchmodat is no-op)
+    // On macOS: symlink perms might change, target should NOT change
+    #[cfg(target_os = "linux")]
+    {
         assert_eq!(
-            target_perms_after, 0o644,
-            "Target permissions should have changed to 0644"
+            target_perms_after, target_perms_before,
+            "lfchmodat is no-op on Linux, target should be unchanged"
         );
-    } else {
-        println!("⚠️  Target permissions didn't change (unexpected)");
+        println!("✅ CORRECT: lfchmodat is no-op on Linux (symlinks always 0777)");
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        assert_eq!(
+            target_perms_after, target_perms_before,
+            "lfchmodat should NOT change target (only symlink)"
+        );
+        println!("✅ CORRECT: lfchmodat does NOT follow symlinks on macOS");
     }
 }
