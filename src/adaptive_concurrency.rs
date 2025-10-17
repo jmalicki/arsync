@@ -10,12 +10,14 @@
 //! - `ConcurrencyOptions` - Configuration for concurrency control (owned by this module)
 //! - `AdaptiveConcurrencyController` - Runtime controller that uses the options
 
-use crate::directory::SharedSemaphore;
 use crate::error::SyncError;
+use compio_sync::Semaphore;
 use std::io::ErrorKind;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+
+type SharedSemaphore = Arc<Semaphore>;
 use tracing::warn;
 
 // ============================================================================
@@ -124,7 +126,7 @@ impl AdaptiveConcurrencyController {
     #[must_use]
     pub fn new(options: &ConcurrencyOptions) -> Self {
         Self {
-            semaphore: SharedSemaphore::new(options.max_files_in_flight()),
+            semaphore: Arc::new(Semaphore::new(options.max_files_in_flight())),
             emfile_errors: Arc::new(AtomicUsize::new(0)),
             emfile_warned: Arc::new(AtomicBool::new(false)),
             min_permits: options.min_permits(),

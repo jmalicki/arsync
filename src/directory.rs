@@ -14,86 +14,10 @@ use crate::metadata::MetadataConfig;
 use crate::stats::SharedStats;
 // io_uring_extended removed - using compio directly
 use compio::dispatcher::Dispatcher;
-use compio_sync::Semaphore;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
-
-/// Wrapper for shared semaphore to limit concurrent operations
-///
-/// This struct wraps a `Semaphore` in an `Arc` to allow shared access
-/// across multiple async tasks dispatched by compio's dispatcher. It provides
-/// concurrency control to prevent unbounded queue growth during BFS traversal.
-///
-/// # Thread Safety
-///
-/// The semaphore is thread-safe and can be used concurrently from different
-/// async tasks without additional synchronization.
-///
-/// # Usage
-///
-/// ```rust,ignore
-/// let semaphore = SharedSemaphore::new(100);
-/// let permit = semaphore.acquire().await;
-/// // ... perform bounded concurrent operation ...
-/// drop(permit); // Release permit
-/// ```
-#[derive(Clone)]
-pub struct SharedSemaphore {
-    /// Inner semaphore wrapped in Arc for shared access
-    inner: Arc<Semaphore>,
-}
-
-impl SharedSemaphore {
-    /// Create a new `SharedSemaphore` wrapper
-    ///
-    /// # Arguments
-    ///
-    /// * `permits` - The maximum number of concurrent permits
-    #[must_use]
-    pub fn new(permits: usize) -> Self {
-        Self {
-            inner: Arc::new(Semaphore::new(permits)),
-        }
-    }
-
-    /// Acquire a permit from the semaphore
-    ///
-    /// This will block until a permit is available.
-    pub async fn acquire(&self) -> compio_sync::SemaphorePermit<'_> {
-        self.inner.acquire().await
-    }
-
-    /// Get the number of available permits
-    #[must_use]
-    #[allow(dead_code)] // Used by adaptive concurrency controller (not yet integrated)
-    pub fn available_permits(&self) -> usize {
-        self.inner.available_permits()
-    }
-
-    /// Get the maximum number of permits
-    #[must_use]
-    #[allow(dead_code)] // Used by adaptive concurrency controller (not yet integrated)
-    pub fn max_permits(&self) -> usize {
-        self.inner.max_permits()
-    }
-
-    /// Reduce available permits (for adaptive concurrency control)
-    ///
-    /// Returns the actual number of permits reduced.
-    #[must_use]
-    #[allow(dead_code)] // Used by adaptive concurrency controller (not yet integrated)
-    pub fn reduce_permits(&self, count: usize) -> usize {
-        self.inner.reduce_permits(count)
-    }
-
-    /// Add permits back (for adaptive concurrency control)
-    #[allow(dead_code)] // Used by adaptive concurrency controller (not yet integrated)
-    pub fn add_permits(&self, count: usize) {
-        self.inner.add_permits(count);
-    }
-}
 
 /// Extended metadata using `compio::fs` metadata support
 pub struct ExtendedMetadata {
