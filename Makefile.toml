@@ -47,7 +47,7 @@ alias = "test-fast"
 [tasks.test-fast]
 description = "Run fast tests only (exclude integration, performance, rsync)"
 command = "cargo"
-args = ["nextest", "run", "-E", "not(test(integration)) and not(test(performance)) and not(test(rsync))"]
+args = ["nextest", "run", "-E", "not(test(integration)) & not(test(performance)) & not(test(rsync))"]
 
 [tasks.test-int]
 description = "Run integration tests with nextest"
