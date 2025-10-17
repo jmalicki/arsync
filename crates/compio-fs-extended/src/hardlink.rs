@@ -30,12 +30,13 @@ pub trait HardlinkOps {
     /// ```rust,no_run
     /// use compio_fs_extended::{ExtendedFile, HardlinkOps};
     /// use compio::fs::File;
+    /// use std::path::Path;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let file = File::open("original.txt").await?;
     /// let extended_file = ExtendedFile::new(file);
     ///
-    /// extended_file.create_hardlink("hardlink.txt").await?;
+    /// extended_file.create_hardlink(Path::new("hardlink.txt")).await?;
     /// # Ok(())
     /// # }
     /// ```

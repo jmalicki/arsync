@@ -1,0 +1,249 @@
+
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  dependencies:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+      with:
+        toolchain: 1.90.0
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "io-uring-sync"
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        cache-bin: "true"
+    
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-deny@0.17.0
+
+    - name: Install cargo-outdated
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-outdated@0.17
+    
+    
+    - name: Check dependencies with cargo-deny
+      run: cargo deny check
+    
+    - name: Check for outdated dependencies
+      run: cargo outdated --depth 1 --color always --exit-code 1 --ignore cargo-deny
+
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+      with:
+        toolchain: 1.90.0
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "io-uring-sync"
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        cache-bin: "true"
+    
+    - name: Check formatting
+      run: cargo fmt --all -- --check
+    
+    - name: Run clippy (strict documentation standards)
+      run: |
+        cargo clippy --all-targets --all-features -- \
+          -D warnings \
+          -D clippy::missing_docs_in_private_items \
+          -D clippy::missing_errors_doc \
+          -D clippy::missing_panics_doc \
+          -D clippy::must_use_candidate \
+          -D clippy::unwrap_used \
+          -D clippy::expect_used \
+          -D clippy::panic \
+          -D clippy::todo \
+          -D clippy::unimplemented \
+          -D clippy::unreachable
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+      with:
+        toolchain: 1.90.0
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "io-uring-sync"
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        cache-bin: "true"
+    
+    - name: Run tests
+      run: cargo test --all-features
+    
+    - name: Run integration tests
+      run: cargo test --test integration_tests
+    
+    - name: Build release
+      run: cargo build --release
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+      with:
+        toolchain: 1.90.0
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "io-uring-sync"
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        cache-bin: "true"
+  
+    - name: Install taurpalin
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-tarpaulin@0.32.8
+          
+    - name: Generate coverage report
+      run: cargo tarpaulin --all-features --out Html --output-dir coverage
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage/cobertura.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+      with:
+        toolchain: 1.90.0
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "io-uring-sync"
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        cache-bin: "true"
+    
+    - name: Install cargo-audit
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-audit@0.21
+    
+    - name: Run security audit
+      run: cargo audit
+
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+      with:
+        toolchain: 1.90.0
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "io-uring-sync"
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        cache-bin: "true"
+    
+    - name: Run benchmarks
+      run: cargo bench
+    
+    - name: Upload benchmark results to GitHub Pages
+      uses: benchmark-action/github-action-benchmark@v1
+      with:
+        tool: 'cargo'
+        output-file-path: target/criterion/
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: true
+        comment-on-alert: true
+        alert-threshold: '200%'
+        fail-on-alert: false
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
+      with:
+        toolchain: 1.90.0
+        components: rustfmt, clippy
+    
+    - name: Cache Rust dependencies and build artifacts
+      uses: Swatinem/rust-cache@v2
+      with:
+        prefix-key: "io-uring-sync"
+        cache-all-crates: "true"
+        cache-workspace-crates: "true"
+        cache-bin: "true"
+    
+    - name: Build documentation (with private items)
+      run: cargo doc --document-private-items --no-deps --all-features
+
+    - name: Check documentation links
+      run: cargo doc --document-private-items --no-deps --all-features
+    
+    - name: Deploy documentation
+      if: github.ref == 'refs/heads/main'
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./target/doc

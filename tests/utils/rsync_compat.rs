@@ -16,6 +16,7 @@ pub fn rsync_available() -> bool {
 }
 
 /// Run rsync with given flags
+#[allow(dead_code)]
 pub fn run_rsync(source: &Path, dest: &Path, flags: &[&str]) -> Result<(), String> {
     let mut cmd = StdCommand::new("rsync");
     cmd.args(flags);
@@ -35,6 +36,7 @@ pub fn run_rsync(source: &Path, dest: &Path, flags: &[&str]) -> Result<(), Strin
 }
 
 /// Run arsync with given flags
+#[allow(dead_code)]
 pub fn run_arsync(source: &Path, dest: &Path, flags: &[&str]) -> Result<(), String> {
     let mut cmd = Command::cargo_bin("arsync").unwrap();
     cmd.arg(source);
@@ -54,6 +56,7 @@ pub fn run_arsync(source: &Path, dest: &Path, flags: &[&str]) -> Result<(), Stri
 }
 
 /// Compare two files for identical metadata
+#[allow(dead_code)]
 pub fn compare_file_metadata(path1: &Path, path2: &Path, check_times: bool) -> Result<(), String> {
     let meta1 = fs::metadata(path1)
         .map_err(|e| format!("Failed to get metadata for {}: {}", path1.display(), e))?;
@@ -115,6 +118,7 @@ pub fn compare_file_metadata(path1: &Path, path2: &Path, check_times: bool) -> R
 }
 
 /// Compare two directories recursively for identical content and metadata
+#[allow(dead_code)]
 pub fn compare_directories(dir1: &Path, dir2: &Path, check_times: bool) -> Result<(), String> {
     // Get all files in both directories
     let entries1: Vec<PathBuf> = walkdir::WalkDir::new(dir1)

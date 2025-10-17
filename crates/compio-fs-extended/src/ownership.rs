@@ -66,6 +66,7 @@
 //!
 //! ```rust,no_run
 //! use compio_fs_extended::OwnershipOps;
+//! use compio::fs::File;
 //! use std::path::Path;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -315,6 +316,7 @@ pub trait OwnershipOps {
     ///
     /// ```rust,no_run
     /// use compio_fs_extended::OwnershipOps;
+    /// use compio::fs::File;
     /// use std::path::Path;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -423,6 +425,10 @@ impl OwnershipOps for File {
         // NOTE: Kernel doesn't have IORING_OP_FCHOWN - this is a kernel limitation
         // Using spawn + safe nix wrapper instead of unsafe libc
         compio::runtime::spawn(async move {
+            // SAFETY: The raw fd is valid for the duration of this call because:
+            // 1. File holds the fd open for the lifetime of the File object
+            // 2. The spawned task completes before the File is dropped
+            // We use raw fd here for 'static lifetime compatibility with spawn.
             nix_fchown(fd, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid)))
                 .map_err(|e| filesystem_error(&format!("fchown failed: {}", e)))
         })
@@ -537,7 +543,9 @@ impl OwnershipOps for File {
 
     #[cfg(windows)]
     async fn preserve_ownership_from(&self, _src: &File) -> Result<()> {
-        Err(filesystem_error("ownership preservation not supported on Windows"))
+        Err(filesystem_error(
+            "ownership preservation not supported on Windows",
+        ))
     }
 }
 

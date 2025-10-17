@@ -124,6 +124,7 @@ impl ConcurrencyConfig {
 /// Used by: `main()`, logging initialization, progress display
 #[derive(clap::Args, Debug, Clone)]
 #[command(next_help_heading = "Output Options")]
+#[allow(clippy::struct_excessive_bools)]
 pub struct OutputConfig {
     /// Show what would be copied without actually copying
     #[arg(long)]

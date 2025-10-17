@@ -29,7 +29,7 @@ mod utils;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
-use utils::{compare_directories, rsync_available, run_arsync, run_rsync};
+use utils::rsync_compat::{compare_directories, rsync_available, run_arsync, run_rsync};
 
 /// Skip all tests if rsync is not available
 /// Returns true if rsync is available, false otherwise (test should be skipped)

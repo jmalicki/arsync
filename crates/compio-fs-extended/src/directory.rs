@@ -2,6 +2,7 @@
 
 use crate::error::{directory_error, Result};
 use compio::fs::File;
+use std::os::fd::{AsFd, BorrowedFd};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
@@ -139,6 +140,11 @@ impl DirectoryFd {
         let name_owned = name.to_string();
 
         compio::runtime::spawn(async move {
+            // SAFETY: The raw fd is valid for the duration of this call because:
+            // 1. DirectoryFd holds an Arc<File> keeping the fd open
+            // 2. The spawned task completes before DirectoryFd is dropped
+            // We use raw fd here because BorrowedFd from as_fd() has a non-'static lifetime,
+            // but spawn requires 'static. This is the standard pattern for moving fds into tasks.
             nix::sys::stat::mkdirat(
                 Some(dir_fd),
                 std::path::Path::new(&name_owned),
@@ -159,6 +165,183 @@ impl DirectoryFd {
         })
         .await
         .map_err(|e| directory_error(&format!("spawn failed: {e:?}")))?
+    }
+
+    /// Set timestamps on this directory itself
+    ///
+    /// FD-based operation that sets timestamps on the directory,
+    /// avoiding path lookups and TOCTOU races. Uses `futimens(2)` internally.
+    ///
+    /// # Arguments
+    ///
+    /// * `accessed` - New access time
+    /// * `modified` - New modification time
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
+    pub async fn set_times(
+        &self,
+        accessed: std::time::SystemTime,
+        modified: std::time::SystemTime,
+    ) -> Result<()> {
+        crate::metadata::futimens_fd(self.as_file(), accessed, modified).await
+    }
+
+    /// Set permissions on this directory itself
+    ///
+    /// FD-based operation that sets permissions on the directory,
+    /// avoiding path lookups and TOCTOU races. Uses `fchmod(2)` internally.
+    ///
+    /// Matches the API of `compio::fs::File::set_permissions()`.
+    ///
+    /// # Arguments
+    ///
+    /// * `permissions` - New permissions for the directory
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
+    pub async fn set_permissions(&self, permissions: compio::fs::Permissions) -> Result<()> {
+        self.as_file()
+            .set_permissions(permissions)
+            .await
+            .map_err(|e| {
+                crate::error::directory_error(&format!("Failed to set permissions: {}", e))
+            })
+    }
+
+    /// Set ownership on this directory itself
+    ///
+    /// FD-based operation that sets ownership on the directory,
+    /// avoiding path lookups and TOCTOU races. Uses `fchown(2)` internally.
+    ///
+    /// # Arguments
+    ///
+    /// * `uid` - New user ID
+    /// * `gid` - New group ID
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
+    pub async fn set_ownership(&self, uid: u32, gid: u32) -> Result<()> {
+        use crate::ownership::OwnershipOps;
+        self.as_file()
+            .fchown(uid, gid)
+            .await
+            .map_err(|e| crate::error::directory_error(&format!("Failed to set ownership: {}", e)))
+    }
+
+    // ========================================================================
+    // Metadata operations on children (relative paths)
+    // ========================================================================
+
+    /// Get file metadata with nanosecond timestamps for a child file
+    ///
+    /// Uses io_uring `statx(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the file doesn't exist or I/O errors occur.
+    pub async fn statx(
+        &self,
+        pathname: &str,
+    ) -> Result<(std::time::SystemTime, std::time::SystemTime)> {
+        crate::metadata::statx_impl(self, pathname).await
+    }
+
+    /// Change file permissions for a child file
+    ///
+    /// Uses `fchmodat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file
+    /// * `mode` - New file permissions (e.g., 0o644)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, file not found).
+    pub async fn fchmodat(&self, pathname: &str, mode: u32) -> Result<()> {
+        crate::metadata::fchmodat_impl(self, pathname, mode).await
+    }
+
+    /// Change file timestamps for a child file
+    ///
+    /// Uses `utimensat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file
+    /// * `accessed` - New access time
+    /// * `modified` - New modification time
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, file not found).
+    pub async fn utimensat(
+        &self,
+        pathname: &str,
+        accessed: std::time::SystemTime,
+        modified: std::time::SystemTime,
+    ) -> Result<()> {
+        crate::metadata::utimensat_impl(self, pathname, accessed, modified).await
+    }
+
+    /// Change file ownership for a child file
+    ///
+    /// Uses `fchownat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file
+    /// * `uid` - New user ID
+    /// * `gid` - New group ID
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails (e.g., permission denied, file not found).
+    pub async fn fchownat(&self, pathname: &str, uid: u32, gid: u32) -> Result<()> {
+        crate::metadata::fchownat_impl(self, pathname, uid, gid).await
+    }
+
+    // ========================================================================
+    // Symlink operations on children (relative paths)
+    // ========================================================================
+
+    /// Create a symbolic link for a child
+    ///
+    /// Uses `symlinkat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Target path of the symbolic link
+    /// * `link_name` - Name of the symbolic link (relative to this directory)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the link already exists or permission is denied.
+    pub async fn symlinkat(&self, target: &str, link_name: &str) -> Result<()> {
+        crate::symlink::symlinkat_impl(self, target, link_name).await
+    }
+
+    /// Read a symbolic link for a child
+    ///
+    /// Uses `readlinkat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `link_name` - Name of the symbolic link (relative to this directory)
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the link doesn't exist or is not a symbolic link.
+    pub async fn readlinkat(&self, link_name: &str) -> Result<std::path::PathBuf> {
+        crate::symlink::readlinkat_impl(self, link_name).await
     }
 }
 
@@ -224,6 +407,12 @@ impl Clone for DirectoryFd {
             file: Arc::clone(&self.file),
             path: self.path.clone(),
         }
+    }
+}
+
+impl AsFd for DirectoryFd {
+    fn as_fd(&self) -> BorrowedFd<'_> {
+        self.file.as_fd()
     }
 }
 

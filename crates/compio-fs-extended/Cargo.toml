@@ -20,7 +20,7 @@ libc = "0.2"
 filetime = "0.2"
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Async utilities
 futures = "0.3"
@@ -32,17 +32,21 @@ log = "0.4"
 # Testing dependencies
 tempfile = "3.0"
 tokio = { version = "1.0", features = ["full"] }
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.7", features = ["html_reports"] }
 testcontainers = "0.25"
 
 [features]
-default = []
+default = ["cheap_calls_sync"]
 # Enable xattr support (requires io_uring opcodes)
 xattr = []
 # Enable performance metrics
 metrics = []
 # Enable logging integration
 logging = []
+# Call cheap metadata syscalls (chmod, chown, utimens) directly instead of spawn_blocking
+# These syscalls are typically <1μs, much faster than thread dispatch overhead (~10μs)
+# Note: Does NOT include readlinkat - that reads file data, not just metadata
+cheap_calls_sync = []
 
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = "0.7"

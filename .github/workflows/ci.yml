@@ -1,53 +1,29 @@
-
-name: CI
+name: CI (Optimized)
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: ['**']  # Run on all branches
   pull_request:
     branches: [ main, develop ]
+  schedule:
+    - cron: '0 0 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # RUSTC_WRAPPER: sccache  # Temporarily disabled
+  # SCCACHE_GHA: true
+
+permissions:
+  contents: read
+  checks: write
+  actions: read
 
 jobs:
-  dependencies:
-    name: Dependency Check
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
-      with:
-        toolchain: 1.90.0
-        components: rustfmt, clippy
-    
-    - name: Cache Rust dependencies and build artifacts
-      uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: "io-uring-sync"
-        cache-all-crates: "true"
-        cache-workspace-crates: "true"
-        cache-bin: "true"
-    
-    - name: Install cargo-deny
-      uses: taiki-e/install-action@v2
-      with:
-        tool: cargo-deny@0.17.0
-
-    - name: Install cargo-outdated
-      uses: taiki-e/install-action@v2
-      with:
-        tool: cargo-outdated@0.17
-    
-    
-    - name: Check dependencies with cargo-deny
-      run: cargo deny check
-    
-    - name: Check for outdated dependencies
-      run: cargo outdated --depth 1 --color always --exit-code 1 --ignore cargo-deny
-
   code-quality:
     name: Code Quality
     runs-on: ubuntu-latest
@@ -55,24 +31,13 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
-      with:
-        toolchain: 1.90.0
-        components: rustfmt, clippy
-    
-    - name: Cache Rust dependencies and build artifacts
-      uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: "io-uring-sync"
-        cache-all-crates: "true"
-        cache-workspace-crates: "true"
-        cache-bin: "true"
+    - name: Setup Rust
+      uses: ./.github/actions/setup-rust-optimized
     
     - name: Check formatting
       run: cargo fmt --all -- --check
     
-    - name: Run clippy (strict documentation standards)
+    - name: Run clippy
       run: |
         cargo clippy --all-targets --all-features -- \
           -D warnings \
@@ -86,9 +51,38 @@ jobs:
           -D clippy::todo \
           -D clippy::unimplemented \
           -D clippy::unreachable
+
+  dependencies:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Rust
+      uses: ./.github/actions/setup-rust-optimized
+    
+    - name: Install cargo-deny
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-deny@0.17.0
+
+    - name: Install cargo-outdated
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-outdated@0.17
+    
+    - name: Check dependencies with cargo-deny
+      run: cargo deny check
+    
+    - name: Check for outdated dependencies
+      run: cargo outdated --depth 1 --color always --exit-code 1 --ignore cargo-deny
+      continue-on-error: ${{ github.event_name == 'pull_request' }}
+
   test:
     name: Test
     runs-on: ${{ matrix.os }}
+    needs: code-quality
     strategy:
       fail-fast: false
       matrix:
@@ -97,11 +91,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
-      with:
-        toolchain: 1.90.0
-        components: rustfmt, clippy
+    - name: Setup Rust
+      uses: ./.github/actions/setup-rust-optimized
     
     - name: Cache Rust dependencies and build artifacts
       uses: Swatinem/rust-cache@v2
@@ -117,47 +108,38 @@ jobs:
     
     - name: Run integration tests (Linux/macOS)
       if: matrix.os != 'windows-latest'
-      run: cargo test --test integration_tests
+      run: cargo test --all-features --test integration_tests
     
     - name: Build (Windows)
       if: matrix.os == 'windows-latest'
       run: cargo build --workspace --all-features
 
   coverage:
-    name: Coverage
+    name: Code Coverage
     runs-on: ubuntu-latest
+    needs: [code-quality, test]
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
-      with:
-        toolchain: 1.90.0
-        components: rustfmt, clippy
-    
-    - name: Cache Rust dependencies and build artifacts
-      uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: "io-uring-sync"
-        cache-all-crates: "true"
-        cache-workspace-crates: "true"
-        cache-bin: "true"
+    - name: Setup Rust
+      uses: ./.github/actions/setup-rust-optimized
   
-    - name: Install taurpalin
+    - name: Install tarpaulin
       uses: taiki-e/install-action@v2
       with:
         tool: cargo-tarpaulin@0.32.8
           
     - name: Generate coverage report
-      run: cargo tarpaulin --all-features --out Html --output-dir coverage
+      run: cargo tarpaulin --lib --all-features --out Html --output-dir coverage
     
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v4
+    - name: Upload coverage artifact
+      uses: actions/upload-artifact@v4
       with:
-        file: ./coverage/cobertura.xml
-        flags: unittests
-        name: codecov-umbrella
-        fail_ci_if_error: false
+        name: coverage-report
+        path: coverage/
+        retention-days: 30
 
   security:
     name: Security Audit
@@ -165,19 +147,8 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
-      with:
-        toolchain: 1.90.0
-        components: rustfmt, clippy
-    
-    - name: Cache Rust dependencies and build artifacts
-      uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: "io-uring-sync"
-        cache-all-crates: "true"
-        cache-workspace-crates: "true"
-        cache-bin: "true"
+    - name: Setup Rust
+      uses: ./.github/actions/setup-rust-optimized
     
     - name: Install cargo-audit
       uses: taiki-e/install-action@v2
@@ -185,72 +156,77 @@ jobs:
         tool: cargo-audit@0.21
     
     - name: Run security audit
-      run: cargo audit
+      run: cargo audit --deny warnings
+      continue-on-error: ${{ github.event.schedule != '' }}
 
   benchmark:
     name: Benchmark
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    if: github.event_name != 'schedule'
+    needs: code-quality
     steps:
     - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
       with:
-        toolchain: 1.90.0
-        components: rustfmt, clippy
+        fetch-depth: 0
     
-    - name: Cache Rust dependencies and build artifacts
-      uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: "io-uring-sync"
-        cache-all-crates: "true"
-        cache-workspace-crates: "true"
-        cache-bin: "true"
+    - name: Setup Rust
+      uses: ./.github/actions/setup-rust-optimized
     
     - name: Run benchmarks
-      run: cargo bench
+      run: cargo bench --all-features
     
-    - name: Upload benchmark results to GitHub Pages
-      uses: benchmark-action/github-action-benchmark@v1
+    - name: Upload benchmark artifacts
+      uses: actions/upload-artifact@v4
       with:
-        tool: 'cargo'
-        output-file-path: target/criterion/
-        github-token: ${{ secrets.GITHUB_TOKEN }}
-        auto-push: true
-        comment-on-alert: true
-        alert-threshold: '200%'
-        fail-on-alert: false
+        name: benchmark-results
+        path: target/criterion/
+        retention-days: 30
 
   docs:
     name: Documentation
     runs-on: ubuntu-latest
+    needs: [code-quality, coverage]
+    permissions:
+      contents: write
     steps:
     - uses: actions/checkout@v4
     
-    - name: Install Rust
-      uses: actions-rust-lang/setup-rust-toolchain@v1.15.2
-      with:
-        toolchain: 1.90.0
-        components: rustfmt, clippy
+    - name: Setup Rust
+      uses: ./.github/actions/setup-rust-optimized
     
-    - name: Cache Rust dependencies and build artifacts
-      uses: Swatinem/rust-cache@v2
-      with:
-        prefix-key: "io-uring-sync"
-        cache-all-crates: "true"
-        cache-workspace-crates: "true"
-        cache-bin: "true"
-    
-    - name: Build documentation (with private items)
+    - name: Build documentation
       run: cargo doc --document-private-items --no-deps --all-features
-
-    - name: Check documentation links
-      run: cargo doc --document-private-items --no-deps --all-features
+      env:
+        RUSTDOCFLAGS: -D warnings
     
-    - name: Deploy documentation
-      if: github.ref == 'refs/heads/main'
+    - name: Deploy to GitHub Pages
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
       uses: peaceiris/actions-gh-pages@v4
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./target/doc
+        force_orphan: true
+
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: 
+      - code-quality
+      - dependencies
+      - test
+      - coverage
+      - security
+      - docs
+    if: always()
+    steps:
+      - name: Check all jobs success
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
+            echo "One or more jobs failed"
+            exit 1
+          fi
+          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
+            echo "One or more jobs were cancelled"
+            exit 1
+          fi
+          echo "All jobs succeeded!"

@@ -1,9 +1,9 @@
 //! Symlink operations for creating and reading symbolic links
 
-use crate::error::{symlink_error, ExtendedError, Result};
-use compio::fs::File;
+use crate::error::{symlink_error, Result};
 #[cfg(target_os = "linux")]
 use compio::driver::OpCode;
+use compio::fs::File;
 #[cfg(target_os = "linux")]
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
@@ -127,12 +127,13 @@ pub trait SymlinkOps {
     /// ```rust,no_run
     /// use compio_fs_extended::{ExtendedFile, SymlinkOps};
     /// use compio::fs::File;
+    /// use std::path::Path;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let file = File::create("new_symlink.txt").await?;
     /// let extended_file = ExtendedFile::new(file);
     ///
-    /// extended_file.create_symlink("target.txt").await?;
+    /// extended_file.create_symlink(Path::new("target.txt")).await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -165,176 +166,62 @@ pub async fn create_symlink_impl(_file: &File, _target: &Path) -> Result<()> {
     ))
 }
 
-/// Create a symbolic link at the given path
-///
-/// # Arguments
-///
-/// * `link_path` - Path where the symbolic link will be created
-/// * `target` - Target path for the symbolic link
-///
-/// # Returns
-///
-/// `Ok(())` if the symbolic link was created successfully
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - The link path already exists
-/// - The target path is invalid
-/// - Permission is denied
-/// - The operation fails due to I/O errors
-// Note: io_uring symlink operations removed - using secure *at variants instead
-///   Create a symbolic link using io_uring with DirectoryFd (secure)
-///
-/// # Arguments
-///
-/// * `dir_fd` - Directory file descriptor for secure operation
-/// * `target` - Target path for the symbolic link
-/// * `link_name` - Name of the symbolic link relative to the directory
-///
-/// # Returns
-///
-/// `Ok(())` if the symbolic link was created successfully
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - The link name is invalid
-/// - Permission is denied
-/// - The operation fails due to I/O errors
-///
-/// # Example
-///
-/// ```rust,no_run
-/// use compio_fs_extended::{directory::DirectoryFd, symlink::create_symlink_at_dirfd};
-/// use std::path::Path;
-///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let dir_fd = DirectoryFd::open(Path::new("/some/directory")).await?;
-/// create_symlink_at_dirfd(&dir_fd, "target_file", "my_link").await?;
-/// # Ok(())
-/// # }
-/// ```
-pub async fn create_symlink_at_dirfd(
-    dir_fd: &crate::directory::DirectoryFd,
-    target: &str,
-    link_name: &str,
-) -> Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        // Submit io_uring symlink operation using compio's runtime with DirectoryFd
-        let result = submit(SymlinkOp::new_with_dirfd(dir_fd, target, link_name)?).await;
-        match result.0 {
-            Ok(_) => Ok(()),
-            Err(e) => Err(symlink_error(&e.to_string())),
-        }
-    }
-    #[cfg(target_os = "macos")]
-    {
-        // Create symlink via std on Darwin
-        let base = dir_fd.path().to_path_buf();
-        let target = target.to_string();
-        let link_name = link_name.to_string();
-        compio::runtime::spawn(async move {
-            std::os::unix::fs::symlink(target, base.join(link_name))
-                .map_err(|e| symlink_error(&e.to_string()))
-        })
-        .await
-        .map_err(ExtendedError::SpawnJoin)?
-    }
-    #[cfg(target_os = "windows")]
-    {
-        use std::path::PathBuf;
-        use std::os::windows::fs::{symlink_dir, symlink_file};
-        let base = dir_fd.path().to_path_buf();
-        let target = target.to_string();
-        let link_name = link_name.to_string();
-        compio::runtime::spawn(async move {
-            let target_path = PathBuf::from(&target);
-            let full_link = base.join(&link_name);
-            // Try file symlink first; if it fails, try dir symlink
-            match symlink_file(&target_path, &full_link) {
-                Ok(_) => Ok(()),
-                Err(file_err) => {
-                    symlink_dir(&target_path, &full_link)
-                        .map_err(|dir_err| symlink_error(&format!("symlink failed: file={file_err}, dir={dir_err}")))
-                }
-            }
-        })
-        .await
-        .map_err(ExtendedError::SpawnJoin)?
-    }
-}
-
 // Note: Basic symlink operations are provided by std::fs or compio::fs
 // This module focuses on io_uring operations and secure *at variants
 
-// Note: Basic readlink operations are provided by std::fs or compio::fs
-// This module focuses on io_uring operations and secure *at variants
+/// Create a symbolic link using DirectoryFd
+///
+/// Uses io_uring `symlinkat(2)` with directory FD and relative path.
+pub(crate) async fn symlinkat_impl(
+    dir: &crate::directory::DirectoryFd,
+    target: &str,
+    link_name: &str,
+) -> Result<()> {
+    let target_cstr =
+        CString::new(target).map_err(|e| symlink_error(&format!("Invalid target: {}", e)))?;
+    let link_path_cstr =
+        CString::new(link_name).map_err(|e| symlink_error(&format!("Invalid link name: {}", e)))?;
 
-/// Read the target of a symbolic link using DirectoryFd (secure)
+    let op = SymlinkOp {
+        target: target_cstr,
+        link_path: link_path_cstr,
+        dir_fd: Some(dir.as_raw_fd()),
+    };
+
+    // Submit io_uring symlink operation
+    let result = submit(op).await;
+
+    match result.0 {
+        Ok(_) => Ok(()),
+        Err(e) => Err(symlink_error(&e.to_string())),
+    }
+}
+
+/// Read a symbolic link using DirectoryFd
 ///
-/// # Arguments
+/// Uses `readlinkat(2)` with directory FD and relative path.
 ///
-/// * `dir_fd` - Directory file descriptor for secure operation
-/// * `link_name` - Name of the symbolic link relative to the directory
-///
-/// # Returns
-///
-/// The target path of the symbolic link
-///
-/// # Errors
-///
-/// This function will return an error if:
-/// - The path is not a symbolic link
-/// - The symbolic link is broken
-/// - The operation fails due to I/O errors
-///
-/// # Example
-///
-/// ```rust,no_run
-/// use compio_fs_extended::{directory::DirectoryFd, symlink::read_symlink_at_dirfd};
-/// use std::path::Path;
-///
-/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-/// let dir_fd = DirectoryFd::open(Path::new("/some/directory")).await?;
-/// let target = read_symlink_at_dirfd(&dir_fd, "my_link").await?;
-/// # Ok(())
-/// # }
-/// ```
-#[cfg(unix)]
-pub async fn read_symlink_at_dirfd(
-    dir_fd: &crate::directory::DirectoryFd,
+/// Note: Always uses spawn_blocking (not affected by cheap_calls_sync) because
+/// readlinkat actually reads file data (the symlink target), not just metadata.
+/// While typically fast, symlink targets can be up to PATH_MAX (4096 bytes) and
+/// may require disk I/O on some filesystems.
+pub(crate) async fn readlinkat_impl(
+    dir: &crate::directory::DirectoryFd,
     link_name: &str,
 ) -> Result<std::path::PathBuf> {
     let link_name = link_name.to_string();
-    let dir_fd_raw = dir_fd.as_raw_fd();
-    let os_string = compio::runtime::spawn(async move {
-        fcntl::readlinkat(Some(dir_fd_raw), std::path::Path::new(&link_name))
+    let dir_fd = dir.as_raw_fd();
+
+    let os_string = compio::runtime::spawn_blocking(move || {
+        fcntl::readlinkat(Some(dir_fd), std::path::Path::new(&link_name))
     })
     .await
-    .map_err(ExtendedError::SpawnJoin)?;
+    .map_err(crate::error::ExtendedError::SpawnJoin)?;
+
     Ok(std::path::PathBuf::from(
         os_string.map_err(|e| symlink_error(&e.to_string()))?,
     ))
 }
-
-#[cfg(target_os = "windows")]
-pub async fn read_symlink_at_dirfd(
-    dir_fd: &crate::directory::DirectoryFd,
-    link_name: &str,
-) -> Result<std::path::PathBuf> {
-    let base = dir_fd.path().to_path_buf();
-    let name = link_name.to_string();
-    compio::runtime::spawn(async move {
-        std::fs::read_link(base.join(name)).map_err(|e| symlink_error(&e.to_string()))
-    })
-    .await
-    .map_err(ExtendedError::SpawnJoin)?
-}
-
-// Note: Basic symlink operations like is_symlink, is_broken_symlink are provided by std::fs
-// This module focuses on io_uring operations and secure *at variants
 
 #[cfg(test)]
 mod tests {
@@ -364,9 +251,7 @@ mod tests {
             fs::remove_file(&link_path).unwrap();
         }
 
-        create_symlink_at_dirfd(&dir_fd, "target.txt", link_name)
-            .await
-            .unwrap();
+        dir_fd.symlinkat("target.txt", link_name).await.unwrap();
 
         // Verify the symlink was created using std::fs
         assert!(link_path.is_symlink());
@@ -398,12 +283,10 @@ mod tests {
             fs::remove_file(&link_path).unwrap();
         }
 
-        create_symlink_at_dirfd(&dir_fd, "target.txt", link_name)
-            .await
-            .unwrap();
+        dir_fd.symlinkat("target.txt", link_name).await.unwrap();
 
         // Test secure symlink reading using DirectoryFd
-        let target = read_symlink_at_dirfd(&dir_fd, link_name).await.unwrap();
+        let target = dir_fd.readlinkat(link_name).await.unwrap();
         assert_eq!(target, std::path::PathBuf::from("target.txt"));
     }
 
@@ -474,12 +357,12 @@ mod tests {
             .unwrap();
 
         // Test invalid target (null bytes)
-        let result = create_symlink_at_dirfd(&dir_fd, "target\x00invalid", "link").await;
+        let result = dir_fd.symlinkat("target\x00invalid", "link").await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Invalid target"));
 
         // Test invalid link name (null bytes)
-        let result = create_symlink_at_dirfd(&dir_fd, "target", "link\x00invalid").await;
+        let result = dir_fd.symlinkat("target", "link\x00invalid").await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -487,11 +370,11 @@ mod tests {
             .contains("Invalid link name"));
 
         // Test empty target
-        let _result = create_symlink_at_dirfd(&dir_fd, "", "link").await;
+        let _result = dir_fd.symlinkat("", "link").await;
         // This might succeed or fail depending on filesystem, both are acceptable
 
         // Test empty link name
-        let result = create_symlink_at_dirfd(&dir_fd, "target", "").await;
+        let result = dir_fd.symlinkat("target", "").await;
         assert!(result.is_err());
         // The error might be "Invalid link name" or filesystem-specific error
         let error_msg = result.unwrap_err().to_string();
@@ -511,40 +394,36 @@ mod tests {
             .unwrap();
 
         // Test symlink with relative path
-        create_symlink_at_dirfd(&dir_fd, "./target.txt", "relative_link")
+        dir_fd
+            .symlinkat("./target.txt", "relative_link")
             .await
             .unwrap();
-        let target = read_symlink_at_dirfd(&dir_fd, "relative_link")
-            .await
-            .unwrap();
+        let target = dir_fd.readlinkat("relative_link").await.unwrap();
         assert_eq!(target, std::path::PathBuf::from("./target.txt"));
 
         // Test symlink with absolute path (if temp_dir allows)
         let abs_target = format!("{}/target.txt", temp_dir.path().display());
-        create_symlink_at_dirfd(&dir_fd, &abs_target, "absolute_link")
+        dir_fd
+            .symlinkat(&abs_target, "absolute_link")
             .await
             .unwrap();
-        let target = read_symlink_at_dirfd(&dir_fd, "absolute_link")
-            .await
-            .unwrap();
+        let target = dir_fd.readlinkat("absolute_link").await.unwrap();
         assert_eq!(target, std::path::PathBuf::from(&abs_target));
 
         // Test symlink with special characters
-        create_symlink_at_dirfd(&dir_fd, "target with spaces.txt", "special_link")
+        dir_fd
+            .symlinkat("target with spaces.txt", "special_link")
             .await
             .unwrap();
-        let target = read_symlink_at_dirfd(&dir_fd, "special_link")
-            .await
-            .unwrap();
+        let target = dir_fd.readlinkat("special_link").await.unwrap();
         assert_eq!(target, std::path::PathBuf::from("target with spaces.txt"));
 
         // Test symlink with unicode characters
-        create_symlink_at_dirfd(&dir_fd, "target_🚀.txt", "unicode_link")
+        dir_fd
+            .symlinkat("target_🚀.txt", "unicode_link")
             .await
             .unwrap();
-        let target = read_symlink_at_dirfd(&dir_fd, "unicode_link")
-            .await
-            .unwrap();
+        let target = dir_fd.readlinkat("unicode_link").await.unwrap();
         assert_eq!(target, std::path::PathBuf::from("target_🚀.txt"));
     }
 
@@ -560,12 +439,13 @@ mod tests {
         fs::write(&target_path, "target content").unwrap();
 
         // Create symlink first time
-        create_symlink_at_dirfd(&dir_fd, "target.txt", "existing_link")
+        dir_fd
+            .symlinkat("target.txt", "existing_link")
             .await
             .unwrap();
 
         // Try to create same symlink again (should fail)
-        let result = create_symlink_at_dirfd(&dir_fd, "target.txt", "existing_link").await;
+        let result = dir_fd.symlinkat("target.txt", "existing_link").await;
         assert!(result.is_err());
     }
 
@@ -577,7 +457,7 @@ mod tests {
             .unwrap();
 
         // Try to read symlink that doesn't exist
-        let result = read_symlink_at_dirfd(&dir_fd, "nonexistent_link").await;
+        let result = dir_fd.readlinkat("nonexistent_link").await;
         assert!(result.is_err());
     }
 
@@ -595,14 +475,12 @@ mod tests {
         // Create multiple symlinks
         let links = ["link1", "link2", "link3"];
         for link_name in &links {
-            create_symlink_at_dirfd(&dir_fd, "target.txt", link_name)
-                .await
-                .unwrap();
+            dir_fd.symlinkat("target.txt", link_name).await.unwrap();
         }
 
         // Read all symlinks
         for link_name in &links {
-            let target = read_symlink_at_dirfd(&dir_fd, link_name).await.unwrap();
+            let target = dir_fd.readlinkat(link_name).await.unwrap();
             assert_eq!(target, std::path::PathBuf::from("target.txt"));
         }
     }
@@ -619,12 +497,10 @@ mod tests {
         std::fs::create_dir(&target_dir).unwrap();
 
         // Create symlink pointing to directory
-        create_symlink_at_dirfd(&dir_fd, "target_dir", "dir_link")
-            .await
-            .unwrap();
+        dir_fd.symlinkat("target_dir", "dir_link").await.unwrap();
 
         // Read the symlink
-        let target = read_symlink_at_dirfd(&dir_fd, "dir_link").await.unwrap();
+        let target = dir_fd.readlinkat("dir_link").await.unwrap();
         assert_eq!(target, std::path::PathBuf::from("target_dir"));
     }
 
@@ -637,12 +513,10 @@ mod tests {
 
         // Create a very long target path
         let long_target = "a".repeat(255); // POSIX path limit is usually 255 chars
-        create_symlink_at_dirfd(&dir_fd, &long_target, "long_link")
-            .await
-            .unwrap();
+        dir_fd.symlinkat(&long_target, "long_link").await.unwrap();
 
         // Read the symlink
-        let target = read_symlink_at_dirfd(&dir_fd, "long_link").await.unwrap();
+        let target = dir_fd.readlinkat("long_link").await.unwrap();
         assert_eq!(target, std::path::PathBuf::from(&long_target));
     }
 

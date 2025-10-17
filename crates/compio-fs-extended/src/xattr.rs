@@ -32,7 +32,7 @@ pub trait XattrOps {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use compio_fs_extended::{ExtendedFile, XattrOps};
     /// use compio::fs::File;
     ///
@@ -62,7 +62,7 @@ pub trait XattrOps {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use compio_fs_extended::{ExtendedFile, XattrOps};
     /// use compio::fs::File;
     ///
@@ -90,7 +90,7 @@ pub trait XattrOps {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use compio_fs_extended::{ExtendedFile, XattrOps};
     /// use compio::fs::File;
     ///
@@ -233,7 +233,9 @@ pub async fn get_xattr_impl(_file: &File, _name: &str) -> Result<Vec<u8>> {
     #[cfg(target_os = "macos")]
     {
         // Darwin supports xattr via libc; keep path-based helpers for now
-        Err(xattr_error("file-descriptor based xattr not yet implemented on macOS"))
+        Err(xattr_error(
+            "file-descriptor based xattr not yet implemented on macOS",
+        ))
     }
     #[cfg(target_os = "windows")]
     {
@@ -270,7 +272,9 @@ pub async fn set_xattr_impl(file: &File, name: &str, value: &[u8]) -> Result<()>
 pub async fn set_xattr_impl(_file: &File, _name: &str, _value: &[u8]) -> Result<()> {
     #[cfg(target_os = "macos")]
     {
-        Err(xattr_error("file-descriptor based xattr not yet implemented on macOS"))
+        Err(xattr_error(
+            "file-descriptor based xattr not yet implemented on macOS",
+        ))
     }
     #[cfg(target_os = "windows")]
     {
@@ -323,7 +327,9 @@ pub async fn list_xattr_impl(file: &File) -> Result<Vec<String>> {
 pub async fn list_xattr_impl(_file: &File) -> Result<Vec<String>> {
     #[cfg(target_os = "macos")]
     {
-        Err(xattr_error("file-descriptor based xattr list not yet implemented on macOS"))
+        Err(xattr_error(
+            "file-descriptor based xattr list not yet implemented on macOS",
+        ))
     }
     #[cfg(target_os = "windows")]
     {

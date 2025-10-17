@@ -101,6 +101,240 @@ cargo tarpaulin --out Html
 cargo bench
 ```
 
+## Cursor AI Development Workflow (Preferred)
+
+This project includes comprehensive Cursor AI slash commands to streamline development. This is the **preferred workflow** for implementing features and fixes.
+
+### Overview
+
+The Cursor workflow provides an AI-assisted development cycle:
+
+1. **`/design`** - Create design documents from conversations
+2. **`/plan`** - Generate phased implementation plans with checkboxes
+3. **`/implement`** - Execute plans step-by-step with automatic quality checks
+4. Complete with commits and PRs using workflow commands
+
+### Complete Feature Development Cycle
+
+```bash
+# 1. CREATE BRANCH FOR DESIGN WORK
+/branch "sparse-files/design" main origin true
+# Create separate branch for design/planning phase
+
+# 2. DISCUSS & DESIGN
+# Have a conversation about the feature/problem
+# "I want to add support for sparse files to optimize disk usage"
+# [Discuss approach, trade-offs, constraints...]
+
+/design
+# Creates: docs/projects/sparse-file-support/design.md
+# Extracts: problem, solution, alternatives, complexity from conversation
+
+/commit "docs(sparse-files): add design document"
+
+# 3. CREATE IMPLEMENTATION PLAN
+/plan
+# Auto-finds: docs/projects/sparse-file-support/design.md
+# Creates: docs/projects/sparse-file-support/plan.md
+# Generates: phases with checkboxes, quality checks, test requirements
+
+/commit "docs(sparse-files): add implementation plan"
+
+# 4. GET DESIGN REVIEWED
+/pr-ready "docs: sparse file support design and plan"
+# Review design before implementing
+# Merge design to main after approval
+
+# 5. CREATE IMPLEMENTATION BRANCH
+/branch "copy/feat-sparse-files" main origin true
+# Fresh branch from main (now has approved design)
+
+# 6. IMPLEMENT STEP-BY-STEP
+/implement
+# Auto-finds: docs/projects/sparse-file-support/plan.md
+# Reads checkboxes, finds next unchecked item
+# Implements it, runs quality checks
+# Updates checkbox, adds notes if issues occur
+# Commits at logical checkpoints
+
+# 7. CONTINUE IMPLEMENTING
+/implement
+# Resumes from last checkpoint
+# Works through remaining items
+# Integrates /fmt, /clippy, /test, /smoke automatically
+
+# 8. CREATE IMPLEMENTATION PR
+/review                      # Review all changes
+/commit "feat(copy): add sparse file support"
+/pr-ready "feat(copy): add sparse file support"
+/pr-checks                   # Monitor CI, auto-fix failures
+```
+
+### Available Slash Commands
+
+#### Planning & Design
+- **`/design`** - Generate design document from conversation
+  - Auto-infers project name and content from context
+  - Creates `docs/projects/PROJECT_NAME/design.md`
+  - Includes: problem statement, architecture, testing strategy, complexity
+
+- **`/plan`** - Create phased implementation plan
+  - Auto-discovers design.md in project folder or infers from context
+  - Creates `docs/projects/PROJECT_NAME/plan.md`
+  - Generates phases with checkboxes, quality checks, test items
+
+- **`/implement`** - Execute implementation plan
+  - Reads checkboxes to track progress
+  - Implements next unchecked items
+  - Runs quality checks (`/fmt`, `/clippy`, `/test`)
+  - Adds notes without modifying steps
+  - Commits at checkpoints
+
+#### Git & GitHub
+- **`/branch`** - Create branch from remote without checking out base
+- **`/commit`** - Conventional commit with pre-commit checks
+- **`/pr`** - Create PR with structured template
+- **`/pr-ready`** - Push and ensure PR exists
+- **`/pr-checks`** - Watch CI checks
+- **`/ci-latest`** - Show recent CI runs
+- **`/review`** - Review changes and highlight risks
+
+#### Code Quality
+- **`/fmt`** - Format with rustfmt
+- **`/clippy`** - Run linter with auto-fix option
+- **`/test`** - Run tests with patterns
+- **`/smoke`** - Quick smoke tests
+- **`/clean`** - Clean build artifacts
+- **`/docs`** - Build and open documentation
+
+#### Build & Test
+- **`/build`** - Build with specified profile
+- **`/bench`** - Run benchmark suites
+- **`/smoke`** - Quick functionality validation
+
+#### Release
+- **`/workflow-audit`** - Audit GitHub Actions
+- **`/release-check`** - Pre-release verification
+
+### Design Document Structure
+
+Design documents (`docs/designs/`) include:
+- **Problem Statement** - Current situation and challenges
+- **Proposed Solution** - Architecture and approach
+- **API Design** - Public/internal APIs
+- **Implementation Details** - Files to change, complexity assessment
+- **Testing Strategy** - Unit, integration, performance tests
+- **Performance Considerations** - Expected impact
+- **Security Considerations** - Threats and mitigations
+- **Alternatives Considered** - Other approaches and why not chosen
+- **Acceptance Criteria** - Definition of done
+
+### Implementation Plan Structure
+
+Implementation plans (`docs/implementation-plans/`) include:
+- **Phases** - 1-6 phases based on complexity
+- **Checkboxes** - Each step has `[ ]` or `[x]` status
+- **Quality Checks** - Integrated slash commands
+- **Test Requirements** - Specific tests to write
+- **File Changes** - Exact files and line numbers
+- **PR Preparation** - Final checks before PR
+
+### Progress Tracking with `/implement`
+
+The `/implement` command:
+1. **Reads checkboxes** - Finds where you left off
+2. **Executes next step** - Follows plan instructions
+3. **Runs quality checks** - Automatic `/fmt`, `/clippy`, `/test`
+4. **Updates plan** - Checks box when complete
+5. **Adds notes** - Documents issues without editing steps
+
+Example progress tracking:
+```markdown
+## Phase 2: Implementation
+- [x] Create base structure
+- [x] Add validation logic
+  **Note**: Added custom validator for edge cases. See src/validator.rs.
+- [ ] Implement error handling  ← NEXT
+- [ ] Add integration tests
+```
+
+### Example Workflows
+
+#### New Feature
+```bash
+# Design phase
+/branch "feature/design" main origin true  # Branch for design
+/design "feature-name"                     # Document design
+/commit "docs(feature): add design"
+/plan                                      # Create plan
+/commit "docs(feature): add plan"
+/pr-ready "docs: feature design"           # Get design reviewed
+
+# Implementation phase (after design approved)
+/branch "area/feat-name" main origin true  # Branch for work
+/implement                                 # Start implementing
+/implement                                 # Continue
+/pr-ready "feat(area): name"              # Create PR
+```
+
+#### Bug Fix
+```bash
+# Analyze bug in conversation
+/design "bug-fix-name"         # Document root cause and solution
+/plan                          # Plan the fix
+/branch "area/fix-name"        # Create branch
+/implement                     # Execute fix
+/test "affected_module"        # Verify fix
+/pr-ready "fix(area): name"    # Create PR
+```
+
+#### Refactoring
+```bash
+# Discuss refactoring goals
+/design                        # Document approach
+/plan                          # Break into phases
+/branch "area/refactor-name"   # Create branch
+/implement                     # Refactor step by step
+/bench true false              # Verify no regression
+/pr-ready "refactor: name"     # Create PR
+```
+
+### Integration with Conventional Commits
+
+All slash commands enforce Conventional Commits:
+- `/commit` validates format
+- `/pr` uses conventional titles
+- Proper scopes for this project:
+  - `copy`: File copying operations
+  - `sync`: Synchronization logic
+  - `metadata`: Metadata preservation
+  - `io_uring`: io_uring operations
+  - `cli`: Command-line interface
+  - `test`: Test infrastructure
+  - `bench`: Benchmarking
+
+### Integration with Testing
+
+Plans include test requirements:
+- Unit tests with specific test cases
+- Integration tests for end-to-end scenarios
+- Performance benchmarks where applicable
+- `/implement` runs tests automatically
+
+### Benefits of Cursor Workflow
+
+1. **Structured Planning** - No work starts without a plan
+2. **Progress Tracking** - Checkboxes show exactly where you are
+3. **Quality Built-in** - Tests and checks at every step
+4. **Documentation** - Design and plan are artifacts
+5. **Consistency** - Same workflow for all changes
+6. **Context Preservation** - Plans capture decisions and rationale
+7. **Collaboration** - Plans can be reviewed before implementation
+
+### Command Reference
+
+See `.cursor/commands/README.md` for complete documentation of all slash commands.
+
 ## Development Workflow
 
 ### 1. Setup Development Environment
@@ -122,6 +356,17 @@ pre-commit install
 
 ### 2. Making Changes
 
+**Preferred (with Cursor):**
+```bash
+# Use the Cursor workflow (see section above)
+/design                  # Design first
+/plan                    # Plan the work
+/branch "area/type-name" # Create branch
+/implement               # Execute plan
+/pr-ready "type: desc"   # Create PR
+```
+
+**Alternative (manual):**
 ```bash
 # Create feature branch
 git checkout -b feature/your-feature-name
@@ -368,6 +613,14 @@ We follow the [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-
 
 This project is licensed under the MIT OR Apache-2.0 license.
 
+## Cursor Commands Documentation
+
+For complete documentation of all Cursor slash commands, see:
+- `.cursor/commands/README.md` - Overview and examples
+- `.cursor/commands/*.md` - Individual command documentation
+- `docs/designs/` - Design documents
+- `docs/implementation-plans/` - Implementation plans
+
 ## References
 
 - [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
@@ -378,3 +631,4 @@ This project is licensed under the MIT OR Apache-2.0 license.
 - [Rust Error Handling](https://doc.rust-lang.org/book/ch09-00-error-handling.html)
 - [Async Rust Best Practices](https://rust-lang.github.io/async-book/)
 - [Criterion.rs Documentation](https://docs.rs/criterion/)
+- [Cursor AI Documentation](https://cursor.sh/)

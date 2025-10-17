@@ -159,7 +159,14 @@ pub async fn fallocate(file: &File, offset: u64, len: u64, _mode: u32) -> Result
             fst_bytesalloc: 0,
         };
         let rc = unsafe { libc::fcntl(fd, libc::F_PREALLOCATE, &fstore) };
-        if rc == -1 { Err(fallocate_error(&format!("F_PREALLOCATE failed: {}", std::io::Error::last_os_error()))) } else { Ok(()) }
+        if rc == -1 {
+            Err(fallocate_error(&format!(
+                "F_PREALLOCATE failed: {}",
+                std::io::Error::last_os_error()
+            )))
+        } else {
+            Ok(())
+        }
     })
     .await
     .map_err(|e| fallocate_error(&format!("spawn failed: {e:?}")))?
@@ -170,14 +177,31 @@ pub async fn fallocate(file: &File, _offset: u64, len: u64, _mode: u32) -> Resul
     // Preallocate via FILE_ALLOCATION_INFO; extend logical size via SetEndOfFile if needed.
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::BOOL;
-    use windows_sys::Win32::Storage::FileSystem::{SetEndOfFile, SetFileInformationByHandle, FILE_ALLOCATION_INFO};
+    use windows_sys::Win32::Storage::FileSystem::{
+        SetEndOfFile, SetFileInformationByHandle, FILE_ALLOCATION_INFO,
+    };
     let handle = file.as_raw_handle();
     // Safety: construct allocation info
-    let alloc = FILE_ALLOCATION_INFO { AllocationSize: len as i64 };
-    let ok: BOOL = unsafe { SetFileInformationByHandle(handle as _, 19 /*FileAllocationInfo*/, &alloc as *const _ as _, std::mem::size_of::<FILE_ALLOCATION_INFO>() as u32) };
-    if ok == 0 { return Err(fallocate_error("SetFileInformationByHandle(FileAllocationInfo) failed")); }
+    let alloc = FILE_ALLOCATION_INFO {
+        AllocationSize: len as i64,
+    };
+    let ok: BOOL = unsafe {
+        SetFileInformationByHandle(
+            handle as _,
+            19, /*FileAllocationInfo*/
+            &alloc as *const _ as _,
+            std::mem::size_of::<FILE_ALLOCATION_INFO>() as u32,
+        )
+    };
+    if ok == 0 {
+        return Err(fallocate_error(
+            "SetFileInformationByHandle(FileAllocationInfo) failed",
+        ));
+    }
     let ok2: BOOL = unsafe { SetEndOfFile(handle as _) };
-    if ok2 == 0 { return Err(fallocate_error("SetEndOfFile failed")); }
+    if ok2 == 0 {
+        return Err(fallocate_error("SetEndOfFile failed"));
+    }
     Ok(())
 }
 
@@ -245,13 +269,10 @@ mod tests {
 
         // Test fallocate
         let result = fallocate(&file, 0, 1024, mode::DEFAULT).await;
-        match result {
-            Ok(_) => println!("fallocate succeeded"),
-            Err(e) => {
-                println!("fallocate failed: {}", e);
-                panic!("fallocate failed: {}", e);
-            }
+        if let Err(ref e) = result {
+            println!("fallocate failed: {}", e);
         }
+        assert!(result.is_ok(), "fallocate should succeed");
     }
 
     #[compio::test]

@@ -37,7 +37,7 @@ pub trait CopyFileRange {
     /// # Example
     ///
     /// ```rust,no_run
-    /// use compio_fs_extended::ExtendedFile;
+    /// use compio_fs_extended::{ExtendedFile, CopyFileRange};
     /// use compio::fs::File;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -184,7 +184,7 @@ pub async fn copy_file_range_with_fallback(
     let mut src_off = src_offset;
     let mut dst_off = dst_offset;
     let mut total: usize = 0;
-    let mut src_clone = src.clone();
+    let src_clone = src.clone();
     let mut dst_clone = dst.clone();
     let chunk: usize = 1 << 20; // 1 MiB
 
@@ -192,9 +192,13 @@ pub async fn copy_file_range_with_fallback(
         let to_read = remaining.min(chunk as u64) as usize;
         let read_buf = vec![0u8; to_read];
         let res = src_clone.read_at(read_buf, src_off).await;
-        let (n, mut read_buf) = match res.0 {
+        let (n, read_buf) = match res.0 {
             Ok(n) => (n, res.1),
-            Err(e) => return Err(copy_file_range_error(&format!("fallback read_at failed: {e}"))),
+            Err(e) => {
+                return Err(copy_file_range_error(&format!(
+                    "fallback read_at failed: {e}"
+                )))
+            }
         };
         if n == 0 {
             break;
@@ -206,7 +210,9 @@ pub async fn copy_file_range_with_fallback(
         }
         let wres = dst_clone.write_at(write_buf, dst_off).await;
         if let Err(e) = wres.0 {
-            return Err(copy_file_range_error(&format!("fallback write_at failed: {e}")));
+            return Err(copy_file_range_error(&format!(
+                "fallback write_at failed: {e}"
+            )));
         }
         src_off += n as u64;
         dst_off += n as u64;

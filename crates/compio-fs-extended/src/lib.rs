@@ -15,7 +15,7 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use compio_fs_extended::ExtendedFile;
+//! use compio_fs_extended::{ExtendedFile, CopyFileRange};
 //! use compio::fs::File;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

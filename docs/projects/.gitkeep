@@ -1,0 +1,12 @@
+# Internal Development Documentation
+
+This directory contains **internal development documentation only**.
+
+User-facing documentation belongs in the `docs/` root directory.
+
+Examples:
+- ✅ Internal: design docs, implementation plans, analyses
+- ❌ User-facing: guides, tutorials, API documentation
+
+See `README.md` in this directory for project structure.
+

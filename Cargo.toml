@@ -19,11 +19,11 @@ name = "arsync"
 path = "src/main.rs"
 
 [workspace]
-members = ["crates/compio-fs-extended", "crates/compio-sync"]
+members = ["crates/compio-fs-extended"]
 
 [dependencies]
 # Core async runtime
-compio = { version = "0.16", features = ["macros", "dispatcher"] }
+compio = { version = "0.16", features = ["macros", "dispatcher", "process"] }
 futures = "0.3"
 
 # CLI and error handling
@@ -39,6 +39,16 @@ indicatif = "0.18"
 # System utilities
 num_cpus = "1.0"
 async-recursion = "1.0"
+dashmap = "6.1"
+whoami = "1.0"
+walkdir = "2.0"
+
+# Checksums and hashing for rsync protocol
+simd-adler32 = "0.3"  # SIMD-accelerated Adler-32 (3-5x faster)
+md5 = "0.8"
+
+# File metadata manipulation
+filetime = "0.2"
 
 # i18n (internationalization)
 fluent = "0.17"
@@ -53,8 +63,13 @@ libc = "0.2"
 # Extended io_uring operations
 compio-fs-extended = { path = "crates/compio-fs-extended", features = ["xattr"] }
 
-# Async synchronization primitives
-compio-sync = { path = "crates/compio-sync" }
+# Async synchronization primitives (external repository)
+compio-sync = { git = "https://github.com/jmalicki/compio-sync", tag = "v0.0.1" }
+
+# Remote sync dependencies (optional)
+tokio = { version = "1.0", features = ["process", "io-util", "rt", "fs", "macros"], optional = true }
+async-trait = { version = "0.1", optional = true }
+rand = { version = "0.9.2", optional = true }
 
 # Build dependencies
 [build-dependencies]
@@ -86,8 +101,10 @@ cargo-audit = "0.21"
 # cargo-expand = "1.0"  # Temporarily disabled
 
 [features]
-default = []
+default = ["remote-sync"]
 benchmarks = ["criterion"]
+remote-sync = ["tokio", "async-trait", "rand"]
+rand = ["dep:rand"]
 
 [profile.release]
 lto = true
