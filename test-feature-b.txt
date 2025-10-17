@@ -6,3 +6,5 @@ This file demonstrates the stacked PR workflow:
 
 The critical test: Does CI run when we create a PR targeting feature-A (not main)?
 
+UPDATE: feature-A now has the NEW CI config, so this push should trigger pull_request event!
+
