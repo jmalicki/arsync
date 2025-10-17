@@ -50,6 +50,7 @@ pub mod cli;
 pub mod copy;
 pub mod directory;
 pub mod error;
+pub mod hardlink_tracker;
 pub mod i18n;
 pub mod io_uring;
 pub mod metadata;
