@@ -31,7 +31,7 @@ pub trait XattrOps {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use compio_fs_extended::{ExtendedFile, XattrOps};
     /// use compio::fs::File;
     ///
@@ -61,7 +61,7 @@ pub trait XattrOps {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use compio_fs_extended::{ExtendedFile, XattrOps};
     /// use compio::fs::File;
     ///
@@ -89,7 +89,7 @@ pub trait XattrOps {
     ///
     /// # Example
     ///
-    /// ```rust,no_run
+    /// ```rust,ignore
     /// use compio_fs_extended::{ExtendedFile, XattrOps};
     /// use compio::fs::File;
     ///

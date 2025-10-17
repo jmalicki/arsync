@@ -758,7 +758,6 @@ async fn process_symlink(
 #[allow(clippy::future_not_send)]
 async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
     use compio_fs_extended::directory::DirectoryFd;
-    use compio_fs_extended::symlink::{create_symlink_at_dirfd, read_symlink_at_dirfd};
 
     // Extract parent directory and filename for DirectoryFd operations
     let src_parent = src.parent().ok_or_else(|| {
@@ -802,15 +801,13 @@ async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
     })?;
 
     // Read symlink target using io_uring DirectoryFd operations
-    let target = read_symlink_at_dirfd(&src_dir_fd, &src_name)
-        .await
-        .map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to read symlink target for {}: {}",
-                src.display(),
-                e
-            ))
-        })?;
+    let target = src_dir_fd.readlinkat(&src_name).await.map_err(|e| {
+        SyncError::FileSystem(format!(
+            "Failed to read symlink target for {}: {}",
+            src.display(),
+            e
+        ))
+    })?;
 
     // Remove destination if it exists
     if dst.exists() {
@@ -825,7 +822,8 @@ async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
 
     // Create symlink with same target using io_uring DirectoryFd operations
     let target_str = target.to_string_lossy();
-    create_symlink_at_dirfd(&dst_dir_fd, &target_str, &dst_name)
+    dst_dir_fd
+        .symlinkat(&target_str, &dst_name)
         .await
         .map_err(|e| {
             SyncError::FileSystem(format!(
@@ -991,7 +989,7 @@ pub async fn preserve_directory_metadata(
     extended_metadata: &ExtendedMetadata,
     metadata_config: &MetadataConfig,
 ) -> Result<()> {
-    use compio_fs_extended::{metadata, OwnershipOps};
+    use compio_fs_extended::OwnershipOps;
 
     // Preserve directory permissions if requested
     if metadata_config.should_preserve_permissions() {
@@ -1057,8 +1055,17 @@ pub async fn preserve_directory_metadata(
             ))
         })?;
 
-        // Use compio-fs-extended for timestamp preservation
-        metadata::futimesat(dst_path, src_accessed, src_modified)
+        // Use DirectoryFd for TOCTOU-safe timestamp preservation
+        let dst_dir = compio_fs_extended::directory::DirectoryFd::open(dst_path)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to open destination directory for timestamps: {e}"
+                ))
+            })?;
+
+        dst_dir
+            .set_times(src_accessed, src_modified)
             .await
             .map_err(|e| {
                 SyncError::FileSystem(format!("Failed to preserve directory timestamps: {e}"))
