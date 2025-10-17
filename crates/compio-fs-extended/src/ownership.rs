@@ -66,6 +66,7 @@
 //!
 //! ```rust,no_run
 //! use compio_fs_extended::OwnershipOps;
+//! use compio::fs::File;
 //! use std::path::Path;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -314,6 +315,7 @@ pub trait OwnershipOps {
     ///
     /// ```rust,no_run
     /// use compio_fs_extended::OwnershipOps;
+    /// use compio::fs::File;
     /// use std::path::Path;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -415,14 +417,25 @@ impl OwnershipOps for File {
     /// - Users can change group ownership to groups they belong to
     async fn fchown(&self, uid: u32, gid: u32) -> Result<()> {
         use nix::unistd::{fchown as nix_fchown, Gid, Uid};
+        use std::os::fd::BorrowedFd;
 
         let fd = self.as_raw_fd();
 
         // NOTE: Kernel doesn't have IORING_OP_FCHOWN - this is a kernel limitation
         // Using spawn + safe nix wrapper instead of unsafe libc
         compio::runtime::spawn(async move {
-            nix_fchown(fd, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid)))
-                .map_err(|e| filesystem_error(&format!("fchown failed: {}", e)))
+            // SAFETY: The raw fd is valid for the duration of this call because:
+            // 1. File holds the fd open for the lifetime of the File object
+            // 2. The spawned task completes before the File is dropped
+            // We use raw fd here because BorrowedFd from as_fd() has a non-'static lifetime,
+            // but spawn requires 'static. This is the standard pattern for moving fds into tasks.
+            let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
+            nix_fchown(
+                borrowed_fd,
+                Some(Uid::from_raw(uid)),
+                Some(Gid::from_raw(gid)),
+            )
+            .map_err(|e| filesystem_error(&format!("fchown failed: {}", e)))
         })
         .await
         .map_err(|e| filesystem_error(&format!("spawn failed: {e:?}")))?
