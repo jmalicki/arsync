@@ -40,7 +40,7 @@ criterion = { version = "0.7", features = ["html_reports"] }
 testcontainers = "0.25"
 
 [features]
-default = []
+default = ["cheap_calls_sync"]
 # Enable xattr support (requires io_uring opcodes)
 xattr = []
 # Enable performance metrics
