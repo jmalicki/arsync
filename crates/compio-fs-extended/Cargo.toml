@@ -47,6 +47,9 @@ xattr = []
 metrics = []
 # Enable logging integration
 logging = []
+# Call cheap syscalls (chmod, chown, utimens, readlink) directly instead of spawn_blocking
+# These syscalls are typically <1μs, much faster than thread dispatch overhead (~10μs)
+cheap_calls_sync = []
 
 # [[bench]]
 # name = "copy_file_range_bench"

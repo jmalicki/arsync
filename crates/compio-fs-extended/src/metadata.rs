@@ -253,7 +253,7 @@ pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) 
         .map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
     let dir = dir.clone();
 
-    compio::runtime::spawn_blocking(move || {
+    let operation = move || {
         use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
 
         fchmodat(
@@ -263,9 +263,19 @@ pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) 
             FchmodatFlags::FollowSymlink,
         )
         .map_err(|e| metadata_error(&format!("fchmodat failed: {}", e)))
-    })
-    .await
-    .unwrap_or_else(|e| std::panic::resume_unwind(e))
+    };
+
+    #[cfg(feature = "cheap_calls_sync")]
+    {
+        operation()
+    }
+
+    #[cfg(not(feature = "cheap_calls_sync"))]
+    {
+        compio::runtime::spawn_blocking(operation)
+            .await
+            .unwrap_or_else(|e| std::panic::resume_unwind(e))
+    }
 }
 
 /// Change file timestamps using DirectoryFd
@@ -278,7 +288,7 @@ pub(crate) async fn utimensat_impl(
     let pathname_owned = pathname.to_string();
     let dir = dir.clone();
 
-    compio::runtime::spawn_blocking(move || {
+    let operation = move || {
         let atime = system_time_to_timespec(accessed)?;
         let mtime = system_time_to_timespec(modified)?;
 
@@ -290,9 +300,19 @@ pub(crate) async fn utimensat_impl(
             UtimensatFlags::FollowSymlink,
         )
         .map_err(|e| metadata_error(&format!("utimensat failed: {}", e)))
-    })
-    .await
-    .unwrap_or_else(|e| std::panic::resume_unwind(e))
+    };
+
+    #[cfg(feature = "cheap_calls_sync")]
+    {
+        operation()
+    }
+
+    #[cfg(not(feature = "cheap_calls_sync"))]
+    {
+        compio::runtime::spawn_blocking(operation)
+            .await
+            .unwrap_or_else(|e| std::panic::resume_unwind(e))
+    }
 }
 
 /// Change file ownership using DirectoryFd
@@ -305,7 +325,7 @@ pub(crate) async fn fchownat_impl(
     let pathname_owned = pathname.to_string();
     let dir = dir.clone();
 
-    compio::runtime::spawn_blocking(move || {
+    let operation = move || {
         use nix::fcntl::AtFlags;
         use nix::unistd::{fchownat, Gid, Uid};
 
@@ -317,7 +337,17 @@ pub(crate) async fn fchownat_impl(
             AtFlags::empty(), // Follow symlinks by default (no AT_SYMLINK_NOFOLLOW)
         )
         .map_err(|e| metadata_error(&format!("fchownat failed: {}", e)))
-    })
-    .await
-    .unwrap_or_else(|e| std::panic::resume_unwind(e))
+    };
+
+    #[cfg(feature = "cheap_calls_sync")]
+    {
+        operation()
+    }
+
+    #[cfg(not(feature = "cheap_calls_sync"))]
+    {
+        compio::runtime::spawn_blocking(operation)
+            .await
+            .unwrap_or_else(|e| std::panic::resume_unwind(e))
+    }
 }

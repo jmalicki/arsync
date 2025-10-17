@@ -201,11 +201,21 @@ pub(crate) async fn readlinkat_impl(
     let link_name = link_name.to_string();
     let dir = dir.clone();
 
-    let os_string = compio::runtime::spawn_blocking(move || {
-        fcntl::readlinkat(dir.as_fd(), std::path::Path::new(&link_name))
-    })
-    .await
-    .unwrap_or_else(|e| std::panic::resume_unwind(e));
+    let operation = move || fcntl::readlinkat(dir.as_fd(), std::path::Path::new(&link_name));
+
+    let os_string = {
+        #[cfg(feature = "cheap_calls_sync")]
+        {
+            operation()
+        }
+
+        #[cfg(not(feature = "cheap_calls_sync"))]
+        {
+            compio::runtime::spawn_blocking(operation)
+                .await
+                .unwrap_or_else(|e| std::panic::resume_unwind(e))
+        }
+    };
 
     Ok(std::path::PathBuf::from(
         os_string.map_err(|e| symlink_error(&e.to_string()))?,
