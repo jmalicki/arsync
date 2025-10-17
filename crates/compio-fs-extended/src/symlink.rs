@@ -1,16 +1,21 @@
 //! Symlink operations for creating and reading symbolic links
 
 use crate::error::{symlink_error, ExtendedError, Result};
-use compio::driver::OpCode;
 use compio::fs::File;
+#[cfg(target_os = "linux")]
+use compio::driver::OpCode;
+#[cfg(target_os = "linux")]
 use compio::runtime::submit;
+#[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
+#[cfg(unix)]
 use nix::fcntl;
 use std::ffi::CString;
 use std::path::Path;
 use std::pin::Pin;
 
 /// Custom symlink operation that implements compio's OpCode trait
+#[cfg(target_os = "linux")]
 pub struct SymlinkOp {
     /// Target path for the symbolic link
     target: CString,
@@ -20,6 +25,7 @@ pub struct SymlinkOp {
     dir_fd: Option<std::os::unix::io::RawFd>,
 }
 
+#[cfg(target_os = "linux")]
 impl SymlinkOp {
     /// Create a new SymlinkOp for io_uring submission with DirectoryFd
     ///
@@ -56,6 +62,7 @@ impl SymlinkOp {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl OpCode for SymlinkOp {
     fn create_entry(self: Pin<&mut Self>) -> compio::driver::OpEntry {
         compio::driver::OpEntry::Submission(
@@ -213,13 +220,49 @@ pub async fn create_symlink_at_dirfd(
     target: &str,
     link_name: &str,
 ) -> Result<()> {
-    // Submit io_uring symlink operation using compio's runtime with DirectoryFd
-    let result = submit(SymlinkOp::new_with_dirfd(dir_fd, target, link_name)?).await;
-
-    // Minimal mapping: preserve underlying error string without extra context
-    match result.0 {
-        Ok(_) => Ok(()),
-        Err(e) => Err(symlink_error(&e.to_string())),
+    #[cfg(target_os = "linux")]
+    {
+        // Submit io_uring symlink operation using compio's runtime with DirectoryFd
+        let result = submit(SymlinkOp::new_with_dirfd(dir_fd, target, link_name)?).await;
+        match result.0 {
+            Ok(_) => Ok(()),
+            Err(e) => Err(symlink_error(&e.to_string())),
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // Create symlink via std on Darwin
+        let base = dir_fd.path().to_path_buf();
+        let target = target.to_string();
+        let link_name = link_name.to_string();
+        compio::runtime::spawn(async move {
+            std::os::unix::fs::symlink(target, base.join(link_name))
+                .map_err(|e| symlink_error(&e.to_string()))
+        })
+        .await
+        .map_err(ExtendedError::SpawnJoin)?
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::path::PathBuf;
+        use std::os::windows::fs::{symlink_dir, symlink_file};
+        let base = dir_fd.path().to_path_buf();
+        let target = target.to_string();
+        let link_name = link_name.to_string();
+        compio::runtime::spawn(async move {
+            let target_path = PathBuf::from(&target);
+            let full_link = base.join(&link_name);
+            // Try file symlink first; if it fails, try dir symlink
+            match symlink_file(&target_path, &full_link) {
+                Ok(_) => Ok(()),
+                Err(file_err) => {
+                    symlink_dir(&target_path, &full_link)
+                        .map_err(|dir_err| symlink_error(&format!("symlink failed: file={file_err}, dir={dir_err}")))
+                }
+            }
+        })
+        .await
+        .map_err(ExtendedError::SpawnJoin)?
     }
 }
 
@@ -259,22 +302,35 @@ pub async fn create_symlink_at_dirfd(
 /// # Ok(())
 /// # }
 /// ```
+#[cfg(unix)]
 pub async fn read_symlink_at_dirfd(
     dir_fd: &crate::directory::DirectoryFd,
     link_name: &str,
 ) -> Result<std::path::PathBuf> {
     let link_name = link_name.to_string();
     let dir_fd_raw = dir_fd.as_raw_fd();
-
     let os_string = compio::runtime::spawn(async move {
         fcntl::readlinkat(Some(dir_fd_raw), std::path::Path::new(&link_name))
     })
     .await
     .map_err(ExtendedError::SpawnJoin)?;
-
     Ok(std::path::PathBuf::from(
         os_string.map_err(|e| symlink_error(&e.to_string()))?,
     ))
+}
+
+#[cfg(target_os = "windows")]
+pub async fn read_symlink_at_dirfd(
+    dir_fd: &crate::directory::DirectoryFd,
+    link_name: &str,
+) -> Result<std::path::PathBuf> {
+    let base = dir_fd.path().to_path_buf();
+    let name = link_name.to_string();
+    compio::runtime::spawn(async move {
+        std::fs::read_link(base.join(name)).map_err(|e| symlink_error(&e.to_string()))
+    })
+    .await
+    .map_err(ExtendedError::SpawnJoin)?
 }
 
 // Note: Basic symlink operations like is_symlink, is_broken_symlink are provided by std::fs
