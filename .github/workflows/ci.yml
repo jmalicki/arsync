@@ -2,9 +2,9 @@ name: CI (Optimized)
 
 on:
   push:
-    branches: [ main ]  # Only run on main branch pushes
+    branches: ['**']  # Run on all branches
   pull_request:
-    branches: ['**']  # Run on PRs targeting any branch
+    branches: [ main, develop ]
   schedule:
     - cron: '0 0 * * 1'
 
