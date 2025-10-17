@@ -600,7 +600,12 @@ async fn process_file(
         // Get dst_path and create hardlink
         let original_dst = hardlink_tracker
             .get_dst_path_for_inode(inode_number)
-            .expect("BUG: dst_path should be set after register_file returns for linker");
+            .ok_or_else(|| {
+                SyncError::FileSystem(format!(
+                    "BUG: dst_path not set for hardlink inode {inode_number}. \
+                     This should never happen after register_file returns for linker."
+                ))
+            })?;
 
         debug!(
             "Creating hardlink {} → {} (inode: {})",
