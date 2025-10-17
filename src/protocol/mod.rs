@@ -27,9 +27,6 @@ pub mod transport;
 #[cfg(feature = "remote-sync")]
 pub mod varint;
 
-#[cfg(feature = "quic")]
-pub mod quic;
-
 /// Parsed location (local or remote)
 #[derive(Debug, Clone)]
 pub enum Location {
