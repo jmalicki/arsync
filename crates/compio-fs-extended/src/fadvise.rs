@@ -38,10 +38,10 @@
 //! surprising cross-platform behavior differences.
 
 use crate::error::{fadvise_error, Result};
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use compio::driver::OpCode;
 use compio::fs::File;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
