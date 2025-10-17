@@ -19,12 +19,12 @@ io-uring = "0.7"
 
 # System call dependencies
 libc = "0.2"
-nix = { version = "0.28", features = ["fs", "user", "time"] }
+nix = { version = "0.30", features = ["fs", "user", "time"] }
 filetime = "0.2"
 xattr = "1.0"  # Safe xattr wrapper for operations not in io_uring
 
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Async utilities
 futures = "0.3"
@@ -36,7 +36,7 @@ log = "0.4"
 # Testing dependencies
 tempfile = "3.0"
 tokio = { version = "1.0", features = ["full"] }
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.7", features = ["html_reports"] }
 testcontainers = "0.25"
 
 [features]

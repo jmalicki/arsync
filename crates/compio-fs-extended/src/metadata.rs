@@ -44,6 +44,7 @@ use io_uring::{opcode, types};
 use nix::sys::stat::UtimensatFlags;
 use nix::sys::time::TimeSpec;
 use std::ffi::CString;
+use std::os::fd::BorrowedFd;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
@@ -214,8 +215,10 @@ pub async fn futimesat(path: &Path, accessed: SystemTime, modified: SystemTime) 
         let atime = system_time_to_timespec(accessed)?;
         let mtime = system_time_to_timespec(modified)?;
 
+        // SAFETY: AT_FDCWD is a special constant that's always valid
+        let cwd_fd = unsafe { BorrowedFd::borrow_raw(libc::AT_FDCWD) };
         nix::sys::stat::utimensat(
-            None, // Use path directly (AT_FDCWD)
+            cwd_fd, // Use AT_FDCWD for path resolution
             &path,
             &atime,
             &mtime,
@@ -269,7 +272,10 @@ pub async fn futimens_fd(fd: i32, accessed: SystemTime, modified: SystemTime) ->
         let atime = system_time_to_timespec(accessed)?;
         let mtime = system_time_to_timespec(modified)?;
 
-        nix::sys::stat::futimens(fd, &atime, &mtime)
+        // SAFETY: Caller guarantees fd is valid and won't be closed during this operation.
+        // BorrowedFd::borrow_raw creates a borrowed reference with the correct lifetime.
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
+        nix::sys::stat::futimens(borrowed_fd, &atime, &mtime)
             .map_err(|e| metadata_error(&format!("futimens failed: {}", e)))
     })
     .await
