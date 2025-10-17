@@ -42,6 +42,7 @@ pub enum SyncError {
 
     /// File descriptor exhaustion (EMFILE)
     #[error("File descriptor exhaustion: {0}")]
+    #[allow(dead_code)]
     FdExhaustion(String),
 
     /// Internal application error
