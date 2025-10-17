@@ -2,11 +2,12 @@
 name = "compio-fs-extended"
 version = "0.1.0"
 edition = "2021"
-description = "Extended filesystem operations for compio with copy_file_range, fadvise, symlinks, and xattr support"
+rust-version = "1.90.0"
+description = "Extended filesystem operations for compio with fadvise, fallocate, symlinks, hardlinks, and xattr support"
 license = "MIT"
 repository = "https://github.com/jmalicki/arsync"
 documentation = "https://docs.rs/compio-fs-extended"
-keywords = ["async", "io_uring", "filesystem", "compio", "copy_file_range", "xattr"]
+keywords = ["async", "io_uring", "filesystem", "compio", "xattr"]
 categories = ["asynchronous", "filesystem"]
 
 [dependencies]

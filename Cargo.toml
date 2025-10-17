@@ -2,6 +2,7 @@
 name = "arsync"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.90.0"
 authors = ["Your Name <your.email@example.com>"]
 description = "High-performance async file copying utility using io_uring - modern rsync alternative"
 license = "MIT"
