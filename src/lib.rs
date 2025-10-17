@@ -50,16 +50,18 @@ pub mod cli;
 pub mod copy;
 pub mod directory;
 pub mod error;
+pub mod hardlink_tracker;
 pub mod i18n;
 pub mod io_uring;
 pub mod metadata;
 pub mod progress;
 pub mod protocol;
+pub mod stats;
 pub mod sync;
 
 // Re-export commonly used types
-pub use directory::FilesystemTracker;
 pub use error::{Result, SyncError};
+pub use hardlink_tracker::FilesystemTracker;
 pub use progress::ProgressTracker;
 
 // Re-export semaphore from compio-sync crate
