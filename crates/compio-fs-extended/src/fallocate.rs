@@ -178,7 +178,8 @@ pub async fn fallocate(file: &File, _offset: u64, len: u64, _mode: u32) -> Resul
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::BOOL;
     use windows_sys::Win32::Storage::FileSystem::{
-        SetEndOfFile, SetFileInformationByHandle, FILE_ALLOCATION_INFO,
+        SetFileInformationByHandle, FILE_ALLOCATION_INFO, FILE_END_OF_FILE_INFO,
+        FileAllocationInfo, FileEndOfFileInfo,
     };
     let handle = file.as_raw_handle();
     // Safety: construct allocation info
@@ -188,7 +189,7 @@ pub async fn fallocate(file: &File, _offset: u64, len: u64, _mode: u32) -> Resul
     let ok: BOOL = unsafe {
         SetFileInformationByHandle(
             handle as _,
-            19, /*FileAllocationInfo*/
+            FileAllocationInfo,
             &alloc as *const _ as _,
             std::mem::size_of::<FILE_ALLOCATION_INFO>() as u32,
         )
@@ -198,9 +199,20 @@ pub async fn fallocate(file: &File, _offset: u64, len: u64, _mode: u32) -> Resul
             "SetFileInformationByHandle(FileAllocationInfo) failed",
         ));
     }
-    let ok2: BOOL = unsafe { SetEndOfFile(handle as _) };
+    // Optionally grow logical file size (Linux fallocate DEFAULT grows size)
+    let end = FILE_END_OF_FILE_INFO {
+        EndOfFile: (_offset + len) as i64,
+    };
+    let ok2: BOOL = unsafe {
+        SetFileInformationByHandle(
+            handle as _,
+            FileEndOfFileInfo,
+            &end as *const _ as _,
+            std::mem::size_of::<FILE_END_OF_FILE_INFO>() as u32,
+        )
+    };
     if ok2 == 0 {
-        return Err(fallocate_error("SetEndOfFile failed"));
+        return Err(fallocate_error("SetFileInformationByHandle(FileEndOfFileInfo) failed"));
     }
     Ok(())
 }
