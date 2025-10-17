@@ -23,7 +23,7 @@ members = ["crates/compio-fs-extended", "crates/compio-sync"]
 
 [dependencies]
 # Core async runtime
-compio = { version = "0.16", features = ["macros", "dispatcher"] }
+compio = { version = "0.16", features = ["macros", "dispatcher", "process"] }
 futures = "0.3"
 
 # CLI and error handling
@@ -87,8 +87,9 @@ cargo-audit = "0.21"
 # cargo-expand = "1.0"  # Temporarily disabled
 
 [features]
-default = []
+default = ["remote-sync"]
 benchmarks = ["criterion"]
+remote-sync = []
 
 [profile.release]
 lto = true
