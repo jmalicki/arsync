@@ -175,9 +175,12 @@ impl DirectoryFd {
     ///
     /// * `permissions` - New permissions for the directory
     pub async fn set_permissions(&self, permissions: compio::fs::Permissions) -> Result<()> {
-        use std::os::unix::fs::PermissionsExt;
-        let mode = permissions.mode();
-        crate::metadata::fchmod(self.as_file(), mode).await
+        self.as_file()
+            .set_permissions(permissions)
+            .await
+            .map_err(|e| {
+                crate::error::directory_error(&format!("Failed to set permissions: {}", e))
+            })
     }
 
     /// Set ownership on this directory itself
@@ -191,7 +194,10 @@ impl DirectoryFd {
     /// * `gid` - New group ID
     pub async fn set_ownership(&self, uid: u32, gid: u32) -> Result<()> {
         use crate::ownership::OwnershipOps;
-        self.as_file().fchown(uid, gid).await
+        self.as_file()
+            .fchown(uid, gid)
+            .await
+            .map_err(|e| crate::error::directory_error(&format!("Failed to set ownership: {}", e)))
     }
 
     // ========================================================================
