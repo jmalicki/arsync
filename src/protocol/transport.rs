@@ -177,3 +177,190 @@ where
     transport.flush().await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::pipe::PipeTransport;
+
+    #[compio::test]
+    async fn test_read_exact_success() {
+        // Test: read_exact should read exact number of bytes
+        // Requirement: read_exact helper should fill buffer completely
+        let (read_fd, write_fd) = PipeTransport::create_pipe().unwrap();
+
+        let read_fd_dup = unsafe { libc::dup(read_fd) };
+        let write_fd_dup = unsafe { libc::dup(write_fd) };
+
+        let mut reader =
+            unsafe { PipeTransport::from_fds(read_fd, read_fd_dup, "reader".to_string()).unwrap() };
+        let mut writer = unsafe {
+            PipeTransport::from_fds(write_fd_dup, write_fd, "writer".to_string()).unwrap()
+        };
+
+        // Write test data
+        let test_data = b"Hello, World! This is a test.";
+        write_all(&mut writer, test_data).await.unwrap();
+
+        // Read exact number of bytes
+        let mut buf = vec![0u8; test_data.len()];
+        read_exact(&mut reader, &mut buf).await.unwrap();
+
+        assert_eq!(&buf, test_data);
+    }
+
+    #[compio::test]
+    async fn test_read_exact_partial_reads() {
+        // Test: read_exact should handle partial reads correctly
+        // Requirement: read_exact should keep reading until buffer is full
+        let (read_fd, write_fd) = PipeTransport::create_pipe().unwrap();
+
+        let read_fd_dup = unsafe { libc::dup(read_fd) };
+        let write_fd_dup = unsafe { libc::dup(write_fd) };
+
+        let mut reader =
+            unsafe { PipeTransport::from_fds(read_fd, read_fd_dup, "reader".to_string()).unwrap() };
+        let mut writer = unsafe {
+            PipeTransport::from_fds(write_fd_dup, write_fd, "writer".to_string()).unwrap()
+        };
+
+        // Write 1KB of data
+        let test_data: Vec<u8> = (0..1024).map(|i| (i % 256) as u8).collect();
+        write_all(&mut writer, &test_data).await.unwrap();
+
+        // Read in smaller buffer (tests multiple read calls)
+        let mut buf = vec![0u8; 1024];
+        read_exact(&mut reader, &mut buf).await.unwrap();
+
+        assert_eq!(buf, test_data);
+    }
+
+    #[compio::test]
+    async fn test_read_exact_eof_error() {
+        // Test: read_exact should error on unexpected EOF
+        // Requirement: read_exact should return UnexpectedEof if stream ends early
+        let (read_fd, write_fd) = PipeTransport::create_pipe().unwrap();
+
+        let read_fd_dup = unsafe { libc::dup(read_fd) };
+        let write_fd_dup = unsafe { libc::dup(write_fd) };
+
+        let mut reader =
+            unsafe { PipeTransport::from_fds(read_fd, read_fd_dup, "reader".to_string()).unwrap() };
+        let mut writer = unsafe {
+            PipeTransport::from_fds(write_fd_dup, write_fd, "writer".to_string()).unwrap()
+        };
+
+        // Write only 5 bytes
+        write_all(&mut writer, b"short").await.unwrap();
+
+        // Close writer to trigger EOF
+        drop(writer);
+
+        // Try to read 100 bytes (should fail with EOF)
+        let mut buf = vec![0u8; 100];
+        let result = read_exact(&mut reader, &mut buf).await;
+
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::UnexpectedEof);
+    }
+
+    #[compio::test]
+    async fn test_write_all_success() {
+        // Test: write_all should write all bytes
+        // Requirement: write_all helper should write complete buffer
+        let (read_fd, write_fd) = PipeTransport::create_pipe().unwrap();
+
+        let read_fd_dup = unsafe { libc::dup(read_fd) };
+        let write_fd_dup = unsafe { libc::dup(write_fd) };
+
+        let mut reader =
+            unsafe { PipeTransport::from_fds(read_fd, read_fd_dup, "reader".to_string()).unwrap() };
+        let mut writer = unsafe {
+            PipeTransport::from_fds(write_fd_dup, write_fd, "writer".to_string()).unwrap()
+        };
+
+        // Write data
+        let test_data = b"Testing write_all function";
+        write_all(&mut writer, test_data).await.unwrap();
+
+        // Read back
+        let mut buf = vec![0u8; test_data.len()];
+        read_exact(&mut reader, &mut buf).await.unwrap();
+
+        assert_eq!(&buf, test_data);
+    }
+
+    #[compio::test]
+    async fn test_write_all_large_data() {
+        // Test: write_all should handle large writes
+        // Requirement: write_all should work with large buffers
+        let (read_fd, write_fd) = PipeTransport::create_pipe().unwrap();
+
+        let read_fd_dup = unsafe { libc::dup(read_fd) };
+        let write_fd_dup = unsafe { libc::dup(write_fd) };
+
+        let mut reader =
+            unsafe { PipeTransport::from_fds(read_fd, read_fd_dup, "reader".to_string()).unwrap() };
+        let mut writer = unsafe {
+            PipeTransport::from_fds(write_fd_dup, write_fd, "writer".to_string()).unwrap()
+        };
+
+        // Write 64KB
+        let test_data: Vec<u8> = (0..65536).map(|i| (i % 256) as u8).collect();
+        write_all(&mut writer, &test_data).await.unwrap();
+
+        // Read back
+        let mut buf = vec![0u8; test_data.len()];
+        read_exact(&mut reader, &mut buf).await.unwrap();
+
+        assert_eq!(buf, test_data);
+    }
+
+    #[compio::test]
+    async fn test_transport_trait_properties() {
+        // Test: Transport implementations should have correct trait methods
+        // Requirement: Transport trait should be implemented with name and multiplexing
+        let (read_fd, write_fd) = PipeTransport::create_pipe().unwrap();
+        let transport =
+            unsafe { PipeTransport::from_fds(read_fd, write_fd, "test".to_string()).unwrap() };
+
+        // Test trait methods
+        assert_eq!(transport.name(), "pipe");
+        assert!(!transport.supports_multiplexing());
+    }
+
+    #[compio::test]
+    async fn test_read_write_roundtrip() {
+        // Test: Full roundtrip with read_exact and write_all
+        // Requirement: Helpers should work together for complete I/O operations
+        let (read_fd, write_fd) = PipeTransport::create_pipe().unwrap();
+
+        let read_fd_dup = unsafe { libc::dup(read_fd) };
+        let write_fd_dup = unsafe { libc::dup(write_fd) };
+
+        let mut reader =
+            unsafe { PipeTransport::from_fds(read_fd, read_fd_dup, "reader".to_string()).unwrap() };
+        let mut writer = unsafe {
+            PipeTransport::from_fds(write_fd_dup, write_fd, "writer".to_string()).unwrap()
+        };
+
+        // Multiple roundtrips
+        let messages = [
+            b"First message".as_slice(),
+            b"Second message with more data".as_slice(),
+            b"Third".as_slice(),
+        ];
+
+        for msg in messages {
+            // Write
+            write_all(&mut writer, msg).await.unwrap();
+
+            // Read
+            let mut buf = vec![0u8; msg.len()];
+            read_exact(&mut reader, &mut buf).await.unwrap();
+
+            assert_eq!(&buf, msg);
+        }
+    }
+}

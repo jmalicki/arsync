@@ -13,6 +13,8 @@ use std::path::PathBuf;
 #[cfg(feature = "remote-sync")]
 pub mod pipe;
 #[cfg(feature = "remote-sync")]
+pub mod ssh;
+#[cfg(feature = "remote-sync")]
 pub mod transport;
 
 /// Parsed location (local or remote)
@@ -102,4 +104,124 @@ pub enum PipeRole {
     Sender,
     /// Receive data (like rsync server)
     Receiver,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_location_parse_local_path() {
+        // Test: Parse simple local path
+        // Requirement: Location::parse should recognize local paths without colons
+        let loc = Location::parse("/home/user/data").unwrap();
+        assert!(loc.is_local());
+        assert!(!loc.is_remote());
+        assert_eq!(loc.path(), &PathBuf::from("/home/user/data"));
+    }
+
+    #[test]
+    fn test_location_parse_local_relative_path() {
+        // Test: Parse relative local path
+        // Requirement: Location::parse should handle relative paths
+        let loc = Location::parse("./data").unwrap();
+        assert!(loc.is_local());
+        assert_eq!(loc.path(), &PathBuf::from("./data"));
+    }
+
+    #[test]
+    fn test_location_parse_windows_path() {
+        // Test: Parse Windows-style path (C:\path)
+        // Requirement: Location::parse should recognize Windows paths as local
+        let loc = Location::parse("C:\\Users\\user\\data").unwrap();
+        assert!(loc.is_local());
+        assert_eq!(loc.path(), &PathBuf::from("C:\\Users\\user\\data"));
+    }
+
+    #[test]
+    fn test_location_parse_remote_with_user() {
+        // Test: Parse remote path with username (user@host:path)
+        // Requirement: Location::parse should extract user, host, and path
+        let loc = Location::parse("alice@example.com:/data").unwrap();
+        assert!(loc.is_remote());
+        assert!(!loc.is_local());
+        assert!(matches!(loc, Location::Remote { .. }));
+
+        if let Location::Remote { user, host, path } = loc {
+            assert_eq!(user, Some("alice".to_string()));
+            assert_eq!(host, "example.com");
+            assert_eq!(path, PathBuf::from("/data"));
+        }
+    }
+
+    #[test]
+    fn test_location_parse_remote_without_user() {
+        // Test: Parse remote path without username (host:path)
+        // Requirement: Location::parse should handle missing username
+        let loc = Location::parse("server.local:/backup").unwrap();
+        assert!(loc.is_remote());
+        assert!(matches!(loc, Location::Remote { .. }));
+
+        if let Location::Remote { user, host, path } = loc {
+            assert_eq!(user, None);
+            assert_eq!(host, "server.local");
+            assert_eq!(path, PathBuf::from("/backup"));
+        }
+    }
+
+    #[test]
+    fn test_location_parse_remote_with_ip() {
+        // Test: Parse remote path with IP address
+        // Requirement: Location::parse should handle IP addresses as hosts
+        let loc = Location::parse("192.168.1.100:/mnt/storage").unwrap();
+        assert!(loc.is_remote());
+        assert!(matches!(loc, Location::Remote { .. }));
+
+        if let Location::Remote { user, host, path } = loc {
+            assert_eq!(user, None);
+            assert_eq!(host, "192.168.1.100");
+            assert_eq!(path, PathBuf::from("/mnt/storage"));
+        }
+    }
+
+    #[test]
+    fn test_location_parse_remote_relative_path() {
+        // Test: Parse remote path with relative path
+        // Requirement: Location::parse should handle relative paths on remote hosts
+        let loc = Location::parse("user@host:relative/path").unwrap();
+        assert!(loc.is_remote());
+        assert!(matches!(loc, Location::Remote { .. }));
+
+        if let Location::Remote { user, host, path } = loc {
+            assert_eq!(user, Some("user".to_string()));
+            assert_eq!(host, "host");
+            assert_eq!(path, PathBuf::from("relative/path"));
+        }
+    }
+
+    #[test]
+    fn test_location_parse_remote_empty_path() {
+        // Test: Parse remote path with empty path component
+        // Requirement: Location::parse should handle empty paths
+        let loc = Location::parse("host:").unwrap();
+        assert!(loc.is_remote());
+        assert!(matches!(loc, Location::Remote { .. }));
+
+        if let Location::Remote { user, host, path } = loc {
+            assert_eq!(user, None);
+            assert_eq!(host, "host");
+            assert_eq!(path, PathBuf::from(""));
+        }
+    }
+
+    #[test]
+    fn test_location_path_getter() {
+        // Test: path() method returns correct path for both Local and Remote
+        // Requirement: Location::path() should work for all Location variants
+        let local = Location::parse("/local/path").unwrap();
+        assert_eq!(local.path(), &PathBuf::from("/local/path"));
+
+        let remote = Location::parse("host:/remote/path").unwrap();
+        assert_eq!(remote.path(), &PathBuf::from("/remote/path"));
+    }
 }
