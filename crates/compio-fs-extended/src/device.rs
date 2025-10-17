@@ -144,6 +144,9 @@ pub async fn create_char_device_at_path(
     let dev = ((major as u64 & 0xfff) << 8)
         | (minor as u64 & 0xff)
         | (((major as u64 >> 12) & 0xfffff) << 32);
+    // Note: On some platforms SFlag::bits() returns u16, on others u32
+    // Safe to always convert to u32 for bitwise OR with mode
+    #[allow(clippy::unnecessary_cast)]
     let device_mode = stat::SFlag::S_IFCHR.bits() as u32 | (mode & 0o777);
 
     create_special_file_at_path(path, device_mode, dev).await
