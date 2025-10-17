@@ -17,6 +17,10 @@ use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
+/// Type alias for a shared semaphore wrapped in `Arc`
+///
+/// This is used internally for concurrency control. Users should wrap
+/// `Semaphore` in `Arc` when sharing across tasks.
 type SharedSemaphore = Arc<Semaphore>;
 use tracing::warn;
 
