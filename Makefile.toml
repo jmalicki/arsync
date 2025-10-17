@@ -47,32 +47,32 @@ alias = "test-fast"
 [tasks.test-fast]
 description = "Run fast tests only (exclude integration, performance, rsync)"
 command = "cargo"
-args = ["nextest", "run", "-E", "!binary(integration) & !binary(performance) & !binary(rsync)"]
+args = ["nextest", "run", "-E", "!binary(~integration) & !binary(~performance) & !binary(~rsync)"]
 
 [tasks.test-int]
 description = "Run integration tests with nextest"
 command = "cargo"
-args = ["nextest", "run", "-E", "binary(integration)"]
+args = ["nextest", "run", "-E", "binary(~integration)"]
 
 [tasks.test-perf]
 description = "Run performance tests with nextest"
 command = "cargo"
-args = ["nextest", "run", "-E", "binary(performance)"]
+args = ["nextest", "run", "-E", "binary(~performance)"]
 
 [tasks.test-meta]
 description = "Run metadata tests with nextest"
 command = "cargo"
-args = ["nextest", "run", "-E", "binary(metadata)"]
+args = ["nextest", "run", "-E", "binary(~metadata)"]
 
 [tasks.test-xattr]
 description = "Run xattr tests with nextest"
 command = "cargo"
-args = ["nextest", "run", "-E", "binary(xattr)"]
+args = ["nextest", "run", "-E", "binary(~xattr)"]
 
 [tasks.test-rsync]
 description = "Run rsync protocol tests with nextest"
 command = "cargo"
-args = ["nextest", "run", "-E", "binary(rsync)"]
+args = ["nextest", "run", "-E", "binary(~rsync)"]
 
 [tasks.test-list]
 description = "List all available tests"
@@ -82,7 +82,7 @@ args = ["nextest", "list"]
 [tasks.test-list-int]
 description = "List integration tests"
 command = "cargo"
-args = ["nextest", "list", "-E", "binary(integration)"]
+args = ["nextest", "list", "-E", "binary(~integration)"]
 
 [tasks.test-ci]
 description = "Run tests with CI profile (retries, JUnit output)"
