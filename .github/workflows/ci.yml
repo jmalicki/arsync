@@ -2,9 +2,10 @@ name: CI (Optimized)
 
 on:
   push:
-    branches: ['**']  # Run on all branches
+    branches:
+      - main
   pull_request:
-    branches: [ main, develop ]
+    # No branches specified = all PRs
   schedule:
     - cron: '0 0 * * 1'
 
