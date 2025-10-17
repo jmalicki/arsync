@@ -171,8 +171,5 @@ async fn test_file_xattr_preservation_error_handling() {
     assert!(result.is_ok());
 }
 
-// TODO: Add high-level integration tests for symlink xattr preservation during copy
-// These should test arsync's copy behavior, not low-level compio-fs-extended APIs
-// Example: "When copying a symlink with xattrs, the symlink's xattrs are preserved"
-//
-// Low-level xattr API tests belong in crates/compio-fs-extended/tests/
+// High-level symlink metadata tests moved to tests/symlink_metadata_tests.rs
+// This file focuses on regular file xattr preservation
