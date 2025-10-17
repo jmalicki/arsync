@@ -226,28 +226,15 @@ pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) 
     }
 }
 
-/// macOS: Uses POSIX fadvise syscall (not io_uring, but still helpful)
+/// macOS: Not supported - macOS doesn't have posix_fadvise
+///
+/// macOS removed posix_fadvise support. It has F_RDADVISE fcntl but it's deprecated.
+/// Modern macOS relies on unified buffer cache and automatic optimization.
 #[cfg(target_os = "macos")]
-pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) -> Result<()> {
-    let fd = file.as_raw_fd();
-    let advice_val = advice.to_posix();
-
-    // NOTE: macOS doesn't have io_uring, so we use the POSIX fadvise syscall directly
-    // Wrapped in spawn to avoid blocking
-    compio::runtime::spawn(async move {
-        // SAFETY: fd is valid for the duration of this call
-        let result = unsafe { libc::posix_fadvise(fd, offset, len, advice_val) };
-        if result == 0 {
-            Ok(())
-        } else {
-            Err(fadvise_error(&format!(
-                "posix_fadvise failed with error code: {}",
-                result
-            )))
-        }
-    })
-    .await
-    .map_err(|e| fadvise_error(&format!("spawn failed: {:?}", e)))?
+pub async fn fadvise(_file: &File, _advice: FadviseAdvice, _offset: i64, _len: i64) -> Result<()> {
+    Err(fadvise_error(
+        "fadvise not supported on macOS - posix_fadvise was removed from macOS",
+    ))
 }
 
 /// Windows: Not supported - returns NotSupported error

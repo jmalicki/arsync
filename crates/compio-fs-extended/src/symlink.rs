@@ -10,6 +10,9 @@ use compio::runtime::submit;
 use io_uring::{opcode, types};
 #[cfg(unix)]
 use nix::fcntl;
+#[cfg(all(unix, not(target_os = "linux")))]
+use nix::unistd;
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
 use std::path::Path;
 use std::pin::Pin;
@@ -169,9 +172,8 @@ pub async fn create_symlink_impl(_file: &File, _target: &Path) -> Result<()> {
 // Note: Basic symlink operations are provided by std::fs or compio::fs
 // This module focuses on io_uring operations and secure *at variants
 
-/// Create a symbolic link using DirectoryFd
-///
-/// Uses io_uring `symlinkat(2)` with directory FD and relative path.
+/// Create a symbolic link using DirectoryFd - Linux (io_uring)
+#[cfg(target_os = "linux")]
 pub(crate) async fn symlinkat_impl(
     dir: &crate::directory::DirectoryFd,
     target: &str,
@@ -197,7 +199,42 @@ pub(crate) async fn symlinkat_impl(
     }
 }
 
-/// Read a symbolic link using DirectoryFd
+/// Create a symbolic link using DirectoryFd - macOS/Unix (nix symlinkat)
+#[cfg(all(unix, not(target_os = "linux")))]
+pub(crate) async fn symlinkat_impl(
+    dir: &crate::directory::DirectoryFd,
+    target: &str,
+    link_name: &str,
+) -> Result<()> {
+    let target_owned = target.to_string();
+    let link_name_owned = link_name.to_string();
+    let dir_fd = dir.as_raw_fd();
+
+    compio::runtime::spawn_blocking(move || {
+        nix::unistd::symlinkat(
+            target_owned.as_str(),
+            Some(dir_fd),
+            link_name_owned.as_str(),
+        )
+        .map_err(|e| symlink_error(&format!("symlinkat failed: {}", e)))
+    })
+    .await
+    .map_err(crate::error::ExtendedError::SpawnJoin)?
+}
+
+/// Create a symbolic link using DirectoryFd - Windows (not supported)
+#[cfg(windows)]
+pub(crate) async fn symlinkat_impl(
+    _dir: &crate::directory::DirectoryFd,
+    _target: &str,
+    _link_name: &str,
+) -> Result<()> {
+    Err(symlink_error(
+        "symlinkat not supported on Windows - use std::os::windows::fs::symlink_file/symlink_dir",
+    ))
+}
+
+/// Read a symbolic link using DirectoryFd - Unix (nix readlinkat)
 ///
 /// Uses `readlinkat(2)` with directory FD and relative path.
 ///
@@ -205,6 +242,7 @@ pub(crate) async fn symlinkat_impl(
 /// readlinkat actually reads file data (the symlink target), not just metadata.
 /// While typically fast, symlink targets can be up to PATH_MAX (4096 bytes) and
 /// may require disk I/O on some filesystems.
+#[cfg(unix)]
 pub(crate) async fn readlinkat_impl(
     dir: &crate::directory::DirectoryFd,
     link_name: &str,
@@ -220,6 +258,17 @@ pub(crate) async fn readlinkat_impl(
 
     Ok(std::path::PathBuf::from(
         os_string.map_err(|e| symlink_error(&e.to_string()))?,
+    ))
+}
+
+/// Read a symbolic link using DirectoryFd - Windows (not supported)
+#[cfg(windows)]
+pub(crate) async fn readlinkat_impl(
+    _dir: &crate::directory::DirectoryFd,
+    _link_name: &str,
+) -> Result<std::path::PathBuf> {
+    Err(symlink_error(
+        "readlinkat not supported on Windows - use std::fs::read_link",
     ))
 }
 

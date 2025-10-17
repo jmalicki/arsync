@@ -150,19 +150,37 @@ pub async fn fallocate(file: &File, offset: u64, len: u64, mode: u32) -> Result<
 
 #[cfg(target_os = "macos")]
 pub async fn fallocate(file: &File, offset: u64, len: u64, _mode: u32) -> Result<()> {
-    // Darwin preallocation via fcntl(F_PREALLOCATE). For now run off-thread.
+    // Darwin preallocation via fcntl(F_PREALLOCATE)
+    // NOTE: Rust's libc crate doesn't expose fstore struct, so we define it manually
+    #[repr(C)]
+    struct fstore_t {
+        fst_flags: u32,
+        fst_posmode: libc::c_int,
+        fst_offset: libc::off_t,
+        fst_length: libc::off_t,
+        fst_bytesalloc: libc::off_t,
+    }
+
+    // F_PREALLOCATE constant (from sys/fcntl.h on macOS)
+    const F_PREALLOCATE: libc::c_int = 42;
+    const F_ALLOCATECONTIG: u32 = 0x00000002;
+    const F_PEOFPOSMODE: libc::c_int = 3;
+
     use std::os::fd::AsRawFd;
     let fd = file.as_raw_fd();
+    let offset_i64 = offset as i64;
+    let len_i64 = len as i64;
+
     compio::runtime::spawn(async move {
-        // SAFETY: invoking libc fcntl with F_PREALLOCATE
-        let fstore = libc::fstore {
-            fst_flags: libc::F_ALLOCATECONTIG,
-            fst_posmode: libc::F_PEOFPOSMODE,
-            fst_offset: offset as i64,
-            fst_length: len as i64,
+        // SAFETY: Calling fcntl with F_PREALLOCATE and properly aligned fstore_t struct
+        let fstore = fstore_t {
+            fst_flags: F_ALLOCATECONTIG,
+            fst_posmode: F_PEOFPOSMODE,
+            fst_offset: offset_i64,
+            fst_length: len_i64,
             fst_bytesalloc: 0,
         };
-        let rc = unsafe { libc::fcntl(fd, libc::F_PREALLOCATE, &fstore) };
+        let rc = unsafe { libc::fcntl(fd, F_PREALLOCATE, &fstore) };
         if rc == -1 {
             Err(fallocate_error(&format!(
                 "F_PREALLOCATE failed: {}",
