@@ -65,7 +65,7 @@ libc = "0.2"
 compio-fs-extended = { path = "crates/compio-fs-extended", features = ["xattr"] }
 
 # Async synchronization primitives (external repository)
-compio-sync = { git = "https://github.com/jmalicki/compio-sync", tag = "v0.0.1" }
+compio-sync = { git = "https://github.com/jmalicki/compio-sync", tag = "v0.0.2" }
 
 # Remote sync dependencies (optional)
 tokio = { version = "1.0", features = ["process", "io-util", "rt", "fs", "macros"], optional = true }
