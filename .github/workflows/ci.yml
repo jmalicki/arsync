@@ -107,18 +107,41 @@ jobs:
       with:
         tool: nextest
     
-    - name: Build all tests
+    # Linux: Build all tests
+    - name: Build all tests (Linux)
+      if: matrix.os == 'ubuntu-latest'
       run: cargo test --no-run --all-features
     
-    - name: Run fast tests (unit tests, quick checks)
+    # macOS: Only build compio-fs-extended tests
+    - name: Build compio-fs-extended tests (macOS)
+      if: matrix.os == 'macos-latest'
+      run: cargo test --no-run --all-features --package compio-fs-extended
+    
+    # Linux: Run full test suite (parent project + compio-fs-extended)
+    - name: Run fast tests (Linux)
+      if: matrix.os == 'ubuntu-latest'
       run: |
         cargo nextest run --profile ci --all-features \
           -E '!binary(~integration) & !binary(~performance) & !binary(~rsync)'
     
+    # macOS: Only test compio-fs-extended (parent project has Linux-specific code for now)
+    - name: Run compio-fs-extended tests (macOS)
+      if: matrix.os == 'macos-latest'
+      run: |
+        cargo nextest run --profile ci --all-features --package compio-fs-extended
+    
+    # macOS: Only test compio-fs-extended docs
     - name: Run doc tests
+      if: matrix.os == 'macos-latest'
+      run: cargo test --all-features --doc --package compio-fs-extended
+    
+    # Linux: Test all docs
+    - name: Run doc tests (Linux)
+      if: matrix.os == 'ubuntu-latest'
       run: cargo test --all-features --doc
     
-    - name: Build release binary
+    - name: Build release binary (Linux only for now)
+      if: matrix.os == 'ubuntu-latest'
       run: cargo build --release
 
   integration-tests:
