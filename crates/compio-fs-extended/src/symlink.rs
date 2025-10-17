@@ -223,17 +223,8 @@ pub(crate) async fn symlinkat_impl(
     .map_err(crate::error::ExtendedError::SpawnJoin)?
 }
 
-/// Create a symbolic link using DirectoryFd - Windows (not supported)
-#[cfg(windows)]
-pub(crate) async fn symlinkat_impl(
-    _dir: &crate::directory::DirectoryFd,
-    _target: &str,
-    _link_name: &str,
-) -> Result<()> {
-    Err(symlink_error(
-        "symlinkat not supported on Windows - use std::os::windows::fs::symlink_file/symlink_dir",
-    ))
-}
+// Windows: symlinkat_impl not defined
+// Windows lacks symlinkat syscall - compile-time error if used
 
 /// Read a symbolic link using DirectoryFd - Unix (nix readlinkat)
 ///
@@ -262,16 +253,8 @@ pub(crate) async fn readlinkat_impl(
     ))
 }
 
-/// Read a symbolic link using DirectoryFd - Windows (not supported)
-#[cfg(windows)]
-pub(crate) async fn readlinkat_impl(
-    _dir: &crate::directory::DirectoryFd,
-    _link_name: &str,
-) -> Result<std::path::PathBuf> {
-    Err(symlink_error(
-        "readlinkat not supported on Windows - use std::fs::read_link",
-    ))
-}
+// Windows: readlinkat_impl not defined
+// Windows lacks readlinkat syscall - compile-time error if used
 
 #[cfg(test)]
 mod tests {

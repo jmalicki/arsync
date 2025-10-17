@@ -400,10 +400,7 @@ pub async fn get_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
     Ok(buffer)
 }
 
-#[cfg(windows)]
-pub async fn get_xattr_at_path(_path: &Path, _name: &str) -> Result<Vec<u8>> {
-    Err(xattr_error("xattr unsupported on Windows"))
-}
+// Windows: get_xattr_at_path not defined - compile-time error
 
 /// Set an extended attribute value at the given path
 ///
@@ -447,10 +444,7 @@ pub async fn set_xattr_at_path(path: &Path, name: &str, value: &[u8]) -> Result<
     Ok(())
 }
 
-#[cfg(windows)]
-pub async fn set_xattr_at_path(_path: &Path, _name: &str, _value: &[u8]) -> Result<()> {
-    Err(xattr_error("xattr unsupported on Windows"))
-}
+// Windows: set_xattr_at_path not defined - compile-time error
 
 /// List all extended attributes at the given path
 ///
@@ -516,10 +510,7 @@ pub async fn list_xattr_at_path(path: &Path) -> Result<Vec<String>> {
     Ok(names)
 }
 
-#[cfg(windows)]
-pub async fn list_xattr_at_path(_path: &Path) -> Result<Vec<String>> {
-    Err(xattr_error("xattr unsupported on Windows"))
-}
+// Windows: list_xattr_at_path not defined - compile-time error
 
 /// Remove an extended attribute
 ///
@@ -555,10 +546,7 @@ pub async fn remove_xattr_at_path(path: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(windows)]
-pub async fn remove_xattr_at_path(_path: &Path, _name: &str) -> Result<()> {
-    Err(xattr_error("xattr unsupported on Windows"))
-}
+// Windows: remove_xattr_at_path not defined - compile-time error
 
 #[cfg(test)]
 mod tests {

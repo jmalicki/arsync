@@ -108,13 +108,8 @@ pub async fn create_hardlink_at_path(original_path: &Path, link_path: &Path) -> 
     .map_err(|e| hardlink_error(&format!("spawn failed: {:?}", e)))?
 }
 
-/// Windows: Not supported
-#[cfg(windows)]
-pub async fn create_hardlink_at_path(_original_path: &Path, _link_path: &Path) -> Result<()> {
-    Err(hardlink_error(
-        "hardlink operations not supported on Windows",
-    ))
-}
+// Windows: create_hardlink_at_path not defined
+// Compile-time error if you try to use it on Windows
 
 /// io_uring hardlink (linkat) operation (Linux-only)
 #[cfg(target_os = "linux")]

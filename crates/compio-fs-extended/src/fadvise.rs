@@ -226,26 +226,9 @@ pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) 
     }
 }
 
-/// macOS: Not supported - macOS doesn't have posix_fadvise
-///
-/// macOS removed posix_fadvise support. It has F_RDADVISE fcntl but it's deprecated.
-/// Modern macOS relies on unified buffer cache and automatic optimization.
-#[cfg(target_os = "macos")]
-pub async fn fadvise(_file: &File, _advice: FadviseAdvice, _offset: i64, _len: i64) -> Result<()> {
-    Err(fadvise_error(
-        "fadvise not supported on macOS - posix_fadvise was removed from macOS",
-    ))
-}
-
-/// Windows: Not supported - returns NotSupported error
-///
-/// See module-level docs for future Windows implementation options (FILE_FLAG_SEQUENTIAL_SCAN, etc.)
-#[cfg(windows)]
-pub async fn fadvise(_file: &File, _advice: FadviseAdvice, _offset: i64, _len: i64) -> Result<()> {
-    Err(fadvise_error(
-        "fadvise not supported on Windows - see module docs for future implementation options",
-    ))
-}
+// macOS/Windows: fadvise not defined
+// macOS removed posix_fadvise, Windows has different file hint mechanisms
+// Compile-time error if you try to use fadvise on these platforms
 
 #[cfg(test)]
 #[cfg(unix)]

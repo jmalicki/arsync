@@ -71,12 +71,7 @@ pub async fn create_special_file_at_path(path: &Path, mode: u32, dev: u64) -> Re
     .map_err(|e| device_error(&format!("spawn failed: {:?}", e)))?
 }
 
-#[cfg(windows)]
-pub async fn create_special_file_at_path(_path: &Path, _mode: u32, _dev: u64) -> Result<()> {
-    Err(crate::error::device_error(
-        "special files are not supported on Windows",
-    ))
-}
+// Windows: create_special_file_at_path not defined - compile-time error
 
 /// Create a named pipe (FIFO) at the given path using async spawn
 ///
@@ -107,12 +102,7 @@ pub async fn create_named_pipe_at_path(path: &Path, mode: u32) -> Result<()> {
     .map_err(|e| device_error(&format!("spawn failed: {:?}", e)))?
 }
 
-#[cfg(windows)]
-pub async fn create_named_pipe_at_path(_path: &Path, _mode: u32) -> Result<()> {
-    Err(crate::error::device_error(
-        "mkfifo not supported on Windows (use named pipes APIs)",
-    ))
-}
+// Windows: create_named_pipe_at_path not defined - compile-time error
 
 /// Create a character device at the given path
 ///
@@ -152,17 +142,7 @@ pub async fn create_char_device_at_path(
     create_special_file_at_path(path, device_mode, dev).await
 }
 
-#[cfg(windows)]
-pub async fn create_char_device_at_path(
-    _path: &Path,
-    _mode: u32,
-    _major: u32,
-    _minor: u32,
-) -> Result<()> {
-    Err(crate::error::device_error(
-        "character devices are not supported on Windows",
-    ))
-}
+// Windows: create_char_device_at_path not defined - compile-time error
 
 /// Create a block device at the given path
 ///
@@ -201,17 +181,7 @@ pub async fn create_block_device_at_path(
     create_special_file_at_path(path, device_mode, dev).await
 }
 
-#[cfg(windows)]
-pub async fn create_block_device_at_path(
-    _path: &Path,
-    _mode: u32,
-    _major: u32,
-    _minor: u32,
-) -> Result<()> {
-    Err(crate::error::device_error(
-        "block devices are not supported on Windows",
-    ))
-}
+// Windows: create_block_device_at_path not defined - compile-time error
 
 /// Create a Unix domain socket at the given path
 ///
@@ -239,12 +209,7 @@ pub async fn create_socket_at_path(path: &Path, mode: u32) -> Result<()> {
     create_special_file_at_path(path, socket_mode, 0).await
 }
 
-#[cfg(windows)]
-pub async fn create_socket_at_path(_path: &Path, _mode: u32) -> Result<()> {
-    Err(crate::error::device_error(
-        "AF_UNIX socket node creation is not supported on Windows",
-    ))
-}
+// Windows: create_socket_at_path not defined - compile-time error
 
 /// Error helper for device operations
 fn device_error(msg: &str) -> ExtendedError {
