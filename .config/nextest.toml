@@ -38,22 +38,25 @@ path = "target/nextest/junit.xml"
 #   cargo nextest run -E 'test(metadata) and test(xattr)'  # Combined filters
 
 # Define test groups by patterns
-[profile.default.overrides]
+[[profile.default.overrides]]
 # Integration tests - tend to be slower
 filter = 'test(/integration/)'
 slow-timeout = { period = "120s", terminate-after = 2 }
 threads-required = 1
 
+[[profile.default.overrides]]
 # Performance tests - very slow
 filter = 'test(/performance/)'
 slow-timeout = { period = "240s", terminate-after = 2 }
 threads-required = 1
 
+[[profile.default.overrides]]
 # Rsync compatibility tests - may be slow
 filter = 'test(/rsync/)'
 slow-timeout = { period = "180s", terminate-after = 2 }
 threads-required = 1
 
+[[profile.default.overrides]]
 # End-to-end tests - slowest
 filter = 'test(/end_to_end/)'
 slow-timeout = { period = "300s", terminate-after = 2 }
