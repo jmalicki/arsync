@@ -63,6 +63,7 @@ pub mod sync;
 pub use error::{Result, SyncError};
 pub use hardlink_tracker::FilesystemTracker;
 pub use progress::ProgressTracker;
+pub use stats::SharedStats;
 
 // Re-export semaphore from compio-sync crate
 pub use compio_sync::Semaphore;
