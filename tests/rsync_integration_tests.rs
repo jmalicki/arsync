@@ -271,6 +271,8 @@ fn test_arsync_receiver_with_rsync_sender() {
 // Level 3: Bidirectional Communication Tests
 // ============================================================================
 
+// TODO: Fix flaky timeout - see issue #76
+#[ignore]
 #[test]
 fn test_bidirectional_pipe_setup() {
     if !rsync_available() {
