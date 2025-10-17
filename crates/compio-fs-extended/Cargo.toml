@@ -40,13 +40,17 @@ criterion = { version = "0.7", features = ["html_reports"] }
 testcontainers = "0.25"
 
 [features]
-default = []
+default = ["cheap_calls_sync"]
 # Enable xattr support (requires io_uring opcodes)
 xattr = []
 # Enable performance metrics
 metrics = []
 # Enable logging integration
 logging = []
+# Call cheap metadata syscalls (chmod, chown, utimens) directly instead of spawn_blocking
+# These syscalls are typically <1μs, much faster than thread dispatch overhead (~10μs)
+# Note: Does NOT include readlinkat - that reads file data, not just metadata
+cheap_calls_sync = []
 
 # [[bench]]
 # name = "copy_file_range_bench"

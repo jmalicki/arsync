@@ -66,6 +66,7 @@
 //!
 //! ```rust,no_run
 //! use compio_fs_extended::OwnershipOps;
+//! use compio::fs::File;
 //! use std::path::Path;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -314,6 +315,7 @@ pub trait OwnershipOps {
     ///
     /// ```rust,no_run
     /// use compio_fs_extended::OwnershipOps;
+    /// use compio::fs::File;
     /// use std::path::Path;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
