@@ -45,9 +45,9 @@ use compio::fs::File;
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::pin::Pin;
 
 /// Trait for fadvise operations using io_uring
@@ -116,9 +116,9 @@ pub enum FadviseAdvice {
     Normal,
 }
 
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 impl FadviseAdvice {
-    /// Convert to the underlying POSIX constant
+    /// Convert to the underlying POSIX constant (Linux only - macOS removed posix_fadvise)
     fn to_posix(self) -> i32 {
         match self {
             FadviseAdvice::Sequential => libc::POSIX_FADV_SEQUENTIAL,

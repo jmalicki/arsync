@@ -38,7 +38,7 @@
 use crate::directory::DirectoryFd;
 #[cfg(unix)]
 use crate::error::{metadata_error, ExtendedError, Result};
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use compio::driver::OpCode;
 #[cfg(unix)]
 use compio::fs::File;

@@ -6,7 +6,7 @@ use compio::driver::OpCode;
 use compio::fs::File;
 #[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
 use std::path::Path;
 #[cfg(target_os = "linux")]
