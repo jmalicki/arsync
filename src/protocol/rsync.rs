@@ -7,16 +7,12 @@
 #![allow(clippy::missing_panics_doc)] // Protocol spec - panics are bugs
 #![allow(clippy::must_use_candidate)] // Protocol spec - use is context-dependent
 #![allow(clippy::missing_docs_in_private_items)]
-#![allow(clippy::unwrap_used)]
-#![allow(clippy::expect_used)]
 #![allow(clippy::future_not_send)] // compio buffers are not Send by design
-#![allow(clippy::uninlined_format_args)] // Protocol format strings
 #![allow(clippy::cast_possible_truncation)] // Rsync protocol requires specific sizes
 #![allow(clippy::cast_sign_loss)] // Protocol spec uses specific signedness
 #![allow(clippy::cast_possible_wrap)] // Protocol spec uses specific signedness
 #![allow(clippy::cast_precision_loss)] // Block size calculation requires float
 #![allow(clippy::unused_async)] // Async signatures for future protocol work
-#![allow(clippy::used_underscore_binding)] // Protocol spec has unused args
 #![allow(clippy::unnecessary_wraps)] // Return Result for consistency
 #![allow(clippy::bool_to_int_with_if)] // Protocol spec requires explicit bool->int
 #![allow(clippy::doc_markdown)] // Protocol documentation
@@ -85,13 +81,14 @@ pub async fn push_via_rsync_protocol(
     use tracing::info;
 
     info!("Starting push to remote via rsync protocol");
-    info!("Local path: {}", local_path.display());
+    let local_display = local_path.display();
+    info!("Local path: {local_display}");
 
     // SshConnection already implements Transport
     // We can use it directly with rsync_compat (no wrapper needed!)
     let stats = rsync_compat::rsync_send(args, local_path, connection)
         .await
-        .map_err(|e| anyhow::anyhow!("Push via rsync protocol failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Push via rsync protocol failed: {e}"))?;
 
     info!(
         "Push complete: {} files, {} bytes",
@@ -131,13 +128,14 @@ pub async fn pull_via_rsync_protocol(
     use tracing::info;
 
     info!("Starting pull from remote via rsync protocol");
-    info!("Local path: {}", local_path.display());
+    let local_display = local_path.display();
+    info!("Local path: {local_display}");
 
     // SshConnection already implements Transport
     // We can use it directly with rsync_compat (no wrapper needed!)
     let stats = rsync_compat::rsync_receive(args, connection, local_path)
         .await
-        .map_err(|e| anyhow::anyhow!("Pull via rsync protocol failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Pull via rsync protocol failed: {e}"))?;
 
     info!(
         "Pull complete: {} files, {} bytes",
@@ -245,7 +243,7 @@ fn calculate_block_size(file_size: u64) -> usize {
 
 /// Send files via pipe transport (for testing)
 pub async fn send_via_pipe(
-    _args: &Args,
+    args: &Args,
     source_path: &Path,
     mut transport: PipeTransport,
 ) -> Result<SyncStats> {
@@ -255,18 +253,14 @@ pub async fn send_via_pipe(
 
     // Phase 1: Handshake
     let remote_version = handshake_sender(&mut transport).await?;
-    debug!(
-        "Sender: Handshake complete, remote version: {}",
-        remote_version
-    );
+    debug!("Sender: Handshake complete, remote version: {remote_version}");
 
     // Phase 2: Send file list
-    debug!(
-        "Sender: Generating file list from: {}",
-        source_path.display()
-    );
-    let files = generate_file_list_simple(source_path, _args).await?;
-    info!("Sender: Found {} files to send", files.len());
+    let source_display = source_path.display();
+    debug!("Sender: Generating file list from: {source_display}");
+    let files = generate_file_list_simple(source_path, args).await?;
+    let file_count = files.len();
+    info!("Sender: Found {file_count} files to send");
 
     send_file_list_simple(&mut transport, &files).await?;
     debug!("Sender: File list sent");
@@ -281,39 +275,33 @@ pub async fn send_via_pipe(
             continue;
         }
 
-        debug!("Sender: Processing file: {}", file.path);
+        let file_path_str = &file.path;
+        debug!("Sender: Processing file: {file_path_str}");
         let file_path = source_path.join(&file.path);
 
         // Read file content
         let content = fs::read(&file_path)
-            .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", file.path, e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to read {}: {e}", file.path))?;
 
         // Receive block checksums from receiver
         let block_checksums = receive_block_checksums(&mut transport).await?;
 
         if block_checksums.is_empty() {
             // No basis file, send everything as literal
-            debug!(
-                "Sender: No basis file, sending {} bytes as literal",
-                content.len()
-            );
+            let content_len = content.len();
+            debug!("Sender: No basis file, sending {content_len} bytes as literal");
             let delta = vec![DeltaInstruction::Literal(content.clone())];
             send_delta(&mut transport, &delta).await?;
             bytes_sent += content.len() as u64;
         } else {
             // Generate delta using block matching
-            debug!(
-                "Sender: Received {} block checksums, generating delta",
-                block_checksums.len()
-            );
+            let checksum_count = block_checksums.len();
+            debug!("Sender: Received {checksum_count} block checksums, generating delta");
             let delta = generate_delta(&content, &block_checksums)?;
 
             // Calculate statistics
             let (literal_bytes, matched_bytes) = count_delta_bytes(&delta);
-            debug!(
-                "Sender: Delta: {} literal bytes, {} matched bytes",
-                literal_bytes, matched_bytes
-            );
+            debug!("Sender: Delta: {literal_bytes} literal bytes, {matched_bytes} matched bytes");
 
             send_delta(&mut transport, &delta).await?;
             bytes_sent += literal_bytes as u64;
@@ -325,12 +313,9 @@ pub async fn send_via_pipe(
     transport
         .flush()
         .await
-        .map_err(|e| anyhow::anyhow!("Flush failed: {}", e))?;
+        .map_err(|e| anyhow::anyhow!("Flush failed: {e}"))?;
 
-    info!(
-        "Sender: Transfer complete, sent {} bytes, matched {} bytes",
-        bytes_sent, bytes_matched
-    );
+    info!("Sender: Transfer complete, sent {bytes_sent} bytes, matched {bytes_matched} bytes");
 
     Ok(SyncStats {
         files_copied: files.len() as u64,
@@ -351,22 +336,21 @@ pub async fn receive_via_pipe(
 
     // Phase 1: Handshake
     let remote_version = handshake_receiver(&mut transport).await?;
-    debug!(
-        "Receiver: Handshake complete, remote version: {}",
-        remote_version
-    );
+    debug!("Receiver: Handshake complete, remote version: {remote_version}");
 
     // Phase 2: Receive file list
     debug!("Receiver: Receiving file list");
     let files = receive_file_list_simple(&mut transport).await?;
-    info!("Receiver: Received {} files", files.len());
+    let file_count = files.len();
+    info!("Receiver: Received {file_count} files");
 
     // Phase 3: Delta transfer with block checksums
     let mut bytes_received = 0u64;
     let mut bytes_matched = 0u64;
 
     for file in &files {
-        debug!("Receiver: Processing file: {}", file.path);
+        let file_path_str = &file.path;
+        debug!("Receiver: Processing file: {file_path_str}");
         let file_path = dest_path.join(&file.path);
 
         // Create parent directories
@@ -377,7 +361,8 @@ pub async fn receive_via_pipe(
         if file.is_symlink {
             // Handle symlink
             if let Some(target) = &file.symlink_target {
-                debug!("Receiver: Creating symlink {} -> {}", file.path, target);
+                let src = &file.path;
+                debug!("Receiver: Creating symlink {src} -> {target}");
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs as unix_fs;
@@ -396,11 +381,8 @@ pub async fn receive_via_pipe(
             // Generate and send block checksums
             let block_checksums = if let Some(ref basis) = basis_content {
                 let block_size = calculate_block_size(basis.len() as u64);
-                debug!(
-                    "Receiver: Basis file exists ({} bytes), block size {}",
-                    basis.len(),
-                    block_size
-                );
+                let basis_len = basis.len();
+                debug!("Receiver: Basis file exists ({basis_len} bytes), block size {block_size}");
                 generate_block_checksums(basis, block_size)?
             } else {
                 debug!("Receiver: No basis file, sending empty checksum list");
@@ -412,10 +394,7 @@ pub async fn receive_via_pipe(
             // Receive delta and apply
             let delta = receive_delta(&mut transport).await?;
             let (literal_bytes, matched_bytes) = count_delta_bytes(&delta);
-            debug!(
-                "Receiver: Received delta: {} literal bytes, {} matched bytes",
-                literal_bytes, matched_bytes
-            );
+            debug!("Receiver: Received delta: {literal_bytes} literal bytes, {matched_bytes} matched bytes");
 
             let reconstructed = apply_delta(basis_content.as_deref(), &delta, &block_checksums)?;
 
@@ -424,17 +403,15 @@ pub async fn receive_via_pipe(
             bytes_received += literal_bytes as u64;
             bytes_matched += matched_bytes as u64;
 
-            debug!("Receiver: Reconstructed {} bytes", reconstructed.len());
+            let reconstructed_len = reconstructed.len();
+            debug!("Receiver: Reconstructed {reconstructed_len} bytes");
         }
 
         // Apply metadata (permissions, timestamps, ownership)
         apply_metadata(&file_path, file)?;
     }
 
-    info!(
-        "Receiver: Transfer complete, received {} literal bytes, matched {} bytes",
-        bytes_received, bytes_matched
-    );
+    info!("Receiver: Transfer complete, received {bytes_received} literal bytes, matched {bytes_matched} bytes");
 
     Ok(SyncStats {
         files_copied: files.len() as u64,
@@ -459,9 +436,7 @@ async fn handshake_sender<T: Transport>(transport: &mut T) -> Result<u8> {
 
     if remote_version < MIN_PROTOCOL_VERSION {
         anyhow::bail!(
-            "Remote protocol version {} too old (need at least {})",
-            remote_version,
-            MIN_PROTOCOL_VERSION
+            "Remote protocol version {remote_version} too old (need at least {MIN_PROTOCOL_VERSION})"
         );
     }
 
@@ -477,9 +452,7 @@ async fn handshake_receiver<T: Transport>(transport: &mut T) -> Result<u8> {
 
     if remote_version < MIN_PROTOCOL_VERSION {
         anyhow::bail!(
-            "Remote protocol version {} too old (need at least {})",
-            remote_version,
-            MIN_PROTOCOL_VERSION
+            "Remote protocol version {remote_version} too old (need at least {MIN_PROTOCOL_VERSION})"
         );
     }
 
@@ -571,7 +544,8 @@ fn apply_metadata(path: &Path, file: &FileEntry) -> Result<()> {
     // Set permissions
     let permissions = std::fs::Permissions::from_mode(file.mode);
     if let Err(e) = fs::set_permissions(path, permissions) {
-        warn!("Failed to set permissions on {}: {}", path.display(), e);
+        let path_display = path.display();
+        warn!("Failed to set permissions on {path_display}: {e}");
     }
 
     // Set ownership (requires root privileges, so we'll try but not fail)
@@ -580,11 +554,11 @@ fn apply_metadata(path: &Path, file: &FileEntry) -> Result<()> {
         // Note: chown/lchown not in std, would need nix crate
         // For now, we'll skip ownership (rsync also needs --owner --group flags)
         // This matches rsync's behavior when run without privileges
+        let path_display = path.display();
+        let uid = file.uid;
+        let gid = file.gid;
         debug!(
-            "Skipping ownership for {} (uid={}, gid={}) - requires privileges",
-            path.display(),
-            file.uid,
-            file.gid
+            "Skipping ownership for {path_display} (uid={uid}, gid={gid}) - requires privileges"
         );
     }
 
@@ -594,7 +568,8 @@ fn apply_metadata(path: &Path, file: &FileEntry) -> Result<()> {
         let mtime = UNIX_EPOCH + Duration::from_secs(file.mtime as u64);
         if let Err(e) = filetime::set_file_mtime(path, filetime::FileTime::from_system_time(mtime))
         {
-            warn!("Failed to set mtime on {}: {}", path.display(), e);
+            let path_display = path.display();
+            warn!("Failed to set mtime on {path_display}: {e}");
         }
     }
 
@@ -845,7 +820,7 @@ pub fn apply_delta(
                         let end = (start + *length as usize).min(basis_data.len());
                         output.extend_from_slice(&basis_data[start..end]);
                     } else {
-                        anyhow::bail!("Block index {} not found in checksums", block_index);
+                        anyhow::bail!("Block index {block_index} not found in checksums");
                     }
                 } else {
                     anyhow::bail!("BlockMatch instruction but no basis file");
@@ -987,7 +962,10 @@ async fn receive_delta<T: Transport>(transport: &mut T) -> Result<Vec<DeltaInstr
                     length,
                 });
             }
-            _ => anyhow::bail!("Unknown delta instruction type: {}", type_buf[0]),
+            _ => {
+                let instruction_type = type_buf[0];
+                anyhow::bail!("Unknown delta instruction type: {instruction_type}");
+            }
         }
     }
 
