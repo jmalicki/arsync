@@ -146,6 +146,141 @@ impl DirectoryFd {
         .await
         .map_err(|e| directory_error(&format!("spawn failed: {:?}", e)))?
     }
+
+    /// Set timestamps on this directory itself
+    ///
+    /// FD-based operation that sets timestamps on the directory,
+    /// avoiding path lookups and TOCTOU races. Uses `futimens(2)` internally.
+    ///
+    /// # Arguments
+    ///
+    /// * `accessed` - New access time
+    /// * `modified` - New modification time
+    pub async fn set_times(
+        &self,
+        accessed: std::time::SystemTime,
+        modified: std::time::SystemTime,
+    ) -> Result<()> {
+        crate::metadata::futimens_fd(self.as_file(), accessed, modified).await
+    }
+
+    /// Set permissions on this directory itself
+    ///
+    /// FD-based operation that sets permissions on the directory,
+    /// avoiding path lookups and TOCTOU races. Uses `fchmod(2)` internally.
+    ///
+    /// Matches the API of `compio::fs::File::set_permissions()`.
+    ///
+    /// # Arguments
+    ///
+    /// * `permissions` - New permissions for the directory
+    pub async fn set_permissions(&self, permissions: compio::fs::Permissions) -> Result<()> {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = permissions.mode();
+        crate::metadata::fchmod(self.as_file(), mode).await
+    }
+
+    /// Set ownership on this directory itself
+    ///
+    /// FD-based operation that sets ownership on the directory,
+    /// avoiding path lookups and TOCTOU races. Uses `fchown(2)` internally.
+    ///
+    /// # Arguments
+    ///
+    /// * `uid` - New user ID
+    /// * `gid` - New group ID
+    pub async fn set_ownership(&self, uid: u32, gid: u32) -> Result<()> {
+        use crate::ownership::OwnershipOps;
+        self.as_file().fchown(uid, gid).await
+    }
+
+    // ========================================================================
+    // Metadata operations on children (relative paths)
+    // ========================================================================
+
+    /// Get file metadata with nanosecond timestamps for a child file
+    ///
+    /// Uses io_uring `statx(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file
+    pub async fn statx(
+        &self,
+        pathname: &str,
+    ) -> Result<(std::time::SystemTime, std::time::SystemTime)> {
+        crate::metadata::statx_impl(self, pathname).await
+    }
+
+    /// Change file permissions for a child file
+    ///
+    /// Uses `fchmodat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file
+    /// * `mode` - New file permissions (e.g., 0o644)
+    pub async fn fchmodat(&self, pathname: &str, mode: u32) -> Result<()> {
+        crate::metadata::fchmodat_impl(self, pathname, mode).await
+    }
+
+    /// Change file timestamps for a child file
+    ///
+    /// Uses `utimensat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file
+    /// * `accessed` - New access time
+    /// * `modified` - New modification time
+    pub async fn utimensat(
+        &self,
+        pathname: &str,
+        accessed: std::time::SystemTime,
+        modified: std::time::SystemTime,
+    ) -> Result<()> {
+        crate::metadata::utimensat_impl(self, pathname, accessed, modified).await
+    }
+
+    /// Change file ownership for a child file
+    ///
+    /// Uses `fchownat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file
+    /// * `uid` - New user ID
+    /// * `gid` - New group ID
+    pub async fn fchownat(&self, pathname: &str, uid: u32, gid: u32) -> Result<()> {
+        crate::metadata::fchownat_impl(self, pathname, uid, gid).await
+    }
+
+    // ========================================================================
+    // Symlink operations on children (relative paths)
+    // ========================================================================
+
+    /// Create a symbolic link for a child
+    ///
+    /// Uses `symlinkat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `target` - Target path of the symbolic link
+    /// * `link_name` - Name of the symbolic link (relative to this directory)
+    pub async fn symlinkat(&self, target: &str, link_name: &str) -> Result<()> {
+        crate::symlink::symlinkat_impl(self, target, link_name).await
+    }
+
+    /// Read a symbolic link for a child
+    ///
+    /// Uses `readlinkat(2)` with directory FD and relative path (TOCTOU-safe).
+    ///
+    /// # Arguments
+    ///
+    /// * `link_name` - Name of the symbolic link (relative to this directory)
+    pub async fn readlinkat(&self, link_name: &str) -> Result<std::path::PathBuf> {
+        crate::symlink::readlinkat_impl(self, link_name).await
+    }
 }
 
 /// Read directory entries

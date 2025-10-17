@@ -52,12 +52,12 @@ async fn test_symlink_basic() {
         let dir_fd = crate::directory::DirectoryFd::open(temp_dir.path())
             .await
             .unwrap();
-        symlink::create_symlink_at_dirfd(
-            &dir_fd,
-            &source_file.file_name().unwrap().to_string_lossy(),
-            "test_symlink",
-        )
-        .await
+        dir_fd
+            .symlinkat(
+                &source_file.file_name().unwrap().to_string_lossy(),
+                "test_symlink",
+            )
+            .await
     }
     .await
     .unwrap();
@@ -75,7 +75,7 @@ async fn test_symlink_basic() {
         let dir_fd = crate::directory::DirectoryFd::open(temp_dir.path())
             .await
             .unwrap();
-        symlink::read_symlink_at_dirfd(&dir_fd, "test_symlink").await
+        dir_fd.readlinkat("test_symlink").await
     }
     .await
     .unwrap();
@@ -143,15 +143,9 @@ async fn test_metadata_basic() {
     // Create test file
     fs::write(&file_path, "Test content").unwrap();
 
-    // Test path-based metadata operations
-    metadata::fchmodat(&file_path, 0o600).await.unwrap();
-
     // Test file descriptor-based metadata operations
     let file = File::open(&file_path).await.unwrap();
-    use std::os::unix::io::AsRawFd;
-    let fd = file.as_raw_fd();
-
-    metadata::fchmod(fd, 0o644).await.unwrap();
+    metadata::fchmod(&file, 0o644).await.unwrap();
 }
 
 /// Test device file operations
@@ -263,7 +257,7 @@ async fn test_error_handling() {
         let dir_fd = crate::directory::DirectoryFd::open(temp_dir.path())
             .await
             .unwrap();
-        symlink::read_symlink_at_dirfd(&dir_fd, "nonexistent").await
+        dir_fd.readlinkat("nonexistent").await
     }
     .await;
     assert!(result.is_err());

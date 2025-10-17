@@ -66,12 +66,12 @@ async fn test_symlink_real_world_scenarios() {
         let dir_fd = crate::directory::DirectoryFd::open(temp_dir.path())
             .await
             .unwrap();
-        symlink::create_symlink_at_dirfd(
-            &dir_fd,
-            &source_file.file_name().unwrap().to_string_lossy(),
-            "symlink1",
-        )
-        .await
+        dir_fd
+            .symlinkat(
+                &source_file.file_name().unwrap().to_string_lossy(),
+                "symlink1",
+            )
+            .await
     }
     .await
     .unwrap();
@@ -80,13 +80,13 @@ async fn test_symlink_real_world_scenarios() {
     let dir_fd2 = crate::directory::DirectoryFd::open(temp_dir.path())
         .await
         .unwrap();
-    symlink::create_symlink_at_dirfd(
-        &dir_fd2,
-        &source_file.file_name().unwrap().to_string_lossy(),
-        "symlink2",
-    )
-    .await
-    .unwrap();
+    dir_fd2
+        .symlinkat(
+            &source_file.file_name().unwrap().to_string_lossy(),
+            "symlink2",
+        )
+        .await
+        .unwrap();
 
     // Verify symlinks work
     assert!(symlink1.exists());
@@ -97,7 +97,7 @@ async fn test_symlink_real_world_scenarios() {
         let dir_fd = crate::directory::DirectoryFd::open(temp_dir.path())
             .await
             .unwrap();
-        symlink::read_symlink_at_dirfd(&dir_fd, "symlink1").await
+        dir_fd.readlinkat("symlink1").await
     }
     .await
     .unwrap();
@@ -105,7 +105,7 @@ async fn test_symlink_real_world_scenarios() {
         let dir_fd = crate::directory::DirectoryFd::open(temp_dir.path())
             .await
             .unwrap();
-        symlink::read_symlink_at_dirfd(&dir_fd, "symlink2").await
+        dir_fd.readlinkat("symlink2").await
     }
     .await
     .unwrap();
@@ -368,7 +368,7 @@ async fn test_error_handling_real_scenarios() {
         let dir_fd = crate::directory::DirectoryFd::open(temp_dir.path())
             .await
             .unwrap();
-        symlink::read_symlink_at_dirfd(&dir_fd, "nonexistent").await
+        dir_fd.readlinkat("nonexistent").await
     }
     .await;
     assert!(result.is_err());
