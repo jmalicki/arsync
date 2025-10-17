@@ -263,11 +263,19 @@ pub async fn read_symlink_at_dirfd(
     dir_fd: &crate::directory::DirectoryFd,
     link_name: &str,
 ) -> Result<std::path::PathBuf> {
+    use std::os::fd::BorrowedFd;
+
     let link_name = link_name.to_string();
     let dir_fd_raw = dir_fd.as_raw_fd();
 
     let os_string = compio::runtime::spawn(async move {
-        fcntl::readlinkat(Some(dir_fd_raw), std::path::Path::new(&link_name))
+        // SAFETY: The raw fd is valid for the duration of this call because:
+        // 1. DirectoryFd holds an Arc<File> keeping the fd open
+        // 2. The spawned task completes before DirectoryFd is dropped
+        // We use raw fd here because BorrowedFd from as_fd() has a non-'static lifetime,
+        // but spawn requires 'static. This is the standard pattern for moving fds into tasks.
+        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd_raw) };
+        fcntl::readlinkat(borrowed_fd, std::path::Path::new(&link_name))
     })
     .await
     .map_err(ExtendedError::SpawnJoin)?;
