@@ -236,7 +236,7 @@ pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) 
 // Compile-time error if you try to use fadvise on these platforms
 
 #[cfg(test)]
-#[cfg(unix)]
+#[cfg(target_os = "linux")] // fadvise is Linux-only
 mod tests {
     use super::*;
     use compio::fs::File;

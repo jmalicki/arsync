@@ -3,6 +3,7 @@
 //! These tests exercise real-world scenarios using actual files and directories
 //! to verify that all io_uring operations work correctly in practice.
 
+#[cfg(target_os = "linux")]
 use compio::fs::File;
 use compio_fs_extended::*;
 use std::fs;
