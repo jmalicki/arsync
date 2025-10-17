@@ -231,7 +231,7 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
 /// # Errors
 ///
 /// Returns an error if the statx operation fails
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 pub(crate) async fn statx_impl(
     dir: &DirectoryFd,
     pathname: &str,

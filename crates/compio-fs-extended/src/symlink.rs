@@ -10,7 +10,7 @@ use compio::runtime::submit;
 use io_uring::{opcode, types};
 #[cfg(unix)]
 use nix::fcntl;
-#[cfg(target_os = "macos")]
+#[cfg(all(unix, not(target_os = "linux")))]
 use nix::unistd;
 #[cfg(target_os = "linux")]
 use std::ffi::CString;

@@ -251,7 +251,9 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the file doesn't exist or I/O errors occur.
-    #[cfg(unix)]
+    ///
+    /// Note: Linux-only (statx syscall is Linux-specific)
+    #[cfg(target_os = "linux")]
     pub async fn statx(
         &self,
         pathname: &str,

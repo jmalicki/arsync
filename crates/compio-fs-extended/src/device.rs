@@ -194,7 +194,9 @@ pub async fn create_block_device_at_path(
     let dev = ((major as u64 & 0xfff) << 8)
         | (minor as u64 & 0xff)
         | (((major as u64 >> 12) & 0xfffff) << 32);
-    let device_mode = stat::SFlag::S_IFBLK.bits() | (mode & 0o777);
+    // Note: On some platforms SFlag::bits() returns u16, on others u32
+    #[allow(clippy::unnecessary_cast)]
+    let device_mode = stat::SFlag::S_IFBLK.bits() as u32 | (mode & 0o777);
 
     create_special_file_at_path(path, device_mode, dev).await
 }
@@ -230,7 +232,9 @@ pub async fn create_block_device_at_path(
 /// - The operation fails due to I/O errors
 #[cfg(unix)]
 pub async fn create_socket_at_path(path: &Path, mode: u32) -> Result<()> {
-    let socket_mode = stat::SFlag::S_IFSOCK.bits() | (mode & 0o777);
+    // Note: On some platforms SFlag::bits() returns u16, on others u32
+    #[allow(clippy::unnecessary_cast)]
+    let socket_mode = stat::SFlag::S_IFSOCK.bits() as u32 | (mode & 0o777);
 
     create_special_file_at_path(path, socket_mode, 0).await
 }
