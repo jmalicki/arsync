@@ -210,7 +210,7 @@ pub(crate) async fn readlinkat_impl(
         fcntl::readlinkat(dir.as_fd(), std::path::Path::new(&link_name))
     })
     .await
-    .unwrap_or_else(|e| std::panic::resume_unwind(e));
+    .map_err(crate::error::ExtendedError::SpawnJoin)?;
 
     Ok(std::path::PathBuf::from(
         os_string.map_err(|e| symlink_error(&e.to_string()))?,

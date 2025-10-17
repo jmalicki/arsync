@@ -274,7 +274,7 @@ pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) 
     {
         compio::runtime::spawn_blocking(operation)
             .await
-            .unwrap_or_else(|e| std::panic::resume_unwind(e))
+            .map_err(ExtendedError::SpawnJoin)?
     }
 }
 
@@ -311,7 +311,7 @@ pub(crate) async fn utimensat_impl(
     {
         compio::runtime::spawn_blocking(operation)
             .await
-            .unwrap_or_else(|e| std::panic::resume_unwind(e))
+            .map_err(ExtendedError::SpawnJoin)?
     }
 }
 
@@ -348,6 +348,6 @@ pub(crate) async fn fchownat_impl(
     {
         compio::runtime::spawn_blocking(operation)
             .await
-            .unwrap_or_else(|e| std::panic::resume_unwind(e))
+            .map_err(ExtendedError::SpawnJoin)?
     }
 }
