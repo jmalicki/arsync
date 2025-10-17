@@ -41,6 +41,11 @@ num_cpus = "1.0"
 async-recursion = "1.0"
 dashmap = "6.1"
 
+# Checksums and hashing for rsync protocol
+simd-adler32 = "0.3"  # SIMD-accelerated Adler-32 (3-5x faster)
+md5 = "0.7"
+blake3 = "1.5"
+
 # i18n (internationalization)
 fluent = "0.17"
 fluent-bundle = "0.16"
