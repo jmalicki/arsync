@@ -47,8 +47,9 @@ xattr = []
 metrics = []
 # Enable logging integration
 logging = []
-# Call cheap syscalls (chmod, chown, utimens, readlink) directly instead of spawn_blocking
+# Call cheap metadata syscalls (chmod, chown, utimens) directly instead of spawn_blocking
 # These syscalls are typically <1μs, much faster than thread dispatch overhead (~10μs)
+# Note: Does NOT include readlinkat - that reads file data, not just metadata
 cheap_calls_sync = []
 
 # [[bench]]

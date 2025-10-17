@@ -29,18 +29,25 @@ When using an async runtime like `compio`, we face a trade-off with blocking sys
 
 These syscalls are "cheap" (typically <1μs on Linux):
 
-| Syscall | Typical Time | What It Does |
-|---------|--------------|--------------|
-| `fchmodat(2)` | 0.1-0.5μs | Change file permissions |
-| `fchownat(2)` | 0.1-0.5μs | Change file ownership |
-| `utimensat(2)` | 0.1-0.5μs | Set file timestamps |
-| `readlinkat(2)` | 0.5-1.0μs | Read symbolic link target |
+| Syscall | Typical Time | What It Does | Included? |
+|---------|--------------|--------------|-----------|
+| `fchmodat(2)` | 0.1-0.5μs | Change file permissions | ✅ Yes |
+| `fchownat(2)` | 0.1-0.5μs | Change file ownership | ✅ Yes |
+| `utimensat(2)` | 0.1-0.5μs | Set file timestamps | ✅ Yes |
+| `readlinkat(2)` | 0.5-5.0μs | Read symbolic link target | ❌ **No** |
 
-**Why are they so fast?**
+**Why are the included syscalls so fast?**
 - No disk I/O (just metadata updates in kernel memory)
 - No complex validation
 - Direct inode operations
 - Usually cached in VFS layer
+
+**Why is `readlinkat` excluded?**
+- Reads actual file data (the symlink target path), not just metadata
+- Symlink targets can be up to PATH_MAX (4096 bytes)
+- May require disk I/O on some filesystems
+- More variable latency than pure metadata operations
+- **Always uses spawn_blocking regardless of feature flag**
 
 ## Design
 
