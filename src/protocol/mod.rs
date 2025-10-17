@@ -151,12 +151,14 @@ mod tests {
         let loc = Location::parse("alice@example.com:/data").unwrap();
         assert!(loc.is_remote());
         assert!(!loc.is_local());
-        assert!(matches!(loc, Location::Remote { .. }));
 
-        if let Location::Remote { user, host, path } = loc {
-            assert_eq!(user, Some("alice".to_string()));
-            assert_eq!(host, "example.com");
-            assert_eq!(path, PathBuf::from("/data"));
+        match loc {
+            Location::Remote { user, host, path } => {
+                assert_eq!(user, Some("alice".to_string()));
+                assert_eq!(host, "example.com");
+                assert_eq!(path, PathBuf::from("/data"));
+            }
+            Location::Local(_) => panic!("Expected Remote, got Local"),
         }
     }
 
@@ -166,12 +168,14 @@ mod tests {
         // Requirement: Location::parse should handle missing username
         let loc = Location::parse("server.local:/backup").unwrap();
         assert!(loc.is_remote());
-        assert!(matches!(loc, Location::Remote { .. }));
 
-        if let Location::Remote { user, host, path } = loc {
-            assert_eq!(user, None);
-            assert_eq!(host, "server.local");
-            assert_eq!(path, PathBuf::from("/backup"));
+        match loc {
+            Location::Remote { user, host, path } => {
+                assert_eq!(user, None);
+                assert_eq!(host, "server.local");
+                assert_eq!(path, PathBuf::from("/backup"));
+            }
+            Location::Local(_) => panic!("Expected Remote, got Local"),
         }
     }
 
@@ -181,12 +185,14 @@ mod tests {
         // Requirement: Location::parse should handle IP addresses as hosts
         let loc = Location::parse("192.168.1.100:/mnt/storage").unwrap();
         assert!(loc.is_remote());
-        assert!(matches!(loc, Location::Remote { .. }));
 
-        if let Location::Remote { user, host, path } = loc {
-            assert_eq!(user, None);
-            assert_eq!(host, "192.168.1.100");
-            assert_eq!(path, PathBuf::from("/mnt/storage"));
+        match loc {
+            Location::Remote { user, host, path } => {
+                assert_eq!(user, None);
+                assert_eq!(host, "192.168.1.100");
+                assert_eq!(path, PathBuf::from("/mnt/storage"));
+            }
+            Location::Local(_) => panic!("Expected Remote, got Local"),
         }
     }
 
@@ -196,12 +202,14 @@ mod tests {
         // Requirement: Location::parse should handle relative paths on remote hosts
         let loc = Location::parse("user@host:relative/path").unwrap();
         assert!(loc.is_remote());
-        assert!(matches!(loc, Location::Remote { .. }));
 
-        if let Location::Remote { user, host, path } = loc {
-            assert_eq!(user, Some("user".to_string()));
-            assert_eq!(host, "host");
-            assert_eq!(path, PathBuf::from("relative/path"));
+        match loc {
+            Location::Remote { user, host, path } => {
+                assert_eq!(user, Some("user".to_string()));
+                assert_eq!(host, "host");
+                assert_eq!(path, PathBuf::from("relative/path"));
+            }
+            Location::Local(_) => panic!("Expected Remote, got Local"),
         }
     }
 
@@ -211,12 +219,14 @@ mod tests {
         // Requirement: Location::parse should handle empty paths
         let loc = Location::parse("host:").unwrap();
         assert!(loc.is_remote());
-        assert!(matches!(loc, Location::Remote { .. }));
 
-        if let Location::Remote { user, host, path } = loc {
-            assert_eq!(user, None);
-            assert_eq!(host, "host");
-            assert_eq!(path, PathBuf::from(""));
+        match loc {
+            Location::Remote { user, host, path } => {
+                assert_eq!(user, None);
+                assert_eq!(host, "host");
+                assert_eq!(path, PathBuf::from(""));
+            }
+            Location::Local(_) => panic!("Expected Remote, got Local"),
         }
     }
 
