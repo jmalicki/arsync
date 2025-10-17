@@ -217,7 +217,7 @@ pub async fn copy_file_range_with_fallback(
     Ok(total)
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
     use compio::fs::File;
