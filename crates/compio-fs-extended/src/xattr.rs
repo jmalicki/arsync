@@ -1,4 +1,28 @@
 //! Extended attributes (xattr) operations using io_uring opcodes
+//!
+//! # Platform Differences
+//!
+//! Extended attribute APIs differ between Linux and macOS:
+//!
+//! ## Linux (simpler API):
+//! - `getxattr(path, name, value, size)` - 4 args
+//! - `setxattr(path, name, value, size, flags)` - 5 args
+//! - `listxattr(path, list, size)` - 3 args
+//! - `removexattr(path, name)` - 2 args
+//!
+//! ## macOS (BSD API with extra features):
+//! - `getxattr(path, name, value, size, position, options)` - 6 args
+//! - `setxattr(path, name, value, size, position, options)` - 6 args
+//! - `listxattr(path, list, size, options)` - 4 args
+//! - `removexattr(path, name, options)` - 3 args
+//!
+//! ### Extra macOS Parameters:
+//!
+//! - **`position`**: Offset for reading/writing large xattrs in chunks (we always use 0)
+//! - **`options`**: Flags like `XATTR_NOFOLLOW` or `XATTR_CREATE` (we always use 0 for defaults)
+//!
+//! Our implementation uses the same behavior on both platforms by passing 0 for macOS's
+//! extra parameters, making it functionally equivalent to Linux's simpler API.
 
 use crate::error::{xattr_error, Result};
 #[cfg(target_os = "linux")]
@@ -366,7 +390,8 @@ pub async fn get_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
         std::ffi::CString::new(name).map_err(|e| xattr_error(&format!("Invalid name: {}", e)))?;
 
     // Get the size first
-    // Note: macOS getxattr has extra position and options arguments
+    // Platform-specific: macOS getxattr takes 6 args (adds position=0, options=0)
+    // Linux getxattr takes 4 args
     let size = unsafe {
         #[cfg(target_os = "macos")]
         {
@@ -375,8 +400,8 @@ pub async fn get_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
                 name_cstr.as_ptr(),
                 std::ptr::null_mut(),
                 0,
-                0, // position
-                0, // options
+                0, // position: offset to start reading (0 = from beginning)
+                0, // options: flags like XATTR_NOFOLLOW (0 = defaults)
             )
         }
         #[cfg(not(target_os = "macos"))]
@@ -431,6 +456,123 @@ pub async fn get_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
 
 // Windows: get_xattr_at_path not defined - compile-time error
 
+/// Get an extended attribute value (symlink version - doesn't follow symlinks)
+///
+/// Like `get_xattr_at_path` but operates on the symlink itself, not its target.
+///
+/// # Implementation
+///
+/// - **Linux**: Uses `lgetxattr()` (the "l" version doesn't follow symlinks)
+/// - **macOS**: Uses `getxattr()` with `XATTR_NOFOLLOW` flag
+///
+/// # Arguments
+///
+/// * `path` - Path to the file or symlink
+/// * `name` - Name of the extended attribute
+///
+/// # Returns
+///
+/// The value of the extended attribute on the symlink itself
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - The extended attribute doesn't exist
+/// - Permission is denied
+/// - The operation fails due to I/O errors
+#[cfg(unix)]
+pub async fn lget_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
+    let path_cstr = std::ffi::CString::new(path.to_string_lossy().as_bytes())
+        .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
+    let name_cstr =
+        std::ffi::CString::new(name).map_err(|e| xattr_error(&format!("Invalid name: {}", e)))?;
+
+    // Get the size first (using l* variant or NOFOLLOW flag)
+    let size = unsafe {
+        #[cfg(target_os = "macos")]
+        {
+            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
+            libc::getxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                0,              // position
+                XATTR_NOFOLLOW, // options: don't follow symlinks
+            )
+        }
+        #[cfg(target_os = "linux")]
+        {
+            libc::lgetxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+            )
+        }
+        #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
+        {
+            // Fallback for other Unix: try to use lgetxattr if available
+            libc::lgetxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+            )
+        }
+    };
+
+    if size < 0 {
+        let errno = std::io::Error::last_os_error();
+        return Err(xattr_error(&format!("lgetxattr failed: {}", errno)));
+    }
+
+    // Allocate buffer and get the value
+    let mut buffer = vec![0u8; size as usize];
+    let actual_size = unsafe {
+        #[cfg(target_os = "macos")]
+        {
+            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
+            libc::getxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_void,
+                buffer.len(),
+                0,              // position
+                XATTR_NOFOLLOW, // options: don't follow symlinks
+            )
+        }
+        #[cfg(target_os = "linux")]
+        {
+            libc::lgetxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_void,
+                buffer.len(),
+            )
+        }
+        #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
+        {
+            libc::lgetxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_void,
+                buffer.len(),
+            )
+        }
+    };
+
+    if actual_size < 0 {
+        let errno = std::io::Error::last_os_error();
+        return Err(xattr_error(&format!("lgetxattr failed: {}", errno)));
+    }
+
+    buffer.truncate(actual_size as usize);
+    Ok(buffer)
+}
+
+// Windows: lget_xattr_at_path not defined - compile-time error
+
 /// Set an extended attribute value at the given path
 ///
 /// # Arguments
@@ -463,8 +605,8 @@ pub async fn set_xattr_at_path(path: &Path, name: &str, value: &[u8]) -> Result<
                 name_cstr.as_ptr(),
                 value.as_ptr() as *const libc::c_void,
                 value.len(),
-                0, // position
-                0, // options (flags on macOS)
+                0, // position: offset to start writing (0 = from beginning)
+                0, // options: flags like XATTR_CREATE/XATTR_REPLACE (0 = defaults)
             )
         }
         #[cfg(not(target_os = "macos"))]
@@ -489,6 +631,78 @@ pub async fn set_xattr_at_path(path: &Path, name: &str, value: &[u8]) -> Result<
 
 // Windows: set_xattr_at_path not defined - compile-time error
 
+/// Set an extended attribute value (symlink version - doesn't follow symlinks)
+///
+/// Like `set_xattr_at_path` but operates on the symlink itself, not its target.
+///
+/// # Implementation
+///
+/// - **Linux**: Uses `lsetxattr()` (the "l" version doesn't follow symlinks)
+/// - **macOS**: Uses `setxattr()` with `XATTR_NOFOLLOW` flag
+///
+/// # Arguments
+///
+/// * `path` - Path to the file or symlink
+/// * `name` - Name of the extended attribute
+/// * `value` - Value to set
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - Permission is denied
+/// - The operation fails due to I/O errors
+#[cfg(unix)]
+pub async fn lset_xattr_at_path(path: &Path, name: &str, value: &[u8]) -> Result<()> {
+    let path_cstr = std::ffi::CString::new(path.to_string_lossy().as_bytes())
+        .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
+    let name_cstr =
+        std::ffi::CString::new(name).map_err(|e| xattr_error(&format!("Invalid name: {}", e)))?;
+
+    let result = unsafe {
+        #[cfg(target_os = "macos")]
+        {
+            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
+            libc::setxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                value.as_ptr() as *const libc::c_void,
+                value.len(),
+                0,              // position
+                XATTR_NOFOLLOW, // options: don't follow symlinks
+            )
+        }
+        #[cfg(target_os = "linux")]
+        {
+            libc::lsetxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                value.as_ptr() as *const libc::c_void,
+                value.len(),
+                0, // flags
+            )
+        }
+        #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
+        {
+            libc::lsetxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                value.as_ptr() as *const libc::c_void,
+                value.len(),
+                0, // flags
+            )
+        }
+    };
+
+    if result != 0 {
+        let errno = std::io::Error::last_os_error();
+        return Err(xattr_error(&format!("lsetxattr failed: {}", errno)));
+    }
+
+    Ok(())
+}
+
+// Windows: lset_xattr_at_path not defined - compile-time error
+
 /// List all extended attributes at the given path
 ///
 /// # Arguments
@@ -510,11 +724,16 @@ pub async fn list_xattr_at_path(path: &Path) -> Result<Vec<String>> {
         .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
 
     // Get the size first
-    // Note: macOS listxattr has an extra options argument
+    // Platform-specific: macOS listxattr takes 4 args (adds options=0), Linux takes 3
     let size = unsafe {
         #[cfg(target_os = "macos")]
         {
-            libc::listxattr(path_cstr.as_ptr(), std::ptr::null_mut(), 0, 0)
+            libc::listxattr(
+                path_cstr.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                0, /* options */
+            )
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -577,6 +796,114 @@ pub async fn list_xattr_at_path(path: &Path) -> Result<Vec<String>> {
 
 // Windows: list_xattr_at_path not defined - compile-time error
 
+/// List all extended attributes (symlink version - doesn't follow symlinks)
+///
+/// Like `list_xattr_at_path` but operates on the symlink itself, not its target.
+///
+/// # Implementation
+///
+/// - **Linux**: Uses `llistxattr()` (the "l" version doesn't follow symlinks)
+/// - **macOS**: Uses `listxattr()` with `XATTR_NOFOLLOW` flag
+///
+/// # Arguments
+///
+/// * `path` - Path to the file or symlink
+///
+/// # Returns
+///
+/// A vector of extended attribute names on the symlink itself
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - Permission is denied
+/// - The operation fails due to I/O errors
+#[cfg(unix)]
+pub async fn llist_xattr_at_path(path: &Path) -> Result<Vec<String>> {
+    let path_cstr = std::ffi::CString::new(path.to_string_lossy().as_bytes())
+        .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
+
+    // Get the size first
+    let size = unsafe {
+        #[cfg(target_os = "macos")]
+        {
+            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
+            libc::listxattr(path_cstr.as_ptr(), std::ptr::null_mut(), 0, XATTR_NOFOLLOW)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            libc::llistxattr(path_cstr.as_ptr(), std::ptr::null_mut(), 0)
+        }
+        #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
+        {
+            libc::llistxattr(path_cstr.as_ptr(), std::ptr::null_mut(), 0)
+        }
+    };
+
+    if size < 0 {
+        let errno = std::io::Error::last_os_error();
+        return Err(xattr_error(&format!("llistxattr failed: {}", errno)));
+    }
+
+    if size == 0 {
+        return Ok(Vec::new());
+    }
+
+    // Allocate buffer and get the list
+    let mut buffer = vec![0u8; size as usize];
+    let actual_size = unsafe {
+        #[cfg(target_os = "macos")]
+        {
+            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
+            libc::listxattr(
+                path_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_char,
+                buffer.len(),
+                XATTR_NOFOLLOW,
+            )
+        }
+        #[cfg(target_os = "linux")]
+        {
+            libc::llistxattr(
+                path_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_char,
+                buffer.len(),
+            )
+        }
+        #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
+        {
+            libc::llistxattr(
+                path_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_char,
+                buffer.len(),
+            )
+        }
+    };
+
+    if actual_size < 0 {
+        let errno = std::io::Error::last_os_error();
+        return Err(xattr_error(&format!("llistxattr failed: {}", errno)));
+    }
+
+    // Parse the null-separated list
+    let mut names = Vec::new();
+    let mut start = 0;
+    for i in 0..actual_size as usize {
+        if buffer[i] == 0 {
+            if i > start {
+                if let Ok(name) = std::str::from_utf8(&buffer[start..i]) {
+                    names.push(name.to_string());
+                }
+            }
+            start = i + 1;
+        }
+    }
+
+    Ok(names)
+}
+
+// Windows: llist_xattr_at_path not defined - compile-time error
+
 /// Remove an extended attribute
 ///
 /// # Arguments
@@ -601,11 +928,11 @@ pub async fn remove_xattr_at_path(path: &Path, name: &str) -> Result<()> {
     let name_cstr =
         std::ffi::CString::new(name).map_err(|e| xattr_error(&format!("Invalid name: {}", e)))?;
 
-    // Note: macOS removexattr has an extra options argument
+    // Platform-specific: macOS removexattr takes 3 args (adds options=0), Linux takes 2
     let result = unsafe {
         #[cfg(target_os = "macos")]
         {
-            libc::removexattr(path_cstr.as_ptr(), name_cstr.as_ptr(), 0)
+            libc::removexattr(path_cstr.as_ptr(), name_cstr.as_ptr(), 0 /* options */)
         }
         #[cfg(not(target_os = "macos"))]
         {
@@ -622,6 +949,59 @@ pub async fn remove_xattr_at_path(path: &Path, name: &str) -> Result<()> {
 }
 
 // Windows: remove_xattr_at_path not defined - compile-time error
+
+/// Remove an extended attribute (symlink version - doesn't follow symlinks)
+///
+/// Like `remove_xattr_at_path` but operates on the symlink itself, not its target.
+///
+/// # Implementation
+///
+/// - **Linux**: Uses `lremovexattr()` (the "l" version doesn't follow symlinks)
+/// - **macOS**: Uses `removexattr()` with `XATTR_NOFOLLOW` flag
+///
+/// # Arguments
+///
+/// * `path` - Path to the file or symlink
+/// * `name` - Name of the extended attribute to remove
+///
+/// # Errors
+///
+/// This function will return an error if:
+/// - The extended attribute doesn't exist
+/// - Permission is denied
+/// - The operation fails due to I/O errors
+#[cfg(unix)]
+pub async fn lremove_xattr_at_path(path: &Path, name: &str) -> Result<()> {
+    let path_cstr = std::ffi::CString::new(path.to_string_lossy().as_bytes())
+        .map_err(|e| xattr_error(&format!("Invalid path: {}", e)))?;
+    let name_cstr =
+        std::ffi::CString::new(name).map_err(|e| xattr_error(&format!("Invalid name: {}", e)))?;
+
+    let result = unsafe {
+        #[cfg(target_os = "macos")]
+        {
+            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
+            libc::removexattr(path_cstr.as_ptr(), name_cstr.as_ptr(), XATTR_NOFOLLOW)
+        }
+        #[cfg(target_os = "linux")]
+        {
+            libc::lremovexattr(path_cstr.as_ptr(), name_cstr.as_ptr())
+        }
+        #[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
+        {
+            libc::lremovexattr(path_cstr.as_ptr(), name_cstr.as_ptr())
+        }
+    };
+
+    if result != 0 {
+        let errno = std::io::Error::last_os_error();
+        return Err(xattr_error(&format!("lremovexattr failed: {}", errno)));
+    }
+
+    Ok(())
+}
+
+// Windows: lremove_xattr_at_path not defined - compile-time error
 
 #[cfg(test)]
 mod tests {
