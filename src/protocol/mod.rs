@@ -13,6 +13,8 @@ use std::path::PathBuf;
 #[cfg(feature = "remote-sync")]
 pub mod pipe;
 #[cfg(feature = "remote-sync")]
+pub mod ssh;
+#[cfg(feature = "remote-sync")]
 pub mod transport;
 
 /// Parsed location (local or remote)

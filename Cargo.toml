@@ -23,7 +23,7 @@ members = ["crates/compio-fs-extended", "crates/compio-sync"]
 
 [dependencies]
 # Core async runtime
-compio = { version = "0.16", features = ["macros", "dispatcher"] }
+compio = { version = "0.16", features = ["macros", "dispatcher", "process"] }
 futures = "0.3"
 
 # CLI and error handling
