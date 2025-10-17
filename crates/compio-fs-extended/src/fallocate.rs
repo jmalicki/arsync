@@ -1,13 +1,16 @@
 //! fallocate operations for file preallocation using io_uring opcodes
 
 use crate::error::{fallocate_error, Result};
+#[cfg(target_os = "linux")]
 use compio::driver::OpCode;
 use compio::fs::File;
+#[cfg(target_os = "linux")]
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
+#[cfg(target_os = "linux")]
 use std::pin::Pin;
 
 /// Trait for fallocate operations

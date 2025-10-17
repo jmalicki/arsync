@@ -34,10 +34,15 @@
 //! # }
 //! ```
 
+#[cfg(unix)]
 use crate::directory::DirectoryFd;
+#[cfg(unix)]
 use crate::error::{metadata_error, ExtendedError, Result};
+#[cfg(unix)]
 use compio::driver::OpCode;
+#[cfg(unix)]
 use compio::fs::File;
+#[cfg(unix)]
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
 use io_uring::{opcode, types};

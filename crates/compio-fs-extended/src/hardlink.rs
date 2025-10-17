@@ -1,6 +1,7 @@
 //! Hardlink operations for creating hard links
 
 use crate::error::{hardlink_error, Result};
+#[cfg(target_os = "linux")]
 use compio::driver::OpCode;
 use compio::fs::File;
 #[cfg(target_os = "linux")]
@@ -8,6 +9,7 @@ use io_uring::{opcode, types};
 #[cfg(unix)]
 use std::ffi::CString;
 use std::path::Path;
+#[cfg(target_os = "linux")]
 use std::pin::Pin;
 
 /// Trait for hardlink operations
