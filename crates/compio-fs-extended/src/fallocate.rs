@@ -179,8 +179,8 @@ pub async fn fallocate(file: &File, _offset: u64, len: u64, _mode: u32) -> Resul
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::BOOL;
     use windows_sys::Win32::Storage::FileSystem::{
-        SetFileInformationByHandle, FILE_ALLOCATION_INFO, FILE_END_OF_FILE_INFO,
-        FileAllocationInfo, FileEndOfFileInfo,
+        FileAllocationInfo, FileEndOfFileInfo, SetFileInformationByHandle, FILE_ALLOCATION_INFO,
+        FILE_END_OF_FILE_INFO,
     };
     let handle = file.as_raw_handle();
     // Safety: construct allocation info
@@ -213,7 +213,9 @@ pub async fn fallocate(file: &File, _offset: u64, len: u64, _mode: u32) -> Resul
         )
     };
     if ok2 == 0 {
-        return Err(fallocate_error("SetFileInformationByHandle(FileEndOfFileInfo) failed"));
+        return Err(fallocate_error(
+            "SetFileInformationByHandle(FileEndOfFileInfo) failed",
+        ));
     }
     Ok(())
 }
