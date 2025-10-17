@@ -10,7 +10,7 @@ cargo install cargo-nextest --locked
 
 ```bash
 # Fast tests (your daily workflow) - skips slow tests
-cargo nextest run -E 'not(test(/integration|performance|rsync/))'
+cargo nextest run -E 'not(test(integration) or test(performance) or test(rsync))'
 cargo make test-fast
 
 # Integration tests
