@@ -2,6 +2,7 @@
 
 use crate::error::{directory_error, Result};
 use compio::fs::File;
+#[cfg(unix)]
 use std::os::fd::{AsFd, BorrowedFd};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
@@ -180,6 +181,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
+    #[cfg(unix)]
     pub async fn set_times(
         &self,
         accessed: std::time::SystemTime,
@@ -224,6 +226,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
+    #[cfg(unix)]
     pub async fn set_ownership(&self, uid: u32, gid: u32) -> Result<()> {
         use crate::ownership::OwnershipOps;
         self.as_file()
@@ -233,7 +236,7 @@ impl DirectoryFd {
     }
 
     // ========================================================================
-    // Metadata operations on children (relative paths)
+    // Metadata operations on children (relative paths) - Unix only
     // ========================================================================
 
     /// Get file metadata with nanosecond timestamps for a child file
@@ -247,6 +250,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the file doesn't exist or I/O errors occur.
+    #[cfg(unix)]
     pub async fn statx(
         &self,
         pathname: &str,
@@ -266,6 +270,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the operation fails (e.g., permission denied, file not found).
+    #[cfg(unix)]
     pub async fn fchmodat(&self, pathname: &str, mode: u32) -> Result<()> {
         crate::metadata::fchmodat_impl(self, pathname, mode).await
     }
@@ -283,6 +288,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the operation fails (e.g., permission denied, file not found).
+    #[cfg(unix)]
     pub async fn utimensat(
         &self,
         pathname: &str,
@@ -305,12 +311,13 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the operation fails (e.g., permission denied, file not found).
+    #[cfg(unix)]
     pub async fn fchownat(&self, pathname: &str, uid: u32, gid: u32) -> Result<()> {
         crate::metadata::fchownat_impl(self, pathname, uid, gid).await
     }
 
     // ========================================================================
-    // Symlink operations on children (relative paths)
+    // Symlink operations on children (relative paths) - Unix only
     // ========================================================================
 
     /// Create a symbolic link for a child
@@ -325,6 +332,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the link already exists or permission is denied.
+    #[cfg(unix)]
     pub async fn symlinkat(&self, target: &str, link_name: &str) -> Result<()> {
         crate::symlink::symlinkat_impl(self, target, link_name).await
     }
@@ -340,6 +348,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the link doesn't exist or is not a symbolic link.
+    #[cfg(unix)]
     pub async fn readlinkat(&self, link_name: &str) -> Result<std::path::PathBuf> {
         crate::symlink::readlinkat_impl(self, link_name).await
     }
@@ -410,6 +419,7 @@ impl Clone for DirectoryFd {
     }
 }
 
+#[cfg(unix)]
 impl AsFd for DirectoryFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.file.as_fd()

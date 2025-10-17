@@ -154,6 +154,7 @@ pub async fn statx_at(path: &Path) -> Result<(SystemTime, SystemTime)> {
 }
 
 /// Helper to convert SystemTime to nix TimeSpec
+#[cfg(unix)]
 fn system_time_to_timespec(time: SystemTime) -> Result<TimeSpec> {
     let duration = time
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -186,6 +187,7 @@ fn system_time_to_timespec(time: SystemTime) -> Result<TimeSpec> {
 /// - The file descriptor is invalid
 /// - Permission is denied
 /// - Invalid timestamp values
+#[cfg(unix)]
 pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime) -> Result<()> {
     // NOTE: Kernel doesn't have IORING_OP_FUTIMENS - using safe nix wrapper
     // futimens is FD-based, better than path-based utimensat (no TOCTOU)
@@ -221,6 +223,7 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
 /// # Errors
 ///
 /// Returns an error if the statx operation fails
+#[cfg(unix)]
 pub(crate) async fn statx_impl(
     dir: &DirectoryFd,
     pathname: &str,
@@ -255,6 +258,7 @@ pub(crate) async fn statx_impl(
 }
 
 /// Change file permissions using DirectoryFd
+#[cfg(unix)]
 pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) -> Result<()> {
     let pathname_cstring = std::ffi::CString::new(pathname)
         .map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
@@ -286,6 +290,7 @@ pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) 
 }
 
 /// Change file timestamps using DirectoryFd
+#[cfg(unix)]
 pub(crate) async fn utimensat_impl(
     dir: &DirectoryFd,
     pathname: &str,
@@ -323,6 +328,7 @@ pub(crate) async fn utimensat_impl(
 }
 
 /// Change file ownership using DirectoryFd
+#[cfg(unix)]
 pub(crate) async fn fchownat_impl(
     dir: &DirectoryFd,
     pathname: &str,

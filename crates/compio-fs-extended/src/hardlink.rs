@@ -76,6 +76,7 @@ pub async fn create_hardlink_impl(_file: &File, _target: &Path) -> Result<()> {
 /// - The original and link are on different filesystems
 /// - Permission is denied
 /// - The operation fails due to I/O errors
+#[cfg(target_os = "linux")]
 pub async fn create_hardlink_at_path(original_path: &Path, link_path: &Path) -> Result<()> {
     let original_cstr = CString::new(original_path.to_string_lossy().as_bytes())
         .map_err(|e| hardlink_error(&e.to_string()))?;
@@ -91,7 +92,30 @@ pub async fn create_hardlink_at_path(original_path: &Path, link_path: &Path) -> 
     }
 }
 
-/// io_uring hardlink (linkat) operation
+/// macOS/other Unix: Uses std::fs::hard_link (not io_uring, but available)
+#[cfg(all(unix, not(target_os = "linux")))]
+pub async fn create_hardlink_at_path(original_path: &Path, link_path: &Path) -> Result<()> {
+    let original = original_path.to_path_buf();
+    let link = link_path.to_path_buf();
+
+    compio::runtime::spawn(async move {
+        std::fs::hard_link(&original, &link)
+            .map_err(|e| hardlink_error(&format!("hard_link failed: {}", e)))
+    })
+    .await
+    .map_err(|e| hardlink_error(&format!("spawn failed: {:?}", e)))?
+}
+
+/// Windows: Not supported
+#[cfg(windows)]
+pub async fn create_hardlink_at_path(_original_path: &Path, _link_path: &Path) -> Result<()> {
+    Err(hardlink_error(
+        "hardlink operations not supported on Windows",
+    ))
+}
+
+/// io_uring hardlink (linkat) operation (Linux-only)
+#[cfg(target_os = "linux")]
 struct HardlinkOp {
     /// Source path to link from
     oldpath: CString,
@@ -99,6 +123,7 @@ struct HardlinkOp {
     newpath: CString,
 }
 
+#[cfg(target_os = "linux")]
 impl HardlinkOp {
     /// Create a new hardlink operation for submission to io_uring
     #[must_use]
@@ -107,6 +132,7 @@ impl HardlinkOp {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl OpCode for HardlinkOp {
     fn create_entry(self: Pin<&mut Self>) -> compio::driver::OpEntry {
         // Use AT_FDCWD for both paths
