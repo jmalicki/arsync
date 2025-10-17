@@ -41,7 +41,8 @@ pub struct HardlinkInfo {
     pub dst_path: std::path::PathBuf,
     /// Condition variable signaled when copy completes
     /// Linker tasks wait on this (inside `register_file`) before returning
-    copy_complete: Arc<compio_sync::Condvar>,
+    /// Public for testing synchronization behavior
+    pub copy_complete: Arc<compio_sync::Condvar>,
 }
 
 impl std::fmt::Debug for HardlinkInfo {
@@ -57,7 +58,6 @@ impl std::fmt::Debug for HardlinkInfo {
 
 /// Filesystem boundary and hardlink tracker
 #[derive(Debug, Default)]
-#[allow(dead_code)]
 pub struct FilesystemTracker {
     /// Tracked hardlinks by inode
     pub hardlinks: DashMap<InodeInfo, HardlinkInfo>,
@@ -76,6 +76,7 @@ pub struct FilesystemStats {
     pub total_hardlinks: u64,
 }
 
+#[allow(dead_code)]
 impl FilesystemTracker {
     /// Create a new filesystem tracker
     #[must_use]
@@ -95,6 +96,17 @@ impl FilesystemTracker {
         }
     }
 
+    /// Set the source filesystem device ID
+    ///
+    /// This should be called once at the beginning of a copy operation
+    /// to establish the source filesystem boundary.
+    pub fn set_source_filesystem(&self, dev: u64) {
+        if let Ok(mut source) = self.source_filesystem.write() {
+            *source = Some(dev);
+            debug!("Set source filesystem device ID: {}", dev);
+        }
+    }
+
     /// Check if a device is on the source filesystem
     ///
     /// Returns `true` if the device matches the source filesystem or if no source is set.
@@ -104,6 +116,14 @@ impl FilesystemTracker {
             .read()
             .ok()
             .is_none_or(|source_dev| source_dev.is_none_or(|source| source == dev))
+    }
+
+    /// Check if a device is on the same filesystem as the source
+    ///
+    /// Alias for `is_on_source_filesystem` for compatibility.
+    #[must_use]
+    pub fn is_same_filesystem(&self, dev: u64) -> bool {
+        self.is_on_source_filesystem(dev)
     }
 
     /// Check if a path is on the source filesystem

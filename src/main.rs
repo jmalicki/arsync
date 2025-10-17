@@ -12,6 +12,7 @@ mod cli;
 mod copy;
 mod directory;
 mod error;
+mod hardlink_tracker;
 mod i18n;
 mod io_uring;
 mod metadata;

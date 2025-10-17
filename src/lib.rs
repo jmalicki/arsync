@@ -58,8 +58,8 @@ pub mod progress;
 pub mod sync;
 
 // Re-export commonly used types
-pub use directory::FilesystemTracker;
 pub use error::{Result, SyncError};
+pub use hardlink_tracker::FilesystemTracker;
 pub use progress::ProgressTracker;
 
 // Re-export semaphore from compio-sync crate
