@@ -278,7 +278,7 @@ pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) 
         fchmodat(
             Some(dir_fd),
             pathname_cstring.as_c_str(),
-            Mode::from_bits_truncate(mode),
+            Mode::from_bits_truncate(mode as nix::libc::mode_t),
             FchmodatFlags::FollowSymlink,
         )
         .map_err(|e| metadata_error(&format!("fchmodat failed: {}", e)))

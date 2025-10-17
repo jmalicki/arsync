@@ -50,6 +50,7 @@ pub use extended_file::ExtendedFile;
 
 // Re-export specific operation modules
 // DirectoryOps removed - use compio::fs directly for basic directory operations
+#[cfg(target_os = "linux")]
 pub use fadvise::Fadvise;
 pub use fallocate::Fallocate;
 pub use hardlink::HardlinkOps;

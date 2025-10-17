@@ -65,7 +65,7 @@ pub async fn create_special_file_at_path(path: &Path, mode: u32, dev: u64) -> Re
         let sflag = stat::SFlag::from_bits_truncate((mode & !0o777) as nix::libc::mode_t);
         let perm = stat::Mode::from_bits_truncate((mode & 0o777) as nix::libc::mode_t);
 
-        stat::mknod(&path, sflag, perm, dev)
+        stat::mknod(&path, sflag, perm, dev as nix::libc::dev_t)
             .map_err(|e| device_error(&format!("mknod failed: {}", e)))
     })
     .await

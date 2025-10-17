@@ -2,6 +2,7 @@
 
 // DirectoryOps removed - use compio::fs directly for basic directory operations
 use crate::error::Result;
+#[cfg(target_os = "linux")]
 use crate::fadvise::{Fadvise, FadviseAdvice};
 use crate::fallocate::Fallocate;
 use crate::hardlink::HardlinkOps;

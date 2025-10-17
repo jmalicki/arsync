@@ -39,6 +39,7 @@
 
 #[cfg(target_os = "linux")]
 use crate::error::fadvise_error;
+#[cfg(target_os = "linux")]
 use crate::error::Result;
 #[cfg(target_os = "linux")]
 use compio::driver::OpCode;

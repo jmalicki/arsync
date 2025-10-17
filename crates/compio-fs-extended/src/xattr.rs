@@ -366,13 +366,28 @@ pub async fn get_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
         std::ffi::CString::new(name).map_err(|e| xattr_error(&format!("Invalid name: {}", e)))?;
 
     // Get the size first
+    // Note: macOS getxattr has extra position and options arguments
     let size = unsafe {
-        libc::getxattr(
-            path_cstr.as_ptr(),
-            name_cstr.as_ptr(),
-            std::ptr::null_mut(),
-            0,
-        )
+        #[cfg(target_os = "macos")]
+        {
+            libc::getxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                0, // position
+                0, // options
+            )
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            libc::getxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+            )
+        }
     };
 
     if size < 0 {
@@ -383,12 +398,26 @@ pub async fn get_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
     // Allocate buffer and get the value
     let mut buffer = vec![0u8; size as usize];
     let actual_size = unsafe {
-        libc::getxattr(
-            path_cstr.as_ptr(),
-            name_cstr.as_ptr(),
-            buffer.as_mut_ptr() as *mut libc::c_void,
-            buffer.len(),
-        )
+        #[cfg(target_os = "macos")]
+        {
+            libc::getxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_void,
+                buffer.len(),
+                0, // position
+                0, // options
+            )
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            libc::getxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                buffer.as_mut_ptr() as *mut libc::c_void,
+                buffer.len(),
+            )
+        }
     };
 
     if actual_size < 0 {
@@ -427,13 +456,27 @@ pub async fn set_xattr_at_path(path: &Path, name: &str, value: &[u8]) -> Result<
         std::ffi::CString::new(name).map_err(|e| xattr_error(&format!("Invalid name: {}", e)))?;
 
     let result = unsafe {
-        libc::setxattr(
-            path_cstr.as_ptr(),
-            name_cstr.as_ptr(),
-            value.as_ptr() as *const libc::c_void,
-            value.len(),
-            0, // flags
-        )
+        #[cfg(target_os = "macos")]
+        {
+            libc::setxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                value.as_ptr() as *const libc::c_void,
+                value.len(),
+                0, // position
+                0, // options (flags on macOS)
+            )
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            libc::setxattr(
+                path_cstr.as_ptr(),
+                name_cstr.as_ptr(),
+                value.as_ptr() as *const libc::c_void,
+                value.len(),
+                0, // flags
+            )
+        }
     };
 
     if result != 0 {
