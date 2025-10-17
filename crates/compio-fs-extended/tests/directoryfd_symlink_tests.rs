@@ -29,7 +29,7 @@ async fn test_lfchownat_does_not_follow_symlinks() {
     // Get symlink's original ownership
     let link_metadata_before = std::fs::symlink_metadata(&link).unwrap();
     let link_uid_before = link_metadata_before.uid();
-    let link_gid_before = link_metadata_before.gid();
+    let _link_gid_before = link_metadata_before.gid();
 
     // Open DirectoryFd
     let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
