@@ -25,30 +25,25 @@ Modern NVMe drives can sustain multiple GB/s of throughput, but sequential singl
 
 ## Architecture
 
-### Recursive Binary Split Strategy
+### Iterative Spawn Strategy
 
-Instead of pre-calculating regions, use **recursive binary splitting**:
+Calculate all regions upfront and spawn parallel tasks:
 
 ```
 File: [==============================================] (1 GB)
+max_depth = 2 → 2^2 = 4 tasks
 
-Depth 0: Split at 512MB (aligned to 2MB page)
-    ├─ [0 to 512MB]
-    └─ [512MB to 1GB]
-
-Depth 1: Split each half
-    ├─ [0 to 256MB]
-    ├─ [256MB to 512MB]
-    ├─ [512MB to 768MB]
-    └─ [768MB to 1GB]
-
-Depth 2: Could split further if max_depth allows
+Task 0: [0 to 256MB]
+Task 1: [256MB to 512MB]      ← Page-aligned split
+Task 2: [512MB to 768MB]      ← Page-aligned split  
+Task 3: [768MB to 1GB]
 ```
 
 **Key insights:**
 - `read_at` and `write_at` are position-independent, so we can share file handles
-- Binary split is naturally recursive - no need to calculate regions upfront
-- Easy to align splits to page boundaries (2MB huge pages)
+- Calculate regions iteratively, spawn all tasks at once
+- Use `compio::runtime::spawn` (matches existing pattern in directory.rs)
+- No recursion → No `Box::pin` needed
 - Number of parallel tasks = 2^max_depth
 
 ### Implementation Structure
@@ -248,12 +243,12 @@ fn align_to_page(offset: u64, page_size: u64) -> u64 {
 
 ### Key Design Decisions
 
-1. **Recursive binary split** - Natural, simple, no upfront calculation
-2. **Page-aligned splits** - Align to 2MB huge page boundaries
-3. **Shared file handles** - Pass `&src_file` and `&dst_file` to recursive tasks
-4. **Fail fast** - `try_join!` aborts both branches on first error
-5. **Adaptive** - Automatically stops splitting when regions are too small
-6. **Buffer per task** - Each sequential copy owns its buffer
+1. **Iterative spawning** - Calculate all regions upfront, spawn all tasks at once
+2. **No recursion** - No `Box::pin` needed, simpler code
+3. **compio::runtime::spawn** - Matches existing pattern in directory.rs
+4. **Page-aligned splits** - Align to 2MB huge page boundaries
+5. **File.clone()** - Each task gets its own mutable file handles
+6. **Buffer per task** - Each task owns its buffer (no sharing)
 
 ## CLI Parameters
 
@@ -447,12 +442,12 @@ Expected performance on modern NVMe:
 
 ## Design Decisions
 
-1. **Why recursive binary split?**
-   - Trivially simple - no region calculation needed
-   - Naturally parallel - binary tree structure
-   - Easy to align - just align the midpoint
-   - Adaptive - stops when regions are small
-   - Better than fixed workers - no remainder handling complexity
+1. **Why iterative spawn instead of recursion?**
+   - Simpler - just calculate regions and spawn
+   - No `Box::pin` overhead
+   - Matches existing codebase pattern (directory.rs)
+   - Easier to understand and debug
+   - 2^depth tasks calculated upfront
 
 2. **Interaction with directory-level concurrency**
    - Directory traversal already copies multiple files concurrently

@@ -9,23 +9,48 @@ Implemented recursive binary split parallel file copying for large files to maxi
 
 ## Implementation Details
 
-### Architecture: Recursive Binary Split
+### Architecture: Iterative Spawn
 
-Instead of pre-calculating worker regions, we use a **trivially simple recursive approach**:
+Calculate all regions upfront and spawn parallel tasks using `compio::runtime::spawn`:
 
 ```rust
-fn copy_region_recursive(src, dst, start, end, depth, max_depth) {
-    if depth >= max_depth || (end - start) < MIN_SPLIT_SIZE {
-        return copy_sequential(src, dst, start, end);  // Base case
+async fn copy_read_write_parallel(...) -> Result<()> {
+    // 1. Calculate all regions upfront
+    let num_tasks = 1 << max_depth;  // 2^depth
+    let region_size = file_size / num_tasks as u64;
+    
+    let mut handles = Vec::new();
+    
+    for task_id in 0..num_tasks {
+        let start = task_id as u64 * region_size;
+        let end = if task_id == num_tasks - 1 { 
+            file_size  // Last handles remainder
+        } else { 
+            (task_id as u64 + 1) * region_size 
+        };
+        
+        // Align to page boundaries (except first)
+        let start_aligned = if task_id > 0 {
+            align_to_page(start, HUGE_PAGE_SIZE)
+        } else {
+            start
+        };
+        
+        // Clone handles and spawn
+        let src = src_file.clone();
+        let mut dst = dst_file.clone();
+        
+        let handle = compio::runtime::spawn(async move {
+            copy_region_sequential(&src, &mut dst, start_aligned, end, chunk_size).await
+        });
+        
+        handles.push(handle);
     }
     
-    let mid = align_to_page((start + end) / 2, 2MB);
-    
-    // Clone file handles for concurrent access
-    let left = copy_region_recursive(src.clone(), dst.clone(), start, mid, depth+1, max_depth);
-    let right = copy_region_recursive(src.clone(), dst.clone(), mid, end, depth+1, max_depth);
-    
-    futures::try_join!(left, right)?;  // Run in parallel
+    // 2. Wait for all tasks
+    for handle in handles {
+        handle.await??;
+    }
 }
 ```
 

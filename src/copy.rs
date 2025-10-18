@@ -55,10 +55,6 @@ const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer
 /// 2MB huge page size for alignment in parallel copies
 const HUGE_PAGE_SIZE: u64 = 2 * 1024 * 1024;
 
-/// Minimum region size to consider splitting (8MB)
-/// Regions smaller than this will be copied sequentially
-const MIN_SPLIT_SIZE: u64 = 8 * 1024 * 1024;
-
 /// Copy a single file using the specified method
 ///
 /// Only requires `MetadataConfig` to determine what metadata to preserve.
@@ -310,6 +306,7 @@ async fn copy_read_write(src: &Path, dst: &Path, metadata_config: &MetadataConfi
 ///
 /// Returns `Ok(())` if the file was copied successfully, or `Err(SyncError)` if failed.
 #[allow(clippy::future_not_send)]
+#[allow(clippy::too_many_lines)]
 async fn copy_read_write_parallel(
     src: &Path,
     dst: &Path,
@@ -337,7 +334,7 @@ async fn copy_read_write_parallel(
     })?;
 
     // 3. Open destination file
-    let mut dst_file = OpenOptions::new()
+    let dst_file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
@@ -399,26 +396,54 @@ async fn copy_read_write_parallel(
         }
     }
 
-    // 5. Start recursive binary split
+    // 5. Calculate all regions upfront (iterative, not recursive)
     let chunk_size = parallel_config.chunk_size_bytes();
-    Box::pin(copy_region_recursive(
-        &src_file,
-        &mut dst_file,
-        0,
-        file_size,
-        0,
-        max_depth,
-        chunk_size,
-    ))
-    .await?;
+    let num_tasks = 1 << max_depth; // 2^max_depth
+    let region_size = file_size / num_tasks as u64;
 
-    // 6. Sync all data to disk
+    let mut handles = Vec::with_capacity(num_tasks);
+
+    for task_id in 0..num_tasks {
+        let start = task_id as u64 * region_size;
+        let end = if task_id == num_tasks - 1 {
+            file_size // Last task handles remainder
+        } else {
+            (task_id as u64 + 1) * region_size
+        };
+
+        // Align to page boundaries (except first and last)
+        let start_aligned = if task_id > 0 {
+            align_to_page(start, HUGE_PAGE_SIZE)
+        } else {
+            start
+        };
+
+        // Clone file handles for this task
+        let src = src_file.clone();
+        let mut dst = dst_file.clone();
+
+        // Spawn task using compio (matches pattern in directory.rs)
+        let handle = compio::runtime::spawn(async move {
+            copy_region_sequential(&src, &mut dst, start_aligned, end, chunk_size).await
+        });
+
+        handles.push(handle);
+    }
+
+    // 6. Wait for all tasks to complete
+    for (task_id, handle) in handles.into_iter().enumerate() {
+        handle
+            .await
+            .map_err(|e| SyncError::CopyFailed(format!("Task {task_id} join failed: {e:?}")))??;
+    }
+
+    // 7. Sync all data to disk
     dst_file
         .sync_all()
         .await
         .map_err(|e| SyncError::FileSystem(format!("Failed to sync destination file: {e}")))?;
 
-    // 7. Preserve file metadata
+    // 8. Preserve file metadata
     preserve_file_metadata(
         &src_file,
         &dst_file,
@@ -433,94 +458,10 @@ async fn copy_read_write_parallel(
     Ok(())
 }
 
-/// Recursively split and copy a region of a file
-///
-/// This function implements the core recursive binary splitting logic.
-/// It splits regions in half (aligned to page boundaries) until reaching
-/// the maximum depth or minimum split size, then copies sequentially.
-///
-/// # Parameters
-///
-/// * `src` - Source file handle
-/// * `dst` - Destination file handle
-/// * `start` - Starting byte offset in the file
-/// * `end` - Ending byte offset (exclusive)
-/// * `depth` - Current recursion depth
-/// * `max_depth` - Maximum recursion depth allowed
-/// * `chunk_size` - Size of chunks for read/write operations
-#[allow(clippy::future_not_send)]
-#[allow(clippy::too_many_arguments)]
-async fn copy_region_recursive(
-    src: &File,
-    dst: &mut File,
-    start: u64,
-    end: u64,
-    depth: usize,
-    max_depth: usize,
-    chunk_size: usize,
-) -> Result<()> {
-    let size = end - start;
-
-    // Base case: region too small, max depth reached, or not worth splitting
-    if depth >= max_depth || size < MIN_SPLIT_SIZE {
-        return Box::pin(copy_region_sequential(src, dst, start, end, chunk_size)).await;
-    }
-
-    // Recursive case: split in half at page-aligned boundary
-    let mid = u64::midpoint(start, end);
-    let mid_aligned = align_to_page(mid, HUGE_PAGE_SIZE);
-
-    // Make sure alignment didn't push us to the boundaries
-    // Ensure each half is at least MIN_SPLIT_SIZE
-    let mid_aligned = if mid_aligned <= start + MIN_SPLIT_SIZE {
-        start + MIN_SPLIT_SIZE
-    } else if mid_aligned >= end.saturating_sub(MIN_SPLIT_SIZE) {
-        end.saturating_sub(MIN_SPLIT_SIZE)
-    } else {
-        mid_aligned
-    };
-
-    // If we can't split properly, just copy sequentially
-    if mid_aligned <= start || mid_aligned >= end {
-        return Box::pin(copy_region_sequential(src, dst, start, end, chunk_size)).await;
-    }
-
-    // Spawn two tasks: left and right halves
-    // Clone the file handles for concurrent access (each task gets its own mutable copy)
-    let src_left = src.clone();
-    let mut dst_left = dst.clone();
-    let src_right = src.clone();
-    let mut dst_right = dst.clone();
-
-    let left = Box::pin(copy_region_recursive(
-        &src_left,
-        &mut dst_left,
-        start,
-        mid_aligned,
-        depth + 1,
-        max_depth,
-        chunk_size,
-    ));
-    let right = Box::pin(copy_region_recursive(
-        &src_right,
-        &mut dst_right,
-        mid_aligned,
-        end,
-        depth + 1,
-        max_depth,
-        chunk_size,
-    ));
-
-    // Wait for both halves to complete (fail fast on error)
-    futures::try_join!(left, right)?;
-    Ok(())
-}
-
-/// Copy a region sequentially (leaf node - no more splitting)
+/// Copy a region sequentially
 ///
 /// This function copies a contiguous region of a file using sequential
-/// `read_at`/`write_at` operations. It's called when recursion reaches the
-/// base case (max depth or minimum size).
+/// `read_at`/`write_at` operations. Used by parallel copy to copy each partition.
 ///
 /// # Parameters
 ///
