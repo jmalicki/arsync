@@ -80,6 +80,14 @@ utimensat_path_based=$(grep 'utimensat(AT_FDCWD, "/' "$TRACE_RAW" | wc -l)
 statx_per_file=$(echo "scale=1; $statx_count / $NUM_FILES" | bc)
 openat_per_file=$(echo "scale=1; $openat_path_based / $NUM_FILES" | bc)
 
+# Extract io_uring batching info
+# io_uring_enter(fd, to_submit, min_complete, ...) - 2nd param is number of ops submitted
+io_uring_batch_sizes=$(grep "io_uring_enter" "$TRACE_RAW" | sed 's/.*io_uring_enter([0-9]*, \([0-9]*\),.*/\1/' | grep -E '^[0-9]+$')
+io_uring_batch_1=$(echo "$io_uring_batch_sizes" | grep -c "^1$" || echo 0)
+io_uring_batch_2plus=$(echo "$io_uring_batch_sizes" | grep -v "^1$" | grep -v "^0$" | wc -l)
+io_uring_batch_max=$(echo "$io_uring_batch_sizes" | sort -n | tail -1)
+io_uring_batch_avg=$(echo "$io_uring_batch_sizes" | awk '{sum+=$1; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}')
+
 # Generate report
 {
     echo "============================================"
@@ -100,13 +108,59 @@ openat_per_file=$(echo "scale=1; $openat_path_based / $NUM_FILES" | bc)
         echo "  ❌ FAIL: Low io_uring usage (expected >100 for ${NUM_FILES} files)"
         exit_code=$EXIT_FAILURE
     fi
+    
+    echo ""
+    echo "io_uring batching efficiency:"
+    echo "  Single-op submissions (batch=1): $io_uring_batch_1"
+    echo "  Multi-op submissions (batch≥2): $io_uring_batch_2plus"
+    echo "  Average batch size: $io_uring_batch_avg ops/submit"
+    echo "  Maximum batch size: $io_uring_batch_max ops/submit"
+    
+    if [ "$io_uring_batch_avg" = "1.0" ] || [ "${io_uring_batch_avg%.*}" -eq 1 ] 2>/dev/null; then
+        echo "  ⚠️  WARNING: Poor batching (avg=1.0, mostly single-op submissions)"
+        echo "             Better batching could reduce syscall overhead"
+    elif [ "${io_uring_batch_avg%.*}" -ge 3 ] 2>/dev/null; then
+        echo "  ✅ EXCELLENT: Good batching (avg≥3 ops/submit)"
+    else
+        echo "  ✅ GOOD: Decent batching (avg>1 ops/submit)"
+    fi
     echo ""
     
-    echo "--- METADATA OPERATIONS ---"
+    echo "--- METADATA OPERATIONS (PER FILE) ---"
     echo "Total statx calls: $statx_count"
     echo "  Path-based (AT_FDCWD + path): $statx_path_based"
     echo "  FD-based (fd + \"\" or fd + NULL): $statx_fd_based"
     echo "  Average per file: $statx_per_file"
+    
+    # Per-file breakdown of operations
+    echo ""
+    echo "Per-file syscall breakdown (first 3 files):"
+    for i in 1 2 3; do
+        if [ -f "$TEST_DIR_SRC/file${i}.bin" ]; then
+            file_statx=$(grep "statx.*file${i}\.bin" "$TRACE_RAW" | wc -l)
+            file_openat=$(grep "openat.*file${i}\.bin" "$TRACE_RAW" | wc -l)
+            file_io_uring=$(grep "file${i}\.bin" "$TRACE_RAW" | wc -l)
+            echo "  file${i}.bin:"
+            echo "    - statx: $file_statx"
+            echo "    - openat: $file_openat"
+            echo "    - total mentions: $file_io_uring"
+        fi
+    done
+    echo ""
+    
+    echo "Per-directory syscall breakdown:"
+    dir_statx=$(grep "statx.*\"$TEST_DIR_SRC\"" "$TRACE_RAW" | wc -l)
+    dir_openat=$(grep "openat.*\"$TEST_DIR_SRC\".*O_DIRECTORY" "$TRACE_RAW" | wc -l)
+    dir_getdents=$(grep "getdents" "$TRACE_RAW" | wc -l)
+    dir_fchmod=$(grep "fchmod.*" "$TRACE_RAW" | wc -l)
+    dir_fchown=$(grep "fchown.*" "$TRACE_RAW" | wc -l)
+    echo "  Source directory ($TEST_DIR_SRC):"
+    echo "    - statx: $dir_statx"
+    echo "    - openat (O_DIRECTORY): $dir_openat"
+    echo "    - getdents64 (directory reads): $dir_getdents"
+    echo "  Destination directory ($TEST_DIR_DST):"
+    echo "    - fchmod: $dir_fchmod (includes files)"
+    echo "    - fchown: $dir_fchown (includes files)"
     
     if [ "$statx_path_based" -gt "$((NUM_FILES * 2))" ]; then
         echo "  ⚠️  WARNING: High path-based statx count (TOCTOU-vulnerable)"
