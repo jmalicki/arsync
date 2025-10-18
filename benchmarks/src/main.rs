@@ -823,7 +823,7 @@ fn add_all_syscalls_section(report: &mut String, stats: &SyscallStats) {
     let known_dir = ["mkdir", "mkdirat", "getdents64", "getcwd", "chdir"];
     let known_symlink = ["symlink", "symlinkat", "readlink", "readlinkat"];
     let known_process = ["clone3", "execve", "wait4", "exit", "exit_group"];
-    let known_memory = ["mmap", "munmap", "mprotect", "brk"];
+    let known_memory = ["mmap", "munmap", "mprotect", "brk", "madvise"];
     let known_thread = ["futex", "set_robust_list", "set_tid_address"];
     let known_signal = ["rt_sigaction", "rt_sigprocmask", "sigaltstack", "rseq"];
     let known_misc = [
