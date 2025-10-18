@@ -589,9 +589,8 @@ async fn process_file(
         // Copy file (error propagates)
         // TODO: Thread ParallelCopyConfig through the call chain
         let disabled_parallel = crate::cli::ParallelCopyConfig {
-            enabled: false,
+            max_depth: 0, // 0 = disabled
             min_file_size_mb: 128,
-            max_depth: 2,
             chunk_size_mb: 2,
         };
         copy_file(&src_path, &dst_path, &metadata_config, &disabled_parallel).await?;
@@ -632,9 +631,8 @@ async fn process_file(
 
         // TODO: Thread ParallelCopyConfig through the call chain
         let disabled_parallel = crate::cli::ParallelCopyConfig {
-            enabled: false,
+            max_depth: 0, // 0 = disabled
             min_file_size_mb: 128,
-            max_depth: 2,
             chunk_size_mb: 2,
         };
         copy_file(&src_path, &dst_path, &metadata_config, &disabled_parallel).await?;

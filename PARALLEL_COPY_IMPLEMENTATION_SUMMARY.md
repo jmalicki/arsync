@@ -85,15 +85,17 @@ async fn copy_read_write_parallel(...) -> Result<()> {
 ## CLI Usage
 
 ```bash
-# Enable with defaults (128MB threshold, depth 2 = 4 tasks)
-arsync --enabled /source /dest
+# Enable with 4 parallel tasks (depth 2)
+arsync --parallel-max-depth 2 /source /dest
 
-# Customize parameters  
-arsync --enabled \
-       --min-file-size-mb 256 \
-       --max-depth 3 \              # 8 tasks
-       --chunk-size-mb 4 \
+# Customize all parameters  
+arsync --parallel-max-depth 3 \              # 8 tasks
+       --parallel-min-size-mb 256 \          # 256 MB threshold
+       --parallel-chunk-size-mb 4 \          # 4 MB chunks
        /source /dest
+
+# Disabled by default (max-depth=0)
+arsync /source /dest  # No parallel copy
 ```
 
 ## Test Coverage

@@ -547,9 +547,8 @@ mod tests {
     /// Create a disabled parallel copy config for testing
     fn disabled_parallel_config() -> ParallelCopyConfig {
         ParallelCopyConfig {
-            enabled: false,
+            max_depth: 0, // 0 = disabled
             min_file_size_mb: 128,
-            max_depth: 2,
             chunk_size_mb: 2,
         }
     }

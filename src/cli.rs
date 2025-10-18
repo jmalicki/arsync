@@ -82,40 +82,38 @@ pub struct IoConfig {
 
 /// Parallel copy configuration for large files
 ///
-/// Uses recursive binary splitting to copy large files in parallel.
+/// Parallel copy is enabled by setting --parallel-max-depth > 0.
 #[derive(clap::Args, Debug, Clone)]
 #[command(next_help_heading = "Parallel Copy Options")]
 pub struct ParallelCopyConfig {
-    /// Enable parallel copying for large files
+    /// Maximum recursion depth for parallel file copying
     ///
-    /// When enabled, files larger than --parallel-min-size will be split
-    /// recursively and copied by multiple tasks concurrently.
-    /// This can significantly improve throughput for large files on fast
-    /// storage (`NVMe`), but may not help on slower devices (`HDD`).
-    #[arg(long)]
-    pub enabled: bool,
+    /// Creates up to 2^depth parallel tasks for large files.
+    /// - Depth 0 (default): Disabled - use sequential copy
+    /// - Depth 1: 2 parallel tasks
+    /// - Depth 2: 4 parallel tasks
+    /// - Depth 3: 8 parallel tasks
+    /// - Depth 4: 16 parallel tasks
+    ///
+    /// Recommended: 2-3 for `NVMe`, 1-2 for `SSD`
+    /// Default: 0 (disabled)
+    #[arg(long = "parallel-max-depth", default_value = "0")]
+    pub max_depth: usize,
 
     /// Minimum file size (in MB) to trigger parallel copying
     ///
     /// Files smaller than this threshold will be copied sequentially.
+    /// Only applies when --parallel-max-depth > 0.
     /// Default: 128 MB
-    #[arg(long, default_value = "128", requires = "enabled")]
+    #[arg(long = "parallel-min-size-mb", default_value = "128")]
     pub min_file_size_mb: u64,
 
-    /// Maximum recursion depth for parallel splits
-    ///
-    /// Creates up to 2^depth parallel tasks.
-    /// Depth 2 = 4 tasks, Depth 3 = 8 tasks, Depth 4 = 16 tasks
-    /// Recommended: 2-3 for `NVMe`, 1-2 for `SSD`
-    /// Default: 2 (4 tasks)
-    #[arg(long, default_value = "2", requires = "enabled")]
-    pub max_depth: usize,
-
-    /// Chunk size (in MB) for each read/write operation
+    /// Chunk size (in MB) for each read/write operation in parallel copy
     ///
     /// Larger chunks reduce syscall overhead but increase memory usage.
+    /// Only applies when --parallel-max-depth > 0.
     /// Default: 2 MB
-    #[arg(long, default_value = "2", requires = "enabled")]
+    #[arg(long = "parallel-chunk-size-mb", default_value = "2")]
     pub chunk_size_mb: usize,
 }
 
@@ -135,7 +133,7 @@ impl ParallelCopyConfig {
     /// Determine if a file should be copied in parallel
     #[must_use]
     pub const fn should_use_parallel(&self, file_size: u64) -> bool {
-        self.enabled && file_size >= self.min_file_size_bytes()
+        self.max_depth > 0 && file_size >= self.min_file_size_bytes()
     }
 
     /// Validate parallel copy configuration
@@ -147,8 +145,8 @@ impl ParallelCopyConfig {
     /// - `chunk_size_mb` is 0 or greater than 64
     /// - `min_file_size_mb` is 0
     pub fn validate(&self) -> Result<()> {
-        if !self.enabled {
-            return Ok(());
+        if self.max_depth == 0 {
+            return Ok(()); // Disabled, nothing to validate
         }
 
         if self.max_depth > 6 {
@@ -498,9 +496,8 @@ mod tests {
                 copy_method: CopyMethod::Auto,
                 cpu_count: 2,
                 parallel: ParallelCopyConfig {
-                    enabled: false,
+                    max_depth: 0,
                     min_file_size_mb: 128,
-                    max_depth: 2,
                     chunk_size_mb: 2,
                 },
             },
