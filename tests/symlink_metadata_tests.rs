@@ -96,9 +96,9 @@ fn test_symlink_permissions_are_always_0777_on_linux() {
     );
 }
 
-/// Test: Demonstrate that File::open on symlink opens the TARGET (RED - will FAIL)
+/// Test: Demonstrate that File::open on symlink opens the TARGET (GREEN - documents expected behavior)
 ///
-/// **Critical Bug**: You cannot use file descriptor operations on symlinks!
+/// **Important Design Constraint**: You cannot use FD-based operations on symlinks!
 ///
 /// When you call `File::open(symlink_path)`, it opens the TARGET file, not the symlink.
 /// This means ALL fd-based operations operate on the target:
@@ -107,7 +107,7 @@ fn test_symlink_permissions_are_always_0777_on_linux() {
 /// - fgetxattr -> reads target's xattrs (not symlink's)
 /// - futimens -> changes target's timestamps (not symlink's)
 ///
-/// **Fix**: Must use path-based l* syscalls that explicitly don't follow:
+/// **Solution**: Must use path-based l* syscalls that explicitly don't follow:
 /// - lchown, lchmod (some systems), lgetxattr, lutimes, etc.
 #[compio::test]
 #[cfg(unix)]

@@ -41,15 +41,14 @@ async fn test_regular_xattr_follows_symlinks() {
     // Read xattr directly from target
     let target_xattr = get_xattr_at_path(&target_path, "user.type").await.unwrap();
 
-    // This test demonstrates the bug: regular functions follow symlinks
-    // The target's xattr was overwritten when we operated via the symlink path
+    // Verify: regular functions followed the symlink and modified the target
+    // This is EXPECTED BEHAVIOR - regular xattr functions should follow symlinks
     assert_eq!(
         target_xattr, b"via_symlink",
-        "Regular xattr functions follow symlinks (this is the bug we're documenting)"
+        "Regular xattr functions follow symlinks (expected behavior, by design)"
     );
 
-    // This is actually expected behavior for regular functions - they SHOULD follow symlinks
-    // But when you want to operate on symlinks themselves, use l* functions
+    // Note: To operate on symlinks themselves (not their targets), use l* functions
 }
 
 /// Test that l* xattr functions don't follow symlinks
