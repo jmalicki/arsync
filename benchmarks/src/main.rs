@@ -68,6 +68,15 @@ struct SyscallStats {
     readlink_total: usize,
     readlinkat_total: usize,
     lstat_total: usize,
+    // io_uring operation types (from SQE submissions)
+    io_uring_op_read: usize,
+    io_uring_op_write: usize,
+    io_uring_op_statx: usize,
+    io_uring_op_fallocate: usize,
+    io_uring_op_openat: usize,
+    io_uring_op_close: usize,
+    io_uring_op_fsync: usize,
+    io_uring_op_other: usize,
     // Unexpected/legacy syscalls (should not be used)
     open_total: usize,   // Should use openat
     stat_total: usize,   // Should use statx or fstat
@@ -232,7 +241,10 @@ fn create_test_dataset(args: &Args) -> Result<()> {
 }
 
 fn run_strace_analysis(args: &Args) -> Result<String> {
-    // Run strace on arsync
+    // Run strace on arsync with full metadata preservation
+    // -a = archive mode (preserves permissions, times, etc.)
+    // -r = recursive (copies directories and their contents)
+    // -l = copy symlinks as symlinks
     let output = Command::new("strace")
         .arg("-e")
         .arg("trace=all")
@@ -240,7 +252,9 @@ fn run_strace_analysis(args: &Args) -> Result<String> {
         .arg(&args.arsync_bin)
         .arg(&args.test_dir_src)
         .arg(&args.test_dir_dst)
-        .arg("-a")
+        .arg("-a") // Archive mode
+        .arg("-r") // Recursive
+        .arg("-l") // Preserve symlinks
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .output()
@@ -329,6 +343,26 @@ fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
     stats.readlinkat_total = raw_content.matches("readlinkat(").count();
     stats.lstat_total = raw_content.matches("lstat(").count();
 
+    // Parse io_uring operation types from traces
+    // Look for patterns like "sqe->opcode = IORING_OP_READ" in kernel traces
+    // Or count operations by checking what's between io_uring_enter calls
+    // For now, estimate based on syscall patterns and io_uring_enter counts
+    stats.io_uring_op_read = raw_content.matches("IORING_OP_READ").count();
+    stats.io_uring_op_write = raw_content.matches("IORING_OP_WRITE").count();
+    stats.io_uring_op_statx = raw_content.matches("IORING_OP_STATX").count();
+    stats.io_uring_op_fallocate = raw_content.matches("IORING_OP_FALLOCATE").count();
+    stats.io_uring_op_openat = raw_content.matches("IORING_OP_OPENAT").count();
+    stats.io_uring_op_close = raw_content.matches("IORING_OP_CLOSE").count();
+    stats.io_uring_op_fsync = raw_content.matches("IORING_OP_FSYNC").count();
+
+    // If we don't have opcode info from kernel traces, estimate from syscall absences
+    // High io_uring_enter + low direct syscalls = operations via io_uring
+    if stats.io_uring_enter > 100 && stats.io_uring_op_read == 0 {
+        // Estimate: if we have io_uring_enter but no direct read/write syscalls for file I/O
+        // then reads/writes are likely going through io_uring
+        stats.io_uring_op_other = stats.io_uring_enter; // Placeholder
+    }
+
     // Count unexpected/legacy syscalls
     stats.open_total = raw_content.matches("open(\"").count(); // Exclude openat
     stats.stat_total = raw_content.matches("stat(\"").count(); // Exclude statx, fstat
@@ -395,6 +429,9 @@ fn generate_markdown_report(args: &Args, stats: &SyscallStats) -> Result<String>
 
     // io_uring Usage
     add_io_uring_section(&mut report, stats, args.num_files);
+
+    // io_uring Operations Breakdown
+    add_io_uring_operations_section(&mut report, stats);
 
     // Metadata Operations
     add_metadata_section(&mut report, stats, args.num_files);
@@ -496,6 +533,92 @@ fn add_io_uring_section(report: &mut String, stats: &SyscallStats, _num_files: u
             report.push_str("✅ **EXCELLENT:** Good batching (avg≥3 ops/submit)\n\n");
         } else {
             report.push_str("✅ **GOOD:** Decent batching (1.5 < avg < 3 ops/submit)\n\n");
+        }
+    }
+}
+
+fn add_io_uring_operations_section(report: &mut String, stats: &SyscallStats) {
+    report.push_str("## 🔄 io_uring Operations Breakdown\n\n");
+
+    let total_ops = stats.io_uring_op_read
+        + stats.io_uring_op_write
+        + stats.io_uring_op_statx
+        + stats.io_uring_op_fallocate
+        + stats.io_uring_op_openat
+        + stats.io_uring_op_close
+        + stats.io_uring_op_fsync;
+
+    if total_ops > 0 {
+        report.push_str("| Operation | Count | Notes |\n");
+        report.push_str("|-----------|-------|-------|\n");
+        report.push_str(&format!(
+            "| READ | {} | Async file reads |\n",
+            stats.io_uring_op_read
+        ));
+        report.push_str(&format!(
+            "| WRITE | {} | Async file writes |\n",
+            stats.io_uring_op_write
+        ));
+        report.push_str(&format!(
+            "| STATX | {} | Async metadata reads |\n",
+            stats.io_uring_op_statx
+        ));
+        report.push_str(&format!(
+            "| FALLOCATE | {} | Async space allocation |\n",
+            stats.io_uring_op_fallocate
+        ));
+        report.push_str(&format!(
+            "| OPENAT | {} | Async file opens |\n",
+            stats.io_uring_op_openat
+        ));
+        report.push_str(&format!(
+            "| CLOSE | {} | Async file closes |\n",
+            stats.io_uring_op_close
+        ));
+        report.push_str(&format!(
+            "| FSYNC | {} | Async file sync |\n",
+            stats.io_uring_op_fsync
+        ));
+        report.push_str(&format!("| **Total** | **{}** | | |\n\n", total_ops));
+
+        report.push_str("✅ **io_uring operation types visible in kernel traces**\n\n");
+    } else {
+        report.push_str(
+            "ℹ️  **INFO:** io_uring operation types not visible in standard strace output.\n\n",
+        );
+        report.push_str("> **Note:** To see detailed io_uring operation breakdown, use `bpftrace` or kernel tracing.\n");
+        report.push_str("> High `io_uring_enter` count + low direct syscalls indicates operations are async via io_uring.\n\n");
+
+        // Show the inference
+        report.push_str("### Inferred io_uring Usage\n\n");
+        report.push_str("Based on syscall patterns:\n\n");
+        report.push_str(&format!(
+            "- **io_uring_enter calls**: {} (operations submitted)\n",
+            stats.io_uring_enter
+        ));
+        report.push_str(&format!(
+            "- **Direct read() calls**: {} (should be low)\n",
+            stats.all_syscalls.get("read").unwrap_or(&0)
+        ));
+        report.push_str(&format!(
+            "- **Direct write() calls**: {} (should be low)\n",
+            stats.all_syscalls.get("write").unwrap_or(&0)
+        ));
+        report.push_str(&format!(
+            "- **Direct statx calls**: {} (mixed with io_uring statx)\n\n",
+            stats.statx_total
+        ));
+
+        if stats.io_uring_enter > 100 {
+            let read_count = *stats.all_syscalls.get("read").unwrap_or(&0);
+            let write_count = *stats.all_syscalls.get("write").unwrap_or(&0);
+            if read_count < 100 && write_count < 100 {
+                report.push_str("✅ **Likely using io_uring** for most file I/O (low direct syscall counts)\n\n");
+            } else {
+                report.push_str(
+                    "⚠️  **High direct syscall counts** - may not be fully utilizing io_uring\n\n",
+                );
+            }
         }
     }
 }
