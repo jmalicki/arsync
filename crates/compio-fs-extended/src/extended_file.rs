@@ -1,8 +1,8 @@
 //! Extended file operations wrapper around compio::fs::File
 
-use crate::copy::CopyFileRange;
 // DirectoryOps removed - use compio::fs directly for basic directory operations
 use crate::error::Result;
+#[cfg(target_os = "linux")]
 use crate::fadvise::{Fadvise, FadviseAdvice};
 use crate::fallocate::Fallocate;
 use crate::hardlink::HardlinkOps;
@@ -15,12 +15,12 @@ use compio::fs::File;
 ///
 /// This struct wraps a `compio::fs::File` and provides extended filesystem
 /// operations that are not available in the base compio-fs crate, including:
-/// - `copy_file_range` for efficient same-filesystem copies
 /// - `fadvise` for file access pattern optimization
-/// - Symlink operations
+/// - `fallocate` for space preallocation
+/// - Symlink operations (via DirectoryFd)
 /// - Hardlink operations
 /// - Extended attributes (xattr) operations
-/// - Directory operations
+/// - Ownership operations
 ///
 /// All operations are integrated with compio's runtime for optimal async performance.
 #[derive(Debug)]
@@ -114,22 +114,8 @@ impl ExtendedFile {
     }
 }
 
-// Implement CopyFileRange trait
-impl CopyFileRange for ExtendedFile {
-    async fn copy_file_range(
-        &self,
-        dst: &Self,
-        src_offset: u64,
-        dst_offset: u64,
-        len: u64,
-    ) -> Result<usize> {
-        // Delegate to the copy module implementation
-        crate::copy::copy_file_range_impl(&self.inner, &dst.inner, src_offset, dst_offset, len)
-            .await
-    }
-}
-
-// Implement Fadvise trait
+// Implement Fadvise trait (Linux-only)
+#[cfg(target_os = "linux")]
 impl Fadvise for ExtendedFile {
     async fn fadvise(&self, advice: FadviseAdvice, offset: i64, len: i64) -> Result<()> {
         // Delegate to the fadvise module implementation

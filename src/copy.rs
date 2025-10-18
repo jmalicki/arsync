@@ -39,10 +39,13 @@
 //! }
 //! ```
 
+use crate::cli::ParallelCopyConfig;
 use crate::error::{Result, SyncError};
 use crate::metadata::{get_precise_timestamps, preserve_file_metadata, MetadataConfig};
-use compio::fs::OpenOptions;
+use compio::dispatcher::Dispatcher;
+use compio::fs::{File, OpenOptions};
 use compio::io::{AsyncReadAt, AsyncWriteAt};
+use futures::stream::{FuturesUnordered, StreamExt};
 use std::path::Path;
 
 /// Default I/O buffer size (in bytes) used for chunked read/write operations.
@@ -50,6 +53,9 @@ use std::path::Path;
 /// Chosen to balance syscall overhead and memory usage. Adjust if profiling
 /// indicates different optimal sizes for specific workloads.
 const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer
+
+/// 2MB huge page size for alignment in parallel copies
+const HUGE_PAGE_SIZE: u64 = 2 * 1024 * 1024;
 
 /// Copy a single file using the specified method
 ///
@@ -64,10 +70,33 @@ const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer
 /// - Metadata preservation fails
 /// - The specified copy method is not supported or fails
 #[allow(clippy::future_not_send)]
-pub async fn copy_file(src: &Path, dst: &Path, metadata_config: &MetadataConfig) -> Result<()> {
-    // Simplified: always use read/write method
-    // This is the only reliable method that works everywhere
-    copy_read_write(src, dst, metadata_config).await
+pub async fn copy_file(
+    src: &Path,
+    dst: &Path,
+    metadata_config: &MetadataConfig,
+    parallel_config: &ParallelCopyConfig,
+    dispatcher: Option<&'static Dispatcher>,
+) -> Result<()> {
+    // Get file size to decide whether to use parallel copy
+    let file_size = compio::fs::metadata(src)
+        .await
+        .map_err(|e| SyncError::FileSystem(format!("Failed to get file metadata: {e}")))?
+        .len();
+
+    // Decide whether to use parallel copy
+    if parallel_config.should_use_parallel(file_size) {
+        copy_read_write_parallel(
+            src,
+            dst,
+            metadata_config,
+            parallel_config,
+            file_size,
+            dispatcher,
+        )
+        .await
+    } else {
+        copy_read_write(src, dst, metadata_config, parallel_config, file_size).await
+    }
 }
 
 /// Copy file using compio read/write operations (reliable fallback)
@@ -107,7 +136,13 @@ pub async fn copy_file(src: &Path, dst: &Path, metadata_config: &MetadataConfig)
 /// }
 /// ```
 #[allow(clippy::future_not_send, clippy::too_many_lines)]
-async fn copy_read_write(src: &Path, dst: &Path, metadata_config: &MetadataConfig) -> Result<()> {
+async fn copy_read_write(
+    src: &Path,
+    dst: &Path,
+    metadata_config: &MetadataConfig,
+    _parallel_config: &ParallelCopyConfig,
+    _file_size: u64,
+) -> Result<()> {
     // Capture source timestamps BEFORE any reads to avoid atime/mtime drift
     let (src_accessed, src_modified) = get_precise_timestamps(src).await?;
 
@@ -141,42 +176,53 @@ async fn copy_read_write(src: &Path, dst: &Path, metadata_config: &MetadataConfi
     // and improve write performance using io_uring fallocate.
     // Skip preallocation for empty files as fallocate fails with EINVAL for zero length.
     if file_size > 0 {
-        use compio_fs_extended::{fadvise::FadviseAdvice, ExtendedFile, Fadvise, Fallocate};
+        use compio_fs_extended::{ExtendedFile, Fallocate};
 
-        // Apply fadvise hints to both source and destination for "one and done" copy
-        let extended_src = ExtendedFile::from_ref(&src_file);
         let extended_dst = ExtendedFile::from_ref(&dst_file);
 
-        // Hint that source data won't be accessed again after this copy
-        extended_src
-            .fadvise(
-                FadviseAdvice::NoReuse,
-                0,
-                file_size.try_into().unwrap_or(i64::MAX),
-            )
-            .await
-            .map_err(|e| {
-                SyncError::FileSystem(format!("Failed to set fadvise NoReuse hint on source: {e}"))
-            })?;
+        // Apply fadvise hints (Linux only - io_uring optimization)
+        #[cfg(target_os = "linux")]
+        {
+            use compio_fs_extended::{fadvise::FadviseAdvice, Fadvise};
+            let extended_src = ExtendedFile::from_ref(&src_file);
+
+            // Hint that source data won't be accessed again after this copy
+            extended_src
+                .fadvise(
+                    FadviseAdvice::NoReuse,
+                    0,
+                    file_size.try_into().unwrap_or(i64::MAX),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to set fadvise NoReuse hint on source: {e}"
+                    ))
+                })?;
+        }
 
         // Preallocate destination file space
         extended_dst.fallocate(0, file_size, 0).await.map_err(|e| {
             SyncError::FileSystem(format!("Failed to preallocate destination file: {e}"))
         })?;
 
-        // Hint that destination data won't be accessed again after this copy
-        extended_dst
-            .fadvise(
-                FadviseAdvice::NoReuse,
-                0,
-                file_size.try_into().unwrap_or(i64::MAX),
-            )
-            .await
-            .map_err(|e| {
-                SyncError::FileSystem(format!(
-                    "Failed to set fadvise NoReuse hint on destination: {e}"
-                ))
-            })?;
+        // Hint that destination data won't be accessed again after this copy (Linux only)
+        #[cfg(target_os = "linux")]
+        {
+            use compio_fs_extended::{fadvise::FadviseAdvice, Fadvise};
+            extended_dst
+                .fadvise(
+                    FadviseAdvice::NoReuse,
+                    0,
+                    file_size.try_into().unwrap_or(i64::MAX),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to set fadvise NoReuse hint on destination: {e}"
+                    ))
+                })?;
+        }
     }
 
     // Use compio's async read_at/write_at operations with buffer reuse
@@ -260,16 +306,362 @@ async fn copy_read_write(src: &Path, dst: &Path, metadata_config: &MetadataConfi
     Ok(())
 }
 
+/// Copy a file using parallel recursive binary splitting
+///
+/// This function splits large files into regions recursively and copies them
+/// in parallel to maximize throughput on fast storage (`NVMe`).
+///
+/// # Parameters
+///
+/// * `src` - Source file path
+/// * `dst` - Destination file path
+/// * `metadata_config` - Metadata preservation configuration
+/// * `parallel_config` - Parallel copy configuration
+/// * `file_size` - Size of the file to copy
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the file was copied successfully, or `Err(SyncError)` if failed.
+#[allow(clippy::future_not_send)]
+#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
+async fn copy_read_write_parallel(
+    src: &Path,
+    dst: &Path,
+    metadata_config: &MetadataConfig,
+    parallel_config: &ParallelCopyConfig,
+    file_size: u64,
+    dispatcher: Option<&'static Dispatcher>,
+) -> Result<()> {
+    let max_depth = parallel_config.max_depth;
+    let max_tasks = 1 << max_depth; // 2^max_depth
+
+    tracing::info!(
+        "Using parallel copy: depth {} (up to {} tasks) for {} MB on {}",
+        max_depth,
+        max_tasks,
+        file_size / 1024 / 1024,
+        src.display()
+    );
+
+    // 1. Capture source timestamps BEFORE any reads to avoid atime/mtime drift
+    let (src_accessed, src_modified) = get_precise_timestamps(src).await?;
+
+    // 2. Open source file
+    let src_file = OpenOptions::new().read(true).open(src).await.map_err(|e| {
+        SyncError::FileSystem(format!("Failed to open source file {}: {e}", src.display()))
+    })?;
+
+    // 3. Open destination file
+    let dst_file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(dst)
+        .await
+        .map_err(|e| {
+            SyncError::FileSystem(format!(
+                "Failed to open destination file {}: {e}",
+                dst.display(),
+            ))
+        })?;
+
+    // 4. CRITICAL: fallocate the entire file first to prevent fragmentation
+    // and allow parallel writes without conflicts
+    if file_size > 0 {
+        use compio_fs_extended::{ExtendedFile, Fallocate};
+
+        let extended_dst = ExtendedFile::from_ref(&dst_file);
+
+        // Preallocate destination file space
+        extended_dst.fallocate(0, file_size, 0).await.map_err(|e| {
+            SyncError::FileSystem(format!("Failed to preallocate destination file: {e}"))
+        })?;
+
+        // Apply fadvise hints (Linux only - io_uring optimization)
+        #[cfg(target_os = "linux")]
+        {
+            use compio_fs_extended::{fadvise::FadviseAdvice, Fadvise};
+
+            let extended_src = ExtendedFile::from_ref(&src_file);
+
+            // Hint that source data won't be accessed again after this copy
+            extended_src
+                .fadvise(
+                    FadviseAdvice::NoReuse,
+                    0,
+                    file_size.try_into().unwrap_or(i64::MAX),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to set fadvise NoReuse hint on source: {e}"
+                    ))
+                })?;
+
+            // Hint that destination data won't be accessed again after this copy
+            extended_dst
+                .fadvise(
+                    FadviseAdvice::NoReuse,
+                    0,
+                    file_size.try_into().unwrap_or(i64::MAX),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to set fadvise NoReuse hint on destination: {e}"
+                    ))
+                })?;
+        }
+    }
+
+    // 5. Calculate all regions upfront (iterative, not recursive)
+    let chunk_size = parallel_config.chunk_size_bytes();
+    let num_tasks = 1 << max_depth; // 2^max_depth
+    let region_size = file_size / num_tasks as u64;
+
+    tracing::info!(
+        "PARALLEL COPY: {} tasks, {} MB per region, chunk={} KB, thread={:?}, multi-threaded={}",
+        num_tasks,
+        region_size / 1_048_576,
+        chunk_size / 1024,
+        std::thread::current().id(),
+        dispatcher.is_some()
+    );
+
+    // Use dispatcher if available, otherwise fall back to single-threaded async spawn
+    if let Some(dispatcher) = dispatcher {
+        // Multi-threaded: dispatch to worker threads
+        let mut receivers = Vec::with_capacity(num_tasks);
+
+        for task_id in 0..num_tasks {
+            let start = task_id as u64 * region_size;
+            let end = if task_id == num_tasks - 1 {
+                file_size // Last task handles remainder
+            } else {
+                (task_id as u64 + 1) * region_size
+            };
+
+            // Align to page boundaries (except first and last)
+            let start_aligned = if task_id > 0 {
+                align_to_page(start, HUGE_PAGE_SIZE)
+            } else {
+                start
+            };
+
+            // Clone file handles for this task
+            let src = src_file.clone();
+            let mut dst = dst_file.clone();
+
+            // Dispatch to worker thread - each gets its own io_uring instance
+            let receiver = dispatcher
+                .dispatch(move || async move {
+                    copy_region_sequential(&src, &mut dst, start_aligned, end, chunk_size).await
+                })
+                .map_err(|e| {
+                    SyncError::CopyFailed(format!("Failed to dispatch parallel copy task: {e:?}"))
+                })?;
+
+            receivers.push(receiver);
+        }
+
+        // Wait for all dispatched tasks - process as they complete, fail fast on first error
+        let mut futures: FuturesUnordered<_> = receivers
+            .into_iter()
+            .enumerate()
+            .map(|(task_id, receiver)| async move {
+                receiver
+                    .await
+                    .map_err(|e| {
+                        SyncError::CopyFailed(format!("Task {task_id} channel failed: {e:?}"))
+                    })?
+                    .map_err(|e| {
+                        SyncError::CopyFailed(format!("Task {task_id} execution failed: {e:?}"))
+                    })
+            })
+            .collect();
+
+        while let Some(result) = futures.next().await {
+            result?; // Fail fast on first error
+        }
+    } else {
+        // Single-threaded fallback: use compio::runtime::spawn
+        let mut handles = Vec::with_capacity(num_tasks);
+
+        for task_id in 0..num_tasks {
+            let start = task_id as u64 * region_size;
+            let end = if task_id == num_tasks - 1 {
+                file_size // Last task handles remainder
+            } else {
+                (task_id as u64 + 1) * region_size
+            };
+
+            // Align to page boundaries (except first and last)
+            let start_aligned = if task_id > 0 {
+                align_to_page(start, HUGE_PAGE_SIZE)
+            } else {
+                start
+            };
+
+            // Clone file handles for this task
+            let src = src_file.clone();
+            let mut dst = dst_file.clone();
+
+            // Spawn task on same thread (async concurrency, not parallelism)
+            let handle = compio::runtime::spawn(async move {
+                copy_region_sequential(&src, &mut dst, start_aligned, end, chunk_size).await
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all spawned tasks - process as they complete, fail fast on first error
+        let mut futures: FuturesUnordered<_> = handles
+            .into_iter()
+            .enumerate()
+            .map(|(task_id, handle)| async move {
+                handle
+                    .await
+                    .map_err(|e| {
+                        SyncError::CopyFailed(format!("Task {task_id} join failed: {e:?}"))
+                    })?
+                    .map_err(|e| {
+                        SyncError::CopyFailed(format!("Task {task_id} execution failed: {e:?}"))
+                    })
+            })
+            .collect();
+
+        while let Some(result) = futures.next().await {
+            result?; // Fail fast on first error
+        }
+    }
+
+    // 7. Sync all data to disk
+    dst_file
+        .sync_all()
+        .await
+        .map_err(|e| SyncError::FileSystem(format!("Failed to sync destination file: {e}")))?;
+
+    // 8. Preserve file metadata
+    preserve_file_metadata(
+        &src_file,
+        &dst_file,
+        dst,
+        src_accessed,
+        src_modified,
+        metadata_config,
+    )
+    .await?;
+
+    tracing::info!("Parallel copy completed: {} bytes", file_size);
+    Ok(())
+}
+
+/// Copy a region sequentially
+///
+/// This function copies a contiguous region of a file using sequential
+/// `read_at`/`write_at` operations. Used by parallel copy to copy each partition.
+///
+/// # Parameters
+///
+/// * `src` - Source file handle
+/// * `dst` - Destination file handle
+/// * `start` - Starting byte offset
+/// * `end` - Ending byte offset (exclusive)
+/// * `chunk_size` - Size of chunks for read/write operations
+#[allow(clippy::future_not_send)]
+async fn copy_region_sequential(
+    src: &File,
+    dst: &mut File,
+    start: u64,
+    end: u64,
+    chunk_size: usize,
+) -> Result<()> {
+    tracing::debug!(
+        "copy_region_sequential: start={} MB, end={} MB, thread={:?}",
+        start / 1_048_576,
+        end / 1_048_576,
+        std::thread::current().id()
+    );
+
+    let mut offset = start;
+
+    while offset < end {
+        let remaining = end - offset;
+        #[allow(clippy::cast_possible_truncation)]
+        let to_read = remaining.min(chunk_size as u64) as usize;
+
+        // Allocate buffer sized to what we actually need to read
+        // This prevents reading past the region boundary in parallel execution
+        let buffer = vec![0u8; to_read];
+
+        // Read from source at this offset
+        let read_result = src.read_at(buffer, offset).await;
+        let bytes_read = read_result
+            .0
+            .map_err(|e| SyncError::IoUring(format!("read_at failed at offset {offset}: {e}")))?;
+        let mut buffer = read_result.1;
+
+        if bytes_read == 0 {
+            break;
+        }
+
+        // Write to destination at same offset
+        buffer.truncate(bytes_read);
+        let write_result = dst.write_at(buffer, offset).await;
+        let bytes_written = write_result
+            .0
+            .map_err(|e| SyncError::IoUring(format!("write_at failed at offset {offset}: {e}")))?;
+        // Note: We intentionally don't reuse the buffer here (write_result.1)
+        // A new buffer is allocated on each iteration to ensure correct sizing
+
+        if bytes_written != bytes_read {
+            return Err(SyncError::CopyFailed(format!(
+                "Write size mismatch at offset {offset}: read {bytes_read}, wrote {bytes_written}"
+            )));
+        }
+
+        offset += bytes_written as u64;
+    }
+
+    Ok(())
+}
+
+/// Align offset to page boundary (round down)
+///
+/// # Parameters
+///
+/// * `offset` - The offset to align
+/// * `page_size` - The page size to align to
+///
+/// # Returns
+///
+/// The offset rounded down to the nearest page boundary
+const fn align_to_page(offset: u64, page_size: u64) -> u64 {
+    (offset / page_size) * page_size
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::{Args, ConcurrencyConfig, CopyMethod, IoConfig, OutputConfig, PathConfig};
+    use crate::cli::{
+        Args, ConcurrencyConfig, CopyMethod, IoConfig, OutputConfig, ParallelCopyConfig, PathConfig,
+    };
     use crate::metadata::MetadataConfig;
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::time::Duration;
     use tempfile::TempDir;
+
+    /// Create a disabled parallel copy config for testing
+    fn disabled_parallel_config() -> ParallelCopyConfig {
+        ParallelCopyConfig {
+            max_depth: 0, // 0 = disabled
+            min_file_size_mb: 128,
+            chunk_size_mb: 2,
+        }
+    }
 
     /// Create a default Args struct for testing with archive mode enabled
     fn create_test_args_with_archive() -> Args {
@@ -283,6 +675,7 @@ mod tests {
                 buffer_size_kb: 64,
                 copy_method: CopyMethod::Auto,
                 cpu_count: 1,
+                parallel: disabled_parallel_config(),
             },
             concurrency: ConcurrencyConfig {
                 max_files_in_flight: 1024,
@@ -330,9 +723,15 @@ mod tests {
 
         // Copy the file with archive mode (full metadata preservation)
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Check that permissions were preserved
         let src_metadata = fs::metadata(&src_path).unwrap();
@@ -376,9 +775,15 @@ mod tests {
 
         // Copy the file with archive mode (full metadata preservation)
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Check that timestamps were preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -435,9 +840,15 @@ mod tests {
 
             // Copy the file with archive mode (full metadata preservation)
             let args = create_test_args_with_archive();
-            copy_file(&src_path, &dst_path, &args.metadata)
-                .await
-                .unwrap();
+            copy_file(
+                &src_path,
+                &dst_path,
+                &args.metadata,
+                &disabled_parallel_config(),
+                None,
+            )
+            .await
+            .unwrap();
 
             // Check that permissions were preserved
             let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -467,9 +878,15 @@ mod tests {
 
         // Copy the file with archive mode (full metadata preservation)
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Check that timestamps were preserved with high precision
         let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -517,9 +934,15 @@ mod tests {
 
         // Copy the file with archive mode (full metadata preservation)
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Verify file content
         let copied_content = fs::read_to_string(&dst_path).unwrap();
@@ -576,9 +999,15 @@ mod tests {
 
         // Copy the file with archive mode (full metadata preservation)
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Check that permissions were preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -605,9 +1034,15 @@ mod tests {
 
         // Copy the file with archive mode (full metadata preservation)
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Verify the file was copied correctly
         let copied_content = fs::read_to_string(&dst_path).unwrap();
@@ -635,9 +1070,15 @@ mod tests {
 
         // Copy the file with archive mode (full metadata preservation)
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Verify the file was copied correctly
         let copied_content = fs::read_to_string(&dst_path).unwrap();

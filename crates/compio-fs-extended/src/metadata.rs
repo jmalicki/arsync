@@ -34,23 +34,37 @@
 //! # }
 //! ```
 
+#[cfg(unix)]
 use crate::directory::DirectoryFd;
+#[cfg(unix)]
 use crate::error::{metadata_error, ExtendedError, Result};
+#[cfg(target_os = "linux")]
 use compio::driver::OpCode;
+#[cfg(unix)]
 use compio::fs::File;
+#[cfg(target_os = "linux")]
 use compio::runtime::submit;
+#[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
+#[cfg(unix)]
 use nix::sys::stat::UtimensatFlags;
+#[cfg(unix)]
 use nix::sys::time::TimeSpec;
+#[cfg(target_os = "linux")]
 use std::ffi::CString;
-use std::os::fd::{AsFd, BorrowedFd};
+#[cfg(target_os = "linux")]
 use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
+#[cfg(target_os = "linux")]
 use std::path::Path;
+#[cfg(target_os = "linux")]
 use std::pin::Pin;
+#[cfg(unix)]
 use std::time::SystemTime;
 
 /// io_uring statx operation for getting file metadata with nanosecond timestamps
+#[cfg(target_os = "linux")]
 pub struct StatxOp {
     /// Directory file descriptor (AT_FDCWD for current directory)
     dirfd: std::os::unix::io::RawFd,
@@ -64,6 +78,7 @@ pub struct StatxOp {
     mask: u32,
 }
 
+#[cfg(target_os = "linux")]
 impl StatxOp {
     /// Create a new statx operation
     ///
@@ -85,6 +100,7 @@ impl StatxOp {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl OpCode for StatxOp {
     fn create_entry(mut self: Pin<&mut Self>) -> compio::driver::OpEntry {
         compio::driver::OpEntry::Submission(
@@ -116,6 +132,7 @@ impl OpCode for StatxOp {
 /// # Errors
 ///
 /// Returns an error if the statx operation fails
+#[cfg(target_os = "linux")]
 pub async fn statx_at(path: &Path) -> Result<(SystemTime, SystemTime)> {
     let path_cstr = CString::new(path.as_os_str().as_bytes())
         .map_err(|e| metadata_error(&format!("Invalid path: {}", e)))?;
@@ -145,6 +162,7 @@ pub async fn statx_at(path: &Path) -> Result<(SystemTime, SystemTime)> {
 }
 
 /// Helper to convert SystemTime to nix TimeSpec
+#[cfg(unix)]
 fn system_time_to_timespec(time: SystemTime) -> Result<TimeSpec> {
     let duration = time
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -177,6 +195,7 @@ fn system_time_to_timespec(time: SystemTime) -> Result<TimeSpec> {
 /// - The file descriptor is invalid
 /// - Permission is denied
 /// - Invalid timestamp values
+#[cfg(unix)]
 pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime) -> Result<()> {
     // NOTE: Kernel doesn't have IORING_OP_FUTIMENS - using safe nix wrapper
     // futimens is FD-based, better than path-based utimensat (no TOCTOU)
@@ -186,9 +205,7 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
         let mtime = system_time_to_timespec(modified)?;
 
         // SAFETY: Caller guarantees fd is valid and won't be closed during this operation.
-        // BorrowedFd::borrow_raw creates a borrowed reference with the correct lifetime.
-        let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-        nix::sys::stat::futimens(borrowed_fd, &atime, &mtime)
+        nix::sys::stat::futimens(fd, &atime, &mtime)
             .map_err(|e| metadata_error(&format!("futimens failed: {}", e)))
     })
     .await
@@ -214,6 +231,7 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
 /// # Errors
 ///
 /// Returns an error if the statx operation fails
+#[cfg(target_os = "linux")]
 pub(crate) async fn statx_impl(
     dir: &DirectoryFd,
     pathname: &str,
@@ -248,21 +266,32 @@ pub(crate) async fn statx_impl(
 }
 
 /// Change file permissions using DirectoryFd
-pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) -> Result<()> {
+#[cfg(unix)]
+/// Change file permissions without following symlinks (symlink-aware)
+#[cfg(target_os = "linux")]
+pub(crate) async fn lfchmodat_impl(_dir: &DirectoryFd, _pathname: &str, _mode: u32) -> Result<()> {
+    // No-op on Linux: symlink permissions are always 0777 and ignored by kernel
+    // This function exists for API consistency with macOS
+    Ok(())
+}
+
+/// Change file permissions without following symlinks (symlink-aware) - macOS/Unix
+#[cfg(all(unix, not(target_os = "linux")))]
+pub(crate) async fn lfchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) -> Result<()> {
     let pathname_cstring = std::ffi::CString::new(pathname)
         .map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
-    let dir = dir.clone();
+    let dir_fd = dir.as_raw_fd();
 
     let operation = move || {
         use nix::sys::stat::{fchmodat, FchmodatFlags, Mode};
 
         fchmodat(
-            dir.as_fd(),
+            Some(dir_fd),
             pathname_cstring.as_c_str(),
-            Mode::from_bits_truncate(mode),
-            FchmodatFlags::FollowSymlink,
+            Mode::from_bits_truncate(mode as nix::libc::mode_t),
+            FchmodatFlags::NoFollowSymlink, // Don't follow symlinks!
         )
-        .map_err(|e| metadata_error(&format!("fchmodat failed: {}", e)))
+        .map_err(|e| metadata_error(&format!("lfchmodat failed: {}", e)))
     };
 
     #[cfg(feature = "cheap_calls_sync")]
@@ -279,27 +308,29 @@ pub(crate) async fn fchmodat_impl(dir: &DirectoryFd, pathname: &str, mode: u32) 
 }
 
 /// Change file timestamps using DirectoryFd
-pub(crate) async fn utimensat_impl(
+#[cfg(unix)]
+/// Change file timestamps without following symlinks (symlink-aware)
+pub(crate) async fn lutimensat_impl(
     dir: &DirectoryFd,
     pathname: &str,
     accessed: SystemTime,
     modified: SystemTime,
 ) -> Result<()> {
     let pathname_owned = pathname.to_string();
-    let dir = dir.clone();
+    let dir_fd = dir.as_raw_fd();
 
     let operation = move || {
         let atime = system_time_to_timespec(accessed)?;
         let mtime = system_time_to_timespec(modified)?;
 
         nix::sys::stat::utimensat(
-            dir.as_fd(),
+            Some(dir_fd),
             pathname_owned.as_str(),
             &atime,
             &mtime,
-            UtimensatFlags::FollowSymlink,
+            UtimensatFlags::NoFollowSymlink, // Don't follow symlinks!
         )
-        .map_err(|e| metadata_error(&format!("utimensat failed: {}", e)))
+        .map_err(|e| metadata_error(&format!("lutimensat failed: {}", e)))
     };
 
     #[cfg(feature = "cheap_calls_sync")]
@@ -315,28 +346,29 @@ pub(crate) async fn utimensat_impl(
     }
 }
 
-/// Change file ownership using DirectoryFd
-pub(crate) async fn fchownat_impl(
+/// Change file ownership without following symlinks (symlink-aware)
+#[cfg(unix)]
+pub(crate) async fn lfchownat_impl(
     dir: &DirectoryFd,
     pathname: &str,
     uid: u32,
     gid: u32,
 ) -> Result<()> {
     let pathname_owned = pathname.to_string();
-    let dir = dir.clone();
+    let dir_fd = dir.as_raw_fd();
 
     let operation = move || {
         use nix::fcntl::AtFlags;
         use nix::unistd::{fchownat, Gid, Uid};
 
         fchownat(
-            dir.as_fd(),
+            Some(dir_fd),
             pathname_owned.as_str(),
             Some(Uid::from_raw(uid)),
             Some(Gid::from_raw(gid)),
-            AtFlags::empty(), // Follow symlinks by default (no AT_SYMLINK_NOFOLLOW)
+            AtFlags::AT_SYMLINK_NOFOLLOW, // Don't follow symlinks!
         )
-        .map_err(|e| metadata_error(&format!("fchownat failed: {}", e)))
+        .map_err(|e| metadata_error(&format!("lfchownat failed: {}", e)))
     };
 
     #[cfg(feature = "cheap_calls_sync")]

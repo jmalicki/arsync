@@ -2,6 +2,7 @@
 name = "arsync"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.90.0"
 authors = ["Your Name <your.email@example.com>"]
 description = "High-performance async file copying utility using io_uring - modern rsync alternative"
 license = "MIT"
@@ -65,9 +66,7 @@ indicatif = "0.18"
 
 # System utilities
 num_cpus = "1.0"
-async-recursion = "1.0"
 dashmap = "6.1"
-whoami = "1.0"
 walkdir = "2.0"
 
 # Checksums and hashing for rsync protocol
@@ -79,7 +78,6 @@ filetime = "0.2"
 
 # i18n (internationalization)
 fluent = "0.17"
-fluent-bundle = "0.16"
 unic-langid = "0.9"
 
 # io_uring libraries
@@ -91,11 +89,10 @@ libc = "0.2"
 compio-fs-extended = { path = "crates/compio-fs-extended", features = ["xattr"] }
 
 # Async synchronization primitives (external repository)
-compio-sync = { git = "https://github.com/jmalicki/compio-sync", tag = "v0.0.1" }
+compio-sync = { git = "https://github.com/jmalicki/compio-sync", tag = "v0.0.2" }
 
 # Remote sync dependencies (optional)
 tokio = { version = "1.0", features = ["process", "io-util", "rt", "fs", "macros"], optional = true }
-async-trait = { version = "0.1", optional = true }
 rand = { version = "0.9.2", optional = true }
 
 # Build dependencies
@@ -130,7 +127,7 @@ cargo-audit = "0.21"
 [features]
 default = ["remote-sync"]
 benchmarks = ["criterion"]
-remote-sync = ["tokio", "async-trait", "rand"]
+remote-sync = ["tokio", "rand"]
 rand = ["dep:rand"]
 
 [profile.release]

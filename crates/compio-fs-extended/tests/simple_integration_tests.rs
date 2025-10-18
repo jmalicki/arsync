@@ -10,6 +10,7 @@ use tempfile::TempDir;
 
 /// Test fadvise operations on real files
 #[compio::test]
+#[cfg(target_os = "linux")] // fadvise is Linux-only
 async fn test_fadvise_basic() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("test.txt");
@@ -195,6 +196,7 @@ async fn test_device_basic() {
 
 /// Test parallel operations
 #[compio::test]
+#[cfg(target_os = "linux")] // Uses fadvise which is Linux-only
 async fn test_parallel_operations() {
     let temp_dir = TempDir::new().unwrap();
     let base_path = temp_dir.path();
@@ -273,6 +275,7 @@ async fn test_error_handling() {
 
 /// Test performance characteristics
 #[compio::test]
+#[cfg(target_os = "linux")] // Uses fadvise which is Linux-only
 async fn test_performance() {
     let temp_dir = TempDir::new().unwrap();
     let file_path = temp_dir.path().join("large_file.txt");

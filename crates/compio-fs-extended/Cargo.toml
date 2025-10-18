@@ -2,35 +2,26 @@
 name = "compio-fs-extended"
 version = "0.1.0"
 edition = "2021"
-description = "Extended filesystem operations for compio with copy_file_range, fadvise, symlinks, and xattr support"
+rust-version = "1.90.0"
+description = "Extended filesystem operations for compio with fadvise, fallocate, symlinks, hardlinks, and xattr support"
 license = "MIT"
 repository = "https://github.com/jmalicki/arsync"
 documentation = "https://docs.rs/compio-fs-extended"
-keywords = ["async", "io_uring", "filesystem", "compio", "copy_file_range", "xattr"]
+keywords = ["async", "io_uring", "filesystem", "compio", "xattr"]
 categories = ["asynchronous", "filesystem"]
 
 [dependencies]
 # Core compio dependencies
 compio = { version = "0.16", features = ["macros", "dispatcher"] }
-compio-fs = "0.9"
 
-# io_uring dependencies (must match compio's version)
-io-uring = "0.7"
-
-# System call dependencies
+# Cross-platform deps
 libc = "0.2"
-nix = { version = "0.30", features = ["fs", "user", "time"] }
-filetime = "0.2"
-xattr = "1.0"  # Safe xattr wrapper for operations not in io_uring
 
 # Error handling
 thiserror = "2.0"
 
 # Async utilities
 futures = "0.3"
-
-# Logging (optional)
-log = "0.4"
 
 [dev-dependencies]
 # Testing dependencies
@@ -51,6 +42,22 @@ logging = []
 # These syscalls are typically <1μs, much faster than thread dispatch overhead (~10μs)
 # Note: Does NOT include readlinkat - that reads file data, not just metadata
 cheap_calls_sync = []
+
+[target.'cfg(target_os = "linux")'.dependencies]
+io-uring = "0.7"
+nix = { version = "0.28", features = ["fs", "user", "time"] }
+xattr = "1.0"
+
+[target.'cfg(any(target_os = "macos", target_os = "ios"))'.dependencies]
+nix = { version = "0.28", features = ["fs", "user", "time"] }
+xattr = "1.0"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+  "Win32_Foundation",
+  "Win32_Storage_FileSystem",
+  "Win32_System_IO",
+] }
 
 # [[bench]]
 # name = "copy_file_range_bench"

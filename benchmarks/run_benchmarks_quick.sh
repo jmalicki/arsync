@@ -14,6 +14,7 @@ RESULTS_DIR="$(readlink -f "$RESULTS_DIR" 2>/dev/null || (mkdir -p "$RESULTS_DIR
 NUM_RUNS=3  # Quick benchmark: only 3 runs instead of 5
 CPUS=$(nproc)
 ENABLE_POWER_MONITORING="${ENABLE_POWER_MONITORING:-yes}"  # ENABLED BY DEFAULT for quick test!
+ARSYNC_EXTRA_FLAGS="${ARSYNC_EXTRA_FLAGS:-}"  # Extra flags to pass to arsync (e.g., --parallel-max-depth 2)
 
 # Paths to binaries (use absolute paths!)
 RSYNC_BIN=$(which rsync)
@@ -66,16 +67,22 @@ fi
 
 cd "$RESULTS_DIR"
 
-echo "=== Quick Benchmark Configuration ==="
-echo "Source: $SOURCE_DIR"
-echo "Destination: $DEST_DIR"
-echo "Results: $RESULTS_DIR"
-echo "CPUs: $CPUS"
-echo "Runs per test: $NUM_RUNS"
-echo "Power monitoring: $ENABLE_POWER_MONITORING"
-echo "rsync: $RSYNC_BIN ($($RSYNC_BIN --version | head -1))"
-echo "arsync: $ARSYNC_BIN"
-echo ""
+echo "=== Quick Benchmark Configuration ===" | tee test_config.txt
+echo "Date: $(date)" | tee -a test_config.txt
+echo "Source: $SOURCE_DIR" | tee -a test_config.txt
+echo "Destination: $DEST_DIR" | tee -a test_config.txt
+echo "Results: $RESULTS_DIR" | tee -a test_config.txt
+echo "CPUs: $CPUS" | tee -a test_config.txt
+echo "Runs per test: $NUM_RUNS" | tee -a test_config.txt
+echo "Power monitoring: $ENABLE_POWER_MONITORING" | tee -a test_config.txt
+echo "rsync: $RSYNC_BIN ($($RSYNC_BIN --version | head -1))" | tee -a test_config.txt
+echo "arsync: $ARSYNC_BIN" | tee -a test_config.txt
+if [ -n "$ARSYNC_EXTRA_FLAGS" ]; then
+    echo "arsync extra flags: $ARSYNC_EXTRA_FLAGS" | tee -a test_config.txt
+else
+    echo "arsync extra flags: none (sequential copy)" | tee -a test_config.txt
+fi
+echo "" | tee -a test_config.txt
 
 # System info
 echo "=== Comprehensive Hardware Inventory ===" | tee system_info.txt
@@ -292,7 +299,7 @@ echo "=== TEST 1: Large Files (5× 5GB = 25GB) ==="
 # Run arsync first to catch bugs early
 run_test_suite "01_arsync_large_files" \
     "$SOURCE_DIR/large-files/" \
-    "$ARSYNC_BIN -a '$SOURCE_DIR/large-files/' '$DEST_DIR/'"
+    "$ARSYNC_BIN $ARSYNC_EXTRA_FLAGS -a '$SOURCE_DIR/large-files/' '$DEST_DIR/'"
 
 run_test_suite "02_rsync_large_files" \
     "$SOURCE_DIR/large-files/" \
@@ -303,7 +310,7 @@ echo ""
 echo "=== TEST 2: Small Files (1000 × 10KB) ==="
 run_test_suite "03_arsync_1k_small" \
     "$SOURCE_DIR/small-files-1k/" \
-    "$ARSYNC_BIN -a '$SOURCE_DIR/small-files-1k/' '$DEST_DIR/'"
+    "$ARSYNC_BIN $ARSYNC_EXTRA_FLAGS -a '$SOURCE_DIR/small-files-1k/' '$DEST_DIR/'"
 
 run_test_suite "04_rsync_1k_small" \
     "$SOURCE_DIR/small-files-1k/" \
@@ -314,7 +321,7 @@ echo ""
 echo "=== TEST 3: Tiny Files (5000 × 1KB) ==="
 run_test_suite "05_arsync_5k_tiny" \
     "$SOURCE_DIR/tiny-files-5k/" \
-    "$ARSYNC_BIN -a '$SOURCE_DIR/tiny-files-5k/' '$DEST_DIR/'"
+    "$ARSYNC_BIN $ARSYNC_EXTRA_FLAGS -a '$SOURCE_DIR/tiny-files-5k/' '$DEST_DIR/'"
 
 run_test_suite "06_rsync_5k_tiny" \
     "$SOURCE_DIR/tiny-files-5k/" \
@@ -325,7 +332,7 @@ echo ""
 echo "=== TEST 4: Medium Files (500 × 1MB) ==="
 run_test_suite "07_arsync_500_medium" \
     "$SOURCE_DIR/medium-files-500/" \
-    "$ARSYNC_BIN -a '$SOURCE_DIR/medium-files-500/' '$DEST_DIR/'"
+    "$ARSYNC_BIN $ARSYNC_EXTRA_FLAGS -a '$SOURCE_DIR/medium-files-500/' '$DEST_DIR/'"
 
 run_test_suite "08_rsync_500_medium" \
     "$SOURCE_DIR/medium-files-500/" \
@@ -336,7 +343,7 @@ echo ""
 echo "=== TEST 5: Mixed Workload (Photos) ==="
 run_test_suite "09_arsync_photos" \
     "$SOURCE_DIR/mixed-photos/" \
-    "$ARSYNC_BIN -a '$SOURCE_DIR/mixed-photos/' '$DEST_DIR/'"
+    "$ARSYNC_BIN $ARSYNC_EXTRA_FLAGS -a '$SOURCE_DIR/mixed-photos/' '$DEST_DIR/'"
 
 run_test_suite "10_rsync_photos" \
     "$SOURCE_DIR/mixed-photos/" \
@@ -347,7 +354,7 @@ echo ""
 echo "=== TEST 6: Directory Tree ==="
 run_test_suite "11_arsync_dirtree" \
     "$SOURCE_DIR/dir-tree/" \
-    "$ARSYNC_BIN -a '$SOURCE_DIR/dir-tree/' '$DEST_DIR/'"
+    "$ARSYNC_BIN $ARSYNC_EXTRA_FLAGS -a '$SOURCE_DIR/dir-tree/' '$DEST_DIR/'"
 
 run_test_suite "12_rsync_dirtree" \
     "$SOURCE_DIR/dir-tree/" \

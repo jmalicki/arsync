@@ -1,15 +1,62 @@
-//! fadvise operations for file access pattern optimization using io_uring
+//! fadvise operations for file access pattern optimization
+//!
+//! ## Platform Support
+//!
+//! **Unix (Linux, macOS)**: Full POSIX fadvise support
+//! - Uses `posix_fadvise(2)` syscall on Unix
+//! - Uses io_uring IORING_OP_FADVISE on Linux (when available)
+//! - Provides hints to kernel about file access patterns
+//!
+//! **Windows**: Not currently supported
+//! - Returns `NotSupported` error
+//! - POSIX fadvise constants don't exist on Windows
+//!
+//! ### Future: Windows Native Hints (Option 3)
+//!
+//! Windows has different file hint mechanisms that could be mapped:
+//!
+//! **At file open time** (would require reopening file):
+//! - `Sequential` → `FILE_FLAG_SEQUENTIAL_SCAN`
+//! - `Random` → `FILE_FLAG_RANDOM_ACCESS`
+//!
+//! **SetFileInformationByHandle** (for existing file handles):
+//! - `DontNeed` → Could map to `FILE_INFO_BY_HANDLE_CLASS::FileDispositionInfo`
+//!   to hint cached data can be discarded
+//! - `WillNeed` → Could use `PrefetchVirtualMemory` on memory-mapped regions
+//!
+//! **Challenges**:
+//! - Different API surface (flags at open vs hints on existing handle)
+//! - Requires different semantics (e.g., Sequential/Random set at open time)
+//! - May require file reopening or memory mapping for full functionality
+//!
+//! If Windows support is needed, consider:
+//! 1. Make `fadvise` take effect on next open (store hints, reopen file)
+//! 2. Return success but document limited Windows implementation
+//! 3. Add separate Windows-specific hint API that matches native semantics
+//!
+//! For now, keeping Unix-only to maintain clean semantics and avoid
+//! surprising cross-platform behavior differences.
 
-use crate::error::{fadvise_error, Result};
+#[cfg(target_os = "linux")]
+use crate::error::fadvise_error;
+#[cfg(target_os = "linux")]
+use crate::error::Result;
+#[cfg(target_os = "linux")]
 use compio::driver::OpCode;
+#[cfg(target_os = "linux")]
 use compio::fs::File;
+#[cfg(target_os = "linux")]
 use compio::runtime::submit;
+#[cfg(target_os = "linux")]
 use io_uring::{opcode, types};
+#[cfg(target_os = "linux")]
 use std::os::unix::io::AsRawFd;
+#[cfg(target_os = "linux")]
 use std::pin::Pin;
 
-/// Trait for fadvise operations using io_uring
+/// Trait for fadvise operations using io_uring (Linux-only)
 #[allow(async_fn_in_trait)]
+#[cfg(target_os = "linux")]
 pub trait Fadvise {
     /// Provide advice about file access patterns to the kernel using io_uring
     ///
@@ -55,6 +102,9 @@ pub trait Fadvise {
 }
 
 /// fadvise advice types for file access pattern optimization
+///
+/// Unix: Maps to POSIX fadvise constants
+/// Windows: Accepted but fadvise returns NotSupported error
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FadviseAdvice {
     /// Data will be accessed sequentially
@@ -71,8 +121,9 @@ pub enum FadviseAdvice {
     Normal,
 }
 
+#[cfg(target_os = "linux")]
 impl FadviseAdvice {
-    /// Convert to the underlying POSIX constant
+    /// Convert to the underlying POSIX constant (Linux only - macOS removed posix_fadvise)
     fn to_posix(self) -> i32 {
         match self {
             FadviseAdvice::Sequential => libc::POSIX_FADV_SEQUENTIAL,
@@ -86,6 +137,7 @@ impl FadviseAdvice {
 }
 
 /// Custom fadvise operation that implements compio's OpCode trait
+#[cfg(target_os = "linux")]
 pub struct FadviseOp {
     /// File descriptor to apply advice to
     fd: i32,
@@ -97,6 +149,7 @@ pub struct FadviseOp {
     advice: i32,
 }
 
+#[cfg(target_os = "linux")]
 impl FadviseOp {
     /// Create a new FadviseOp for io_uring submission
     ///
@@ -117,6 +170,7 @@ impl FadviseOp {
     }
 }
 
+#[cfg(target_os = "linux")]
 impl OpCode for FadviseOp {
     fn create_entry(self: Pin<&mut Self>) -> compio::driver::OpEntry {
         compio::driver::OpEntry::Submission(
@@ -163,6 +217,7 @@ impl OpCode for FadviseOp {
 /// # Ok(())
 /// # }
 /// ```
+#[cfg(target_os = "linux")]
 pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) -> Result<()> {
     let fd = file.as_raw_fd();
 
@@ -176,7 +231,12 @@ pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) 
     }
 }
 
+// macOS/Windows: fadvise not defined
+// macOS removed posix_fadvise, Windows has different file hint mechanisms
+// Compile-time error if you try to use fadvise on these platforms
+
 #[cfg(test)]
+#[cfg(target_os = "linux")] // fadvise is Linux-only
 mod tests {
     use super::*;
     use compio::fs::File;

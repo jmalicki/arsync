@@ -403,10 +403,6 @@ mod tests {
         // Get inode before spawning task
         let inode = meta.ino();
 
-        // Note: waiter_count() method removed from compio_sync::Condvar API
-        // So we can't verify internal waiter queue state, but the test still
-        // validates the core behavior: linker waits for copier signal
-
         let tracker_clone = Arc::clone(&tracker);
         let file2_clone = file2.clone();
         let dst_file2_clone = dst_file2.clone();

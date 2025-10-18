@@ -2,7 +2,9 @@
 
 use crate::error::{directory_error, Result};
 use compio::fs::File;
+#[cfg(unix)]
 use std::os::fd::{AsFd, BorrowedFd};
+#[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -95,6 +97,7 @@ impl DirectoryFd {
     /// Get the raw file descriptor for use with system calls
     ///
     /// This is used internally by `*at` operations that need the raw fd.
+    #[cfg(unix)]
     #[must_use]
     pub fn as_raw_fd(&self) -> std::os::unix::io::RawFd {
         self.file.as_raw_fd()
@@ -130,9 +133,8 @@ impl DirectoryFd {
     /// # Ok(())
     /// # }
     /// ```
+    #[cfg(unix)]
     pub async fn create_directory(&self, name: &str, mode: u32) -> Result<()> {
-        use std::os::fd::BorrowedFd;
-
         // TODO: Implement using io_uring MkdirAt opcode when available
         // For now, use nix with spawn for security
         let dir_fd = self.as_raw_fd();
@@ -142,19 +144,30 @@ impl DirectoryFd {
             // SAFETY: The raw fd is valid for the duration of this call because:
             // 1. DirectoryFd holds an Arc<File> keeping the fd open
             // 2. The spawned task completes before DirectoryFd is dropped
-            // 3. BorrowedFd::borrow_raw creates a properly scoped borrowed reference
             // We use raw fd here because BorrowedFd from as_fd() has a non-'static lifetime,
             // but spawn requires 'static. This is the standard pattern for moving fds into tasks.
-            let borrowed_fd = unsafe { BorrowedFd::borrow_raw(dir_fd) };
+            // Note: mode_t is u16 on macOS, u32 on Linux - cast to platform's type
             nix::sys::stat::mkdirat(
-                borrowed_fd,
+                Some(dir_fd),
                 std::path::Path::new(&name_owned),
-                nix::sys::stat::Mode::from_bits_truncate(mode),
+                nix::sys::stat::Mode::from_bits_truncate(mode as nix::libc::mode_t),
             )
             .map_err(|e| directory_error(&format!("mkdirat failed for '{}': {}", name_owned, e)))
         })
         .await
         .map_err(|e| directory_error(&format!("spawn failed: {:?}", e)))?
+    }
+
+    #[cfg(windows)]
+    pub async fn create_directory(&self, name: &str, _mode: u32) -> Result<()> {
+        let base = self.path.clone();
+        let name_owned = name.to_string();
+        compio::runtime::spawn_blocking(move || {
+            std::fs::create_dir(base.join(name_owned))
+                .map_err(|e| directory_error(&format!("create_dir failed: {e}")))
+        })
+        .await
+        .map_err(|e| directory_error(&format!("spawn_blocking failed: {e:?}")))?
     }
 
     /// Set timestamps on this directory itself
@@ -170,6 +183,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
+    #[cfg(unix)]
     pub async fn set_times(
         &self,
         accessed: std::time::SystemTime,
@@ -214,6 +228,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the operation fails (e.g., permission denied, I/O errors).
+    #[cfg(unix)]
     pub async fn set_ownership(&self, uid: u32, gid: u32) -> Result<()> {
         use crate::ownership::OwnershipOps;
         self.as_file()
@@ -223,7 +238,7 @@ impl DirectoryFd {
     }
 
     // ========================================================================
-    // Metadata operations on children (relative paths)
+    // Metadata operations on children (relative paths) - Unix only
     // ========================================================================
 
     /// Get file metadata with nanosecond timestamps for a child file
@@ -237,6 +252,9 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the file doesn't exist or I/O errors occur.
+    ///
+    /// Note: Linux-only (statx syscall is Linux-specific)
+    #[cfg(target_os = "linux")]
     pub async fn statx(
         &self,
         pathname: &str,
@@ -244,63 +262,67 @@ impl DirectoryFd {
         crate::metadata::statx_impl(self, pathname).await
     }
 
-    /// Change file permissions for a child file
+    /// Change file permissions without following symlinks
     ///
-    /// Uses `fchmodat(2)` with directory FD and relative path (TOCTOU-safe).
+    /// Uses `fchmodat(2)` with `AT_SYMLINK_NOFOLLOW`.
+    /// On Linux: no-op (symlink permissions are always 0777 and ignored).
     ///
     /// # Arguments
     ///
-    /// * `pathname` - Relative path to the file
+    /// * `pathname` - Relative path to the file or symlink
     /// * `mode` - New file permissions (e.g., 0o644)
     ///
     /// # Errors
     ///
-    /// Returns an error if the operation fails (e.g., permission denied, file not found).
-    pub async fn fchmodat(&self, pathname: &str, mode: u32) -> Result<()> {
-        crate::metadata::fchmodat_impl(self, pathname, mode).await
+    /// Returns an error if the operation fails.
+    #[cfg(unix)]
+    pub async fn lfchmodat(&self, pathname: &str, mode: u32) -> Result<()> {
+        crate::metadata::lfchmodat_impl(self, pathname, mode).await
     }
 
-    /// Change file timestamps for a child file
+    /// Change file timestamps without following symlinks
     ///
-    /// Uses `utimensat(2)` with directory FD and relative path (TOCTOU-safe).
+    /// Uses `utimensat(2)` with `AT_SYMLINK_NOFOLLOW` flag.
     ///
     /// # Arguments
     ///
-    /// * `pathname` - Relative path to the file
+    /// * `pathname` - Relative path to the file or symlink
     /// * `accessed` - New access time
     /// * `modified` - New modification time
     ///
     /// # Errors
     ///
-    /// Returns an error if the operation fails (e.g., permission denied, file not found).
-    pub async fn utimensat(
+    /// Returns an error if the operation fails.
+    #[cfg(unix)]
+    pub async fn lutimensat(
         &self,
         pathname: &str,
         accessed: std::time::SystemTime,
         modified: std::time::SystemTime,
     ) -> Result<()> {
-        crate::metadata::utimensat_impl(self, pathname, accessed, modified).await
+        crate::metadata::lutimensat_impl(self, pathname, accessed, modified).await
     }
 
-    /// Change file ownership for a child file
+    /// Change file ownership without following symlinks
     ///
-    /// Uses `fchownat(2)` with directory FD and relative path (TOCTOU-safe).
+    /// Uses `fchownat(2)` with `AT_SYMLINK_NOFOLLOW` flag.
     ///
     /// # Arguments
     ///
-    /// * `pathname` - Relative path to the file
+    /// * `pathname` - Relative path to the file or symlink
     /// * `uid` - New user ID
     /// * `gid` - New group ID
     ///
     /// # Errors
     ///
-    /// Returns an error if the operation fails (e.g., permission denied, file not found).
-    pub async fn fchownat(&self, pathname: &str, uid: u32, gid: u32) -> Result<()> {
-        crate::metadata::fchownat_impl(self, pathname, uid, gid).await
+    /// Returns an error if the operation fails.
+    #[cfg(unix)]
+    pub async fn lfchownat(&self, pathname: &str, uid: u32, gid: u32) -> Result<()> {
+        crate::metadata::lfchownat_impl(self, pathname, uid, gid).await
     }
 
     // ========================================================================
-    // Symlink operations on children (relative paths)
+    // Symlink operations on children (relative paths) - Unix only
     // ========================================================================
 
     /// Create a symbolic link for a child
@@ -315,6 +337,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the link already exists or permission is denied.
+    #[cfg(unix)]
     pub async fn symlinkat(&self, target: &str, link_name: &str) -> Result<()> {
         crate::symlink::symlinkat_impl(self, target, link_name).await
     }
@@ -330,6 +353,7 @@ impl DirectoryFd {
     /// # Errors
     ///
     /// Returns an error if the link doesn't exist or is not a symbolic link.
+    #[cfg(unix)]
     pub async fn readlinkat(&self, link_name: &str) -> Result<std::path::PathBuf> {
         crate::symlink::readlinkat_impl(self, link_name).await
     }
@@ -400,6 +424,7 @@ impl Clone for DirectoryFd {
     }
 }
 
+#[cfg(unix)]
 impl AsFd for DirectoryFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
         self.file.as_fd()
