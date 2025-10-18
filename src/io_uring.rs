@@ -430,6 +430,7 @@ impl FileOperations {
             group: false,
             owner: false,
             devices: false,
+            fsync: false,
             xattrs: false,
             acls: false,
             hard_links: false,

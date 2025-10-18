@@ -34,6 +34,7 @@ pub fn create_minimal_test_args() -> Args {
             devices: false,
             xattrs: false,
             acls: false,
+            fsync: false,
             hard_links: false,
             atimes: false,
             crtimes: false,

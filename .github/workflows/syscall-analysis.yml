@@ -1,0 +1,125 @@
+name: Syscall Analysis
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  syscall-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-syscall-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Build arsync (release)
+        run: cargo build --release
+      
+      - name: Build syscall-analyzer
+        run: |
+          cd benchmarks
+          cargo build --release
+      
+      - name: Run syscall analysis
+        run: |
+          # Install strace if needed
+          sudo apt-get update && sudo apt-get install -y strace
+          
+          # Run analysis (Rust binary does everything now)
+          # Note: Binary is built in main workspace target/release
+          ./target/release/syscall-analyzer \
+            --arsync-bin ./target/release/arsync \
+            --num-files 5 \
+            --file-size-mb 10 \
+            --output /tmp/syscall-analysis-report.md
+        continue-on-error: true
+        id: syscall_check
+      
+      - name: Upload syscall report (uncompressed)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: syscall-analysis-report
+          path: /tmp/syscall-analysis-report.md
+          retention-days: 30
+          compression-level: 0
+      
+      - name: Post syscall analysis to PR
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const reportPath = '/tmp/syscall-analysis-report.md';
+            
+            if (!fs.existsSync(reportPath)) {
+              console.log('Report file not found - syscall analysis may have crashed early');
+              return;
+            }
+            
+            const report = fs.readFileSync(reportPath, 'utf8');
+            
+            try {
+              // Find existing comment
+              const { data: comments } = await github.rest.issues.listComments({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              
+              const botComment = comments.find(comment => 
+                comment.user.type === 'Bot' && 
+                comment.body.includes('Syscall Analysis Report')
+              );
+              
+              if (botComment) {
+                // Update existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: botComment.id,
+                  body: report
+                });
+                console.log('Updated existing syscall analysis comment');
+              } else {
+                // Create new comment
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: report
+                });
+                console.log('Created new syscall analysis comment');
+              }
+            } catch (error) {
+              console.log('Could not post comment (likely permissions issue):', error.message);
+              console.log('Report is available as artifact');
+            }
+      
+      - name: Fail if critical issues
+        if: steps.syscall_check.outcome == 'failure'
+        run: |
+          echo "❌ Syscall analysis detected critical issues"
+          exit 1
+

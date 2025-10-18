@@ -192,6 +192,140 @@ impl DirectoryFd {
         crate::metadata::futimens_fd(self.as_file(), accessed, modified).await
     }
 
+    /// Get file metadata using io_uring STATX
+    ///
+    /// This method retrieves full file metadata for a file relative to this directory
+    /// using io_uring's STATX operation for maximum performance and TOCTOU-safety.
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file (e.g., "file.txt" or "subdir/file.txt")
+    ///
+    /// # Returns
+    ///
+    /// Returns `FileMetadata` with complete file information including:
+    /// - Size, mode, permissions
+    /// - Owner (uid/gid)
+    /// - Hardlink info (ino, dev, nlink)
+    /// - Nanosecond-precision timestamps
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the statx operation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use compio_fs_extended::DirectoryFd;
+    /// use std::path::Path;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let dir = DirectoryFd::open(Path::new("/tmp")).await?;
+    /// let metadata = dir.statx_full("file.txt").await?;
+    /// println!("Size: {} bytes", metadata.size);
+    /// println!("Permissions: {:o}", metadata.permissions());
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(target_os = "linux")]
+    pub async fn statx_full(&self, pathname: &str) -> crate::Result<crate::FileMetadata> {
+        crate::metadata::statx_impl(self, pathname).await
+    }
+
+    /// Open a file relative to this directory (TOCTOU-safe)
+    ///
+    /// Opens a file using `openat(2)` relative to this directory's file descriptor.
+    /// This is TOCTOU-safe because the file path is resolved relative to the pinned
+    /// directory FD, preventing symlink attacks.
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file (e.g., "file.txt")
+    /// * `read` - Open for reading
+    /// * `write` - Open for writing  
+    /// * `create` - Create if doesn't exist
+    /// * `truncate` - Truncate if exists
+    ///
+    /// # Returns
+    ///
+    /// Returns `compio::fs::File` opened relative to this directory
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the open operation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use compio_fs_extended::DirectoryFd;
+    /// use std::path::Path;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let dir = DirectoryFd::open(Path::new("/tmp")).await?;
+    ///
+    /// // Open existing file for reading
+    /// let src = dir.open_file_at("input.txt", true, false, false, false).await?;
+    ///
+    /// // Create new file for writing
+    /// let dst = dir.open_file_at("output.txt", false, true, true, true).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(unix)]
+    #[allow(clippy::too_many_arguments)]
+    pub async fn open_file_at(
+        &self,
+        pathname: &str,
+        read: bool,
+        write: bool,
+        create: bool,
+        truncate: bool,
+    ) -> Result<compio::fs::File> {
+        use std::ffi::CString;
+        use std::os::unix::io::FromRawFd;
+
+        let dir_fd = self.as_raw_fd();
+        let pathname = pathname.to_string();
+
+        compio::runtime::spawn_blocking(move || {
+            let path_cstr = CString::new(pathname.as_str())
+                .map_err(|e| crate::error::directory_error(&format!("Invalid pathname: {e}")))?;
+
+            // Build open flags
+            let mut flags = if read && write {
+                libc::O_RDWR
+            } else if write {
+                libc::O_WRONLY
+            } else {
+                libc::O_RDONLY
+            };
+
+            if create {
+                flags |= libc::O_CREAT;
+            }
+            if truncate {
+                flags |= libc::O_TRUNC;
+            }
+            flags |= libc::O_CLOEXEC; // Always close-on-exec for safety
+            flags |= libc::O_NOFOLLOW; // Don't follow symlinks (TOCTOU hardening)
+
+            // SAFETY: dir_fd is valid for the duration of this call
+            let fd = unsafe { libc::openat(dir_fd, path_cstr.as_ptr(), flags, 0o644) };
+
+            if fd < 0 {
+                let err = std::io::Error::last_os_error();
+                return Err(crate::error::directory_error(&format!(
+                    "openat failed: {err}"
+                )));
+            }
+
+            // SAFETY: We just created this fd and have ownership
+            Ok(unsafe { compio::fs::File::from_raw_fd(fd) })
+        })
+        .await
+        .map_err(crate::error::ExtendedError::SpawnJoin)?
+    }
+
     /// Set permissions on this directory itself
     ///
     /// FD-based operation that sets permissions on the directory,
@@ -259,7 +393,8 @@ impl DirectoryFd {
         &self,
         pathname: &str,
     ) -> Result<(std::time::SystemTime, std::time::SystemTime)> {
-        crate::metadata::statx_impl(self, pathname).await
+        let full = crate::metadata::statx_impl(self, pathname).await?;
+        Ok((full.accessed, full.modified))
     }
 
     /// Change file permissions without following symlinks
@@ -407,12 +542,12 @@ pub async fn read_dir(path: &Path) -> Result<std::fs::ReadDir> {
     // 2. Allow future swap to io_uring if/when kernel adds GETDENTS64
     // 3. Keep app code (src/directory.rs) abstracted from implementation details
     let path_owned = path.to_path_buf();
-    compio::runtime::spawn(async move {
+    compio::runtime::spawn_blocking(move || {
         std::fs::read_dir(path_owned)
             .map_err(|e| directory_error(&format!("Failed to read directory: {}", e)))
     })
     .await
-    .map_err(|e| directory_error(&format!("spawn failed: {:?}", e)))?
+    .map_err(|e| directory_error(&format!("spawn_blocking failed: {:?}", e)))?
 }
 
 impl Clone for DirectoryFd {

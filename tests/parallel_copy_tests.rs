@@ -47,6 +47,7 @@ fn minimal_metadata_config() -> MetadataConfig {
         devices: false,
         xattrs: false,
         acls: false,
+        fsync: false,
         hard_links: false,
         atimes: false,
         crtimes: false,

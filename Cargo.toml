@@ -20,7 +20,7 @@ name = "arsync"
 path = "src/main.rs"
 
 [workspace]
-members = ["crates/compio-fs-extended"]
+members = ["benchmarks","crates/compio-fs-extended"]
 
 # Workspace-wide lints configuration (replaces clippy.toml)
 # This enforces high documentation and code quality standards
