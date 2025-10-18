@@ -141,42 +141,53 @@ async fn copy_read_write(src: &Path, dst: &Path, metadata_config: &MetadataConfi
     // and improve write performance using io_uring fallocate.
     // Skip preallocation for empty files as fallocate fails with EINVAL for zero length.
     if file_size > 0 {
-        use compio_fs_extended::{fadvise::FadviseAdvice, ExtendedFile, Fadvise, Fallocate};
+        use compio_fs_extended::{ExtendedFile, Fallocate};
 
-        // Apply fadvise hints to both source and destination for "one and done" copy
-        let extended_src = ExtendedFile::from_ref(&src_file);
         let extended_dst = ExtendedFile::from_ref(&dst_file);
 
-        // Hint that source data won't be accessed again after this copy
-        extended_src
-            .fadvise(
-                FadviseAdvice::NoReuse,
-                0,
-                file_size.try_into().unwrap_or(i64::MAX),
-            )
-            .await
-            .map_err(|e| {
-                SyncError::FileSystem(format!("Failed to set fadvise NoReuse hint on source: {e}"))
-            })?;
+        // Apply fadvise hints (Linux only - io_uring optimization)
+        #[cfg(target_os = "linux")]
+        {
+            use compio_fs_extended::{fadvise::FadviseAdvice, Fadvise};
+            let extended_src = ExtendedFile::from_ref(&src_file);
+
+            // Hint that source data won't be accessed again after this copy
+            extended_src
+                .fadvise(
+                    FadviseAdvice::NoReuse,
+                    0,
+                    file_size.try_into().unwrap_or(i64::MAX),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to set fadvise NoReuse hint on source: {e}"
+                    ))
+                })?;
+        }
 
         // Preallocate destination file space
         extended_dst.fallocate(0, file_size, 0).await.map_err(|e| {
             SyncError::FileSystem(format!("Failed to preallocate destination file: {e}"))
         })?;
 
-        // Hint that destination data won't be accessed again after this copy
-        extended_dst
-            .fadvise(
-                FadviseAdvice::NoReuse,
-                0,
-                file_size.try_into().unwrap_or(i64::MAX),
-            )
-            .await
-            .map_err(|e| {
-                SyncError::FileSystem(format!(
-                    "Failed to set fadvise NoReuse hint on destination: {e}"
-                ))
-            })?;
+        // Hint that destination data won't be accessed again after this copy (Linux only)
+        #[cfg(target_os = "linux")]
+        {
+            use compio_fs_extended::{fadvise::FadviseAdvice, Fadvise};
+            extended_dst
+                .fadvise(
+                    FadviseAdvice::NoReuse,
+                    0,
+                    file_size.try_into().unwrap_or(i64::MAX),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to set fadvise NoReuse hint on destination: {e}"
+                    ))
+                })?;
+        }
     }
 
     // Use compio's async read_at/write_at operations with buffer reuse

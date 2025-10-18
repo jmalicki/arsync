@@ -170,3 +170,6 @@ async fn test_file_xattr_preservation_error_handling() {
     // Should succeed (warnings are logged but don't fail the operation)
     assert!(result.is_ok());
 }
+
+// High-level symlink metadata tests moved to tests/symlink_metadata_tests.rs
+// This file focuses on regular file xattr preservation

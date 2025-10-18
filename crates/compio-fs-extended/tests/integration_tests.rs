@@ -3,6 +3,7 @@
 //! These tests exercise real-world scenarios using actual files and directories
 //! to verify that all io_uring operations work correctly in practice.
 
+#[cfg(target_os = "linux")]
 use compio::fs::File;
 use compio_fs_extended::*;
 use std::fs;
@@ -11,6 +12,7 @@ use tempfile::TempDir;
 
 /// Test fadvise operations on real files with different access patterns
 #[compio::test]
+#[cfg(target_os = "linux")] // fadvise is Linux-only
 async fn test_fadvise_real_world_scenarios() {
     let temp_dir = TempDir::new().unwrap();
 
@@ -296,6 +298,7 @@ async fn test_device_real_world_scenarios() {
 
 /// Test parallel operations to verify io_uring efficiency
 #[compio::test]
+#[cfg(target_os = "linux")] // Uses fadvise which is Linux-only
 async fn test_parallel_io_uring_operations() {
     let temp_dir = TempDir::new().unwrap();
     let base_path = temp_dir.path();
@@ -393,6 +396,7 @@ async fn test_error_handling_real_scenarios() {
 
 /// Test performance characteristics of io_uring operations
 #[compio::test]
+#[cfg(target_os = "linux")] // Uses fadvise which is Linux-only
 async fn test_performance_characteristics() {
     let temp_dir = TempDir::new().unwrap();
     let base_path = temp_dir.path();

@@ -174,7 +174,9 @@
 
 use crate::error::{filesystem_error, Result};
 use compio::fs::File;
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
@@ -415,9 +417,9 @@ impl OwnershipOps for File {
     /// - Only root can change ownership to arbitrary UID/GID
     /// - Users can only change ownership of files they own
     /// - Users can change group ownership to groups they belong to
+    #[cfg(unix)]
     async fn fchown(&self, uid: u32, gid: u32) -> Result<()> {
         use nix::unistd::{fchown as nix_fchown, Gid, Uid};
-        use std::os::fd::BorrowedFd;
 
         let fd = self.as_raw_fd();
 
@@ -427,18 +429,17 @@ impl OwnershipOps for File {
             // SAFETY: The raw fd is valid for the duration of this call because:
             // 1. File holds the fd open for the lifetime of the File object
             // 2. The spawned task completes before the File is dropped
-            // We use raw fd here because BorrowedFd from as_fd() has a non-'static lifetime,
-            // but spawn requires 'static. This is the standard pattern for moving fds into tasks.
-            let borrowed_fd = unsafe { BorrowedFd::borrow_raw(fd) };
-            nix_fchown(
-                borrowed_fd,
-                Some(Uid::from_raw(uid)),
-                Some(Gid::from_raw(gid)),
-            )
-            .map_err(|e| filesystem_error(&format!("fchown failed: {}", e)))
+            // We use raw fd here for 'static lifetime compatibility with spawn.
+            nix_fchown(fd, Some(Uid::from_raw(uid)), Some(Gid::from_raw(gid)))
+                .map_err(|e| filesystem_error(&format!("fchown failed: {}", e)))
         })
         .await
         .map_err(|e| filesystem_error(&format!("spawn failed: {e:?}")))?
+    }
+
+    #[cfg(windows)]
+    async fn fchown(&self, _uid: u32, _gid: u32) -> Result<()> {
+        Err(filesystem_error("fchown not supported on Windows"))
     }
 
     /// Change file ownership using file path
@@ -466,6 +467,7 @@ impl OwnershipOps for File {
     /// - Only root can change ownership to arbitrary UID/GID
     /// - Users can only change ownership of files they own
     /// - Users can change group ownership to groups they belong to
+    #[cfg(unix)]
     async fn chown<P: AsRef<Path>>(path: P, uid: u32, gid: u32) -> Result<()> {
         let path = path.as_ref();
 
@@ -486,6 +488,11 @@ impl OwnershipOps for File {
         })
         .await
         .map_err(|e| filesystem_error(&format!("spawn failed: {e:?}")))?
+    }
+
+    #[cfg(windows)]
+    async fn chown<P: AsRef<Path>>(_path: P, _uid: u32, _gid: u32) -> Result<()> {
+        Err(filesystem_error("chown not supported on Windows"))
     }
 
     /// Preserve ownership from source file to destination file
@@ -520,6 +527,7 @@ impl OwnershipOps for File {
     /// - Only root can change ownership to arbitrary UID/GID
     /// - Users can only change ownership of files they own
     /// - Users can change group ownership to groups they belong to
+    #[cfg(unix)]
     async fn preserve_ownership_from(&self, src: &File) -> Result<()> {
         // Get source file metadata to extract uid/gid
         let src_metadata = src
@@ -533,7 +541,17 @@ impl OwnershipOps for File {
         // Apply ownership to destination file
         self.fchown(uid, gid).await
     }
+
+    #[cfg(windows)]
+    async fn preserve_ownership_from(&self, _src: &File) -> Result<()> {
+        Err(filesystem_error(
+            "ownership preservation not supported on Windows",
+        ))
+    }
 }
+
+// TODO: Add symlink-aware ownership operations (lchown variants)
+// after writing RED tests that demonstrate current behavior
 
 #[cfg(test)]
 mod tests {
