@@ -29,7 +29,7 @@ Modern NVMe drives can sustain multiple GB/s of throughput, but sequential singl
 
 Calculate all regions upfront and spawn parallel tasks:
 
-```
+```text
 File: [==============================================] (1 GB)
 max_depth = 2 → 2^2 = 4 tasks
 
@@ -523,7 +523,7 @@ arsync /source /dest  # Sequential copy only
 - `info!` when parallel copy completes
 
 Example log output:
-```
+```text
 INFO  Using parallel copy: depth 2 (up to 4 tasks) for 512 MB
 INFO  Parallel copy completed: 536870912 bytes
 ```

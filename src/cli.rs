@@ -163,8 +163,25 @@ impl ParallelCopyConfig {
             );
         }
 
+        // Ensure chunk size is a power of 2 for optimal alignment
+        if !self.chunk_size_mb.is_power_of_two() {
+            anyhow::bail!(
+                "Parallel chunk size must be a power of 2 (1, 2, 4, 8, 16, 32, or 64 MB), got: {}",
+                self.chunk_size_mb
+            );
+        }
+
         if self.min_file_size_mb == 0 {
             anyhow::bail!("Parallel minimum file size must be greater than 0");
+        }
+
+        // Ensure minimum file size is at least as large as chunk size
+        if self.min_file_size_mb < self.chunk_size_mb as u64 {
+            anyhow::bail!(
+                "Parallel min file size ({} MB) must be >= chunk size ({} MB)",
+                self.min_file_size_mb,
+                self.chunk_size_mb
+            );
         }
 
         Ok(())

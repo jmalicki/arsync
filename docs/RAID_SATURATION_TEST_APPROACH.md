@@ -1,6 +1,6 @@
 # RAID Array Saturation Test - Detailed Approach
 
-**Date:** October 18, 2025  
+**Date:** October 18, 2025,  
 **Array:** md127 RAID10 - 4× Samsung 990 PRO 4TB  
 **Goal:** Achieve >10 GB/s aggregate throughput by combining directory and file-level parallelism
 

@@ -1,6 +1,6 @@
 # RAID Array Saturation Test Plan
 
-**Date:** October 18, 2025  
+**Date:** October 18, 2025,  
 **Array:** md127 RAID10 with 4× Samsung 990 PRO 4TB  
 **Goal:** Approach theoretical bandwidth with combined directory + per-file parallelism
 

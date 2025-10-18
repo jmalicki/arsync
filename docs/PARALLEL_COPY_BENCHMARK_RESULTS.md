@@ -1,6 +1,6 @@
 # Parallel Copy Benchmark Results
 
-**Date:** October 18, 2025  
+**Date:** October 18, 2025,  
 **Test Files:** 500MB and 1GB random data  
 **System:** 64-core system (details in benchmark results)  
 **Note:** Tests run without cache dropping (ALLOW_NO_ROOT=1) - actual performance may vary

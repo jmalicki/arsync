@@ -4,6 +4,13 @@
 
 set -euo pipefail
 
+# Check for fio dependency
+command -v fio >/dev/null 2>&1 || { 
+    echo "Error: fio is required but not installed"
+    echo "Install with: apt-get install fio (or yum install fio)"
+    exit 1
+}
+
 TEST_DIR="${1:-/mnt/benchmark/fio-test}"
 RESULTS_FILE="${2:-fio-results.txt}"
 
@@ -88,7 +95,7 @@ fio --name=high-concurrency \
 echo "" | tee -a "$RESULTS_FILE"
 
 # Cleanup
-rm -rf "$TEST_DIR"/*
+[ -n "$TEST_DIR" ] && rm -rf "${TEST_DIR:?}"/*
 
 echo "=== Summary ===" | tee -a "$RESULTS_FILE"
 echo "Results saved to: $RESULTS_FILE" | tee -a "$RESULTS_FILE"

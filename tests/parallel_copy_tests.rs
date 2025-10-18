@@ -22,15 +22,6 @@ fn create_test_file_with_pattern(path: &Path, size: usize) -> Vec<u8> {
     data
 }
 
-/// Helper to create disabled parallel config
-fn disabled_parallel_config() -> ParallelCopyConfig {
-    ParallelCopyConfig {
-        max_depth: 0, // 0 = disabled
-        min_file_size_mb: 128,
-        chunk_size_mb: 2,
-    }
-}
-
 /// Helper to create enabled parallel config
 fn enabled_parallel_config(max_depth: usize) -> ParallelCopyConfig {
     ParallelCopyConfig {
