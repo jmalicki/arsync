@@ -241,9 +241,9 @@ pub(crate) async fn statx_impl(
         CString::new(pathname).map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
 
     // Use directory FD with relative path
-    // AT_SYMLINK_NOFOLLOW=0 (follow symlinks)
+    // AT_SYMLINK_NOFOLLOW = don't dereference symlinks (CRITICAL for symlink preservation!)
     // STATX_BASIC_STATS = 0x7ff (all basic fields)
-    let op = StatxOp::new(dir_fd, path_cstr, 0, 0x0000_07ff);
+    let op = StatxOp::new(dir_fd, path_cstr, libc::AT_SYMLINK_NOFOLLOW, 0x0000_07ff);
     let result = submit(op).await;
 
     match result.0 {
