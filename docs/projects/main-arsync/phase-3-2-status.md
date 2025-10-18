@@ -9,7 +9,7 @@ This branch implements Phase 3.2 of the arsync project, focusing on:
 - Performance optimization
 
 ## Implementation Plan
-Per docs/IMPLEMENTATION_PLAN.md, this phase will:
+Per docs/implementation/IMPLEMENTATION_PLAN.md, this phase will:
 1. Refactor src/copy.rs to use io_uring operations
 2. Improve src/directory.rs with compio-fs-extended
 3. Integrate compio-fs-extended operations throughout

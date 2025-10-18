@@ -11,7 +11,7 @@ High-performance async treasure plunderin' fer Linux - a modern rsync alternativ
 [![CI](https://github.com/jmalicki/arsync/workflows/CI/badge.svg)](https://github.com/jmalicki/arsync/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-📚 **Charts & Maps**: [Developer Guide](docs/DEVELOPER.md) • [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) • [Testing Strategy](docs/TESTING_STRATEGY.md)
+📚 **Charts & Maps**: [Developer Guide](../DEVELOPER.md) • [Implementation Plan](../implementation/IMPLEMENTATION_PLAN.md)
 
 ---
 

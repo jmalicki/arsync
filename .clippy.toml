@@ -1,5 +1,5 @@
-# Clippy configuration for strict code quality enforcement
-# This enforces high documentation and code quality standards
+# Minimal clippy configuration for settings that cannot be in Cargo.toml
+# Main lint configuration is now in Cargo.toml [workspace.lints.clippy]
 
 # Documentation linting
 doc-valid-idents = ["self", "Self", "super", "crate", "Self", "T", "E", "Ok", "Err"]
@@ -9,7 +9,7 @@ disallowed-names = ["foo", "bar", "baz", "tmp", "temp"]
 disallowed-types = ["std::collections::HashMap", "std::collections::BTreeMap"]
 disallowed-methods = ["std::panic::panic_any"]
 
-# Complexity limits
+# Complexity thresholds (also configured in Cargo.toml for lint levels)
 too-many-arguments-threshold = 5
 too-many-lines-threshold = 100
 single-char-binding-names-threshold = 2
@@ -18,4 +18,3 @@ single-char-binding-names-threshold = 2
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
 
-# Note: Enabling pedantic/nursery is done via CLI flags in CI and pre-commit.

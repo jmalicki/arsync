@@ -139,6 +139,7 @@ fn normalize_heading_text(text: &str) -> String {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn test_readme_structure_matches() {
     // Test that README.md and README.pirate.md have the same document structure
     // using proper markdown parsing via pulldown-cmark
@@ -280,6 +281,7 @@ fn test_readme_structure_matches() {
 
 #[test]
 #[allow(clippy::panic)] // panic! is the correct way to fail tests
+#[allow(clippy::too_many_lines)] // Comprehensive validation test
 fn test_internal_links_valid() {
     // Test that all internal anchor links point to valid headings
     // This ensures the table of contents and cross-references work correctly

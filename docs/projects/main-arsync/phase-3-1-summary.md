@@ -113,7 +113,7 @@
 ## 📚 **Documentation & Planning**
 
 ### **Implementation Plans**
-- **Updated IMPLEMENTATION_PLAN.md** - reflects completed work and current status
+- **Updated docs/implementation/IMPLEMENTATION_PLAN.md** - reflects completed work and current status
 - **COMPIO_FS_EXTENDED_PLAN.md** - 16-week roadmap for standalone project
 - **LINUX_KERNEL_CONTRIBUTIONS.md** - 12-month plan for kernel contributions
 - **Research documentation** - comprehensive technical specifications and findings
