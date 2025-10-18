@@ -143,9 +143,9 @@ io_uring_batch_avg=$(echo "$io_uring_batch_sizes" | awk '{sum+=$1; count++} END 
     echo "Per-file syscall breakdown (first 3 files):"
     for i in 1 2 3; do
         if [ -f "$TEST_DIR_SRC/file${i}.bin" ]; then
-            file_statx=$(grep "statx.*file${i}\.bin" "$TRACE_RAW" | wc -l)
-            file_openat=$(grep "openat.*file${i}\.bin" "$TRACE_RAW" | wc -l)
-            file_io_uring=$(grep "file${i}\.bin" "$TRACE_RAW" | wc -l)
+            file_statx=$(grep "statx.*file${i}\.bin" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+            file_openat=$(grep "openat.*file${i}\.bin" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+            file_io_uring=$(grep "file${i}\.bin" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
             echo "  file${i}.bin:"
             echo "    - statx: $file_statx"
             echo "    - openat: $file_openat"
@@ -155,11 +155,11 @@ io_uring_batch_avg=$(echo "$io_uring_batch_sizes" | awk '{sum+=$1; count++} END 
     echo ""
     
     echo "Per-directory syscall breakdown:"
-    dir_statx=$(grep "statx.*\"$TEST_DIR_SRC\"" "$TRACE_RAW" | wc -l)
-    dir_openat=$(grep "openat.*\"$TEST_DIR_SRC\".*O_DIRECTORY" "$TRACE_RAW" | wc -l)
-    dir_getdents=$(grep "getdents" "$TRACE_RAW" | wc -l)
-    dir_fchmod=$(grep "fchmod.*" "$TRACE_RAW" | wc -l)
-    dir_fchown=$(grep "fchown.*" "$TRACE_RAW" | wc -l)
+    dir_statx=$(grep "statx.*\"$TEST_DIR_SRC\"" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+    dir_openat=$(grep "openat.*\"$TEST_DIR_SRC\".*O_DIRECTORY" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+    dir_getdents=$(grep "getdents" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+    dir_fchmod=$(grep "fchmod.*" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+    dir_fchown=$(grep "fchown.*" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
     echo "  Source directory ($TEST_DIR_SRC):"
     echo "    - statx: $dir_statx"
     echo "    - openat (O_DIRECTORY): $dir_openat"
