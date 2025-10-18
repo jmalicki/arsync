@@ -76,9 +76,15 @@ async fn test_parallel_copy_data_integrity_large_file() {
     let parallel_config = enabled_parallel_config(2);
     let metadata_config = minimal_metadata_config();
 
-    copy_file(&src_path, &dst_path, &metadata_config, &parallel_config)
-        .await
-        .expect("Parallel copy failed");
+    copy_file(
+        &src_path,
+        &dst_path,
+        &metadata_config,
+        &parallel_config,
+        None,
+    )
+    .await
+    .expect("Parallel copy failed");
 
     // Verify byte-perfect copy
     let copied_data = fs::read(&dst_path).expect("Failed to read copied file");
@@ -109,9 +115,15 @@ async fn test_parallel_copy_various_depths() {
         let parallel_config = enabled_parallel_config(depth);
         let metadata_config = minimal_metadata_config();
 
-        copy_file(&src_path, &dst_path, &metadata_config, &parallel_config)
-            .await
-            .unwrap_or_else(|e| panic!("Parallel copy failed at depth {}: {}", depth, e));
+        copy_file(
+            &src_path,
+            &dst_path,
+            &metadata_config,
+            &parallel_config,
+            None,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("Parallel copy failed at depth {}: {}", depth, e));
 
         // Verify data integrity
         let copied_data = fs::read(&dst_path)
@@ -139,9 +151,15 @@ async fn test_below_threshold_uses_sequential() {
     let parallel_config = enabled_parallel_config(2);
     let metadata_config = minimal_metadata_config();
 
-    copy_file(&src_path, &dst_path, &metadata_config, &parallel_config)
-        .await
-        .expect("Copy failed");
+    copy_file(
+        &src_path,
+        &dst_path,
+        &metadata_config,
+        &parallel_config,
+        None,
+    )
+    .await
+    .expect("Copy failed");
 
     // Verify data integrity regardless of method used
     let copied_data = fs::read(&dst_path).expect("Failed to read copied file");
@@ -163,9 +181,15 @@ async fn test_uneven_file_split() {
     let parallel_config = enabled_parallel_config(2);
     let metadata_config = minimal_metadata_config();
 
-    copy_file(&src_path, &dst_path, &metadata_config, &parallel_config)
-        .await
-        .expect("Copy failed");
+    copy_file(
+        &src_path,
+        &dst_path,
+        &metadata_config,
+        &parallel_config,
+        None,
+    )
+    .await
+    .expect("Copy failed");
 
     // Verify every byte matches
     let copied_data = fs::read(&dst_path).expect("Failed to read copied file");
@@ -192,9 +216,15 @@ async fn test_no_region_overlap() {
     let parallel_config = enabled_parallel_config(3); // 8 tasks
     let metadata_config = minimal_metadata_config();
 
-    copy_file(&src_path, &dst_path, &metadata_config, &parallel_config)
-        .await
-        .expect("Copy failed");
+    copy_file(
+        &src_path,
+        &dst_path,
+        &metadata_config,
+        &parallel_config,
+        None,
+    )
+    .await
+    .expect("Copy failed");
 
     // Read and verify byte-by-byte
     let copied_data = fs::read(&dst_path).expect("Failed to read copied file");

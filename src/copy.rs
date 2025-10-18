@@ -45,6 +45,7 @@ use crate::metadata::{get_precise_timestamps, preserve_file_metadata, MetadataCo
 use compio::dispatcher::Dispatcher;
 use compio::fs::{File, OpenOptions};
 use compio::io::{AsyncReadAt, AsyncWriteAt};
+use futures::stream::{FuturesUnordered, StreamExt};
 use std::path::Path;
 
 /// Default I/O buffer size (in bytes) used for chunked read/write operations.
@@ -464,16 +465,24 @@ async fn copy_read_write_parallel(
             receivers.push(receiver);
         }
 
-        // Wait for all dispatched tasks
-        for (task_id, receiver) in receivers.into_iter().enumerate() {
-            receiver
-                .await
-                .map_err(|e| {
-                    SyncError::CopyFailed(format!("Task {task_id} channel failed: {e:?}"))
-                })?
-                .map_err(|e| {
-                    SyncError::CopyFailed(format!("Task {task_id} execution failed: {e:?}"))
-                })?;
+        // Wait for all dispatched tasks - process as they complete, fail fast on first error
+        let mut futures: FuturesUnordered<_> = receivers
+            .into_iter()
+            .enumerate()
+            .map(|(task_id, receiver)| async move {
+                receiver
+                    .await
+                    .map_err(|e| {
+                        SyncError::CopyFailed(format!("Task {task_id} channel failed: {e:?}"))
+                    })?
+                    .map_err(|e| {
+                        SyncError::CopyFailed(format!("Task {task_id} execution failed: {e:?}"))
+                    })
+            })
+            .collect();
+
+        while let Some(result) = futures.next().await {
+            result?; // Fail fast on first error
         }
     } else {
         // Single-threaded fallback: use compio::runtime::spawn
@@ -506,14 +515,24 @@ async fn copy_read_write_parallel(
             handles.push(handle);
         }
 
-        // Wait for all spawned tasks
-        for (task_id, handle) in handles.into_iter().enumerate() {
-            handle
-                .await
-                .map_err(|e| SyncError::CopyFailed(format!("Task {task_id} join failed: {e:?}")))?
-                .map_err(|e| {
-                    SyncError::CopyFailed(format!("Task {task_id} execution failed: {e:?}"))
-                })?;
+        // Wait for all spawned tasks - process as they complete, fail fast on first error
+        let mut futures: FuturesUnordered<_> = handles
+            .into_iter()
+            .enumerate()
+            .map(|(task_id, handle)| async move {
+                handle
+                    .await
+                    .map_err(|e| {
+                        SyncError::CopyFailed(format!("Task {task_id} join failed: {e:?}"))
+                    })?
+                    .map_err(|e| {
+                        SyncError::CopyFailed(format!("Task {task_id} execution failed: {e:?}"))
+                    })
+            })
+            .collect();
+
+        while let Some(result) = futures.next().await {
+            result?; // Fail fast on first error
         }
     }
 
@@ -565,19 +584,23 @@ async fn copy_region_sequential(
         std::thread::current().id()
     );
 
-    let mut buffer = vec![0u8; chunk_size];
     let mut offset = start;
 
     while offset < end {
         let remaining = end - offset;
-        let _to_read = remaining.min(chunk_size as u64);
+        #[allow(clippy::cast_possible_truncation)]
+        let to_read = remaining.min(chunk_size as u64) as usize;
+
+        // Allocate buffer sized to what we actually need to read
+        // This prevents reading past the region boundary in parallel execution
+        let buffer = vec![0u8; to_read];
 
         // Read from source at this offset
         let read_result = src.read_at(buffer, offset).await;
         let bytes_read = read_result
             .0
             .map_err(|e| SyncError::IoUring(format!("read_at failed at offset {offset}: {e}")))?;
-        buffer = read_result.1;
+        let mut buffer = read_result.1;
 
         if bytes_read == 0 {
             break;
@@ -589,8 +612,8 @@ async fn copy_region_sequential(
         let bytes_written = write_result
             .0
             .map_err(|e| SyncError::IoUring(format!("write_at failed at offset {offset}: {e}")))?;
-        buffer = write_result.1;
-        buffer.resize(chunk_size, 0);
+        // Note: We intentionally don't reuse the buffer here (write_result.1)
+        // A new buffer is allocated on each iteration to ensure correct sizing
 
         if bytes_written != bytes_read {
             return Err(SyncError::CopyFailed(format!(
@@ -822,6 +845,7 @@ mod tests {
                 &dst_path,
                 &args.metadata,
                 &disabled_parallel_config(),
+                None,
             )
             .await
             .unwrap();
