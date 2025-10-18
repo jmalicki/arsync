@@ -68,8 +68,23 @@ struct SyscallStats {
     readlink_total: usize,
     readlinkat_total: usize,
     lstat_total: usize,
+    // Unexpected/legacy syscalls (should not be used)
+    open_total: usize,   // Should use openat
+    stat_total: usize,   // Should use statx or fstat
+    chmod_total: usize,  // Should use fchmod
+    chown_total: usize,  // Should use fchown
+    utime_total: usize,  // Should use utimensat
+    utimes_total: usize, // Should use utimensat
+    access_total: usize, // TOCTOU-vulnerable
+    creat_total: usize,  // Deprecated, use openat
+    read_total: usize,   // Should be async via io_uring
+    write_total: usize,  // Should be async via io_uring
+    pread_total: usize,  // Should use io_uring read_at
+    pwrite_total: usize, // Should use io_uring write_at
     per_file: HashMap<String, FileStats>,
     dir_stats: DirectoryStats,
+    // All other syscalls (catch-all)
+    all_syscalls: HashMap<String, usize>,
 }
 
 #[derive(Debug, Default)]
@@ -243,6 +258,20 @@ fn run_strace_analysis(args: &Args) -> Result<String> {
 fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
     let mut stats = SyscallStats::default();
 
+    // Parse all syscalls first (to build complete inventory)
+    // Match format: "syscall_name(...)" or "PID syscall_name(...)"
+    let syscall_re = Regex::new(r"(?:^\d+\s+)?(\w+)\(").unwrap();
+    for line in raw_content.lines() {
+        // Skip lines that are continuations or don't contain syscalls
+        if line.trim_start().starts_with('<') || line.trim_start().starts_with('=') {
+            continue;
+        }
+        if let Some(cap) = syscall_re.captures(line) {
+            let syscall_name = cap[1].to_string();
+            *stats.all_syscalls.entry(syscall_name).or_insert(0) += 1;
+        }
+    }
+
     // Count io_uring operations
     stats.io_uring_setup = raw_content.matches("io_uring_setup").count();
     stats.io_uring_enter = raw_content.matches("io_uring_enter").count();
@@ -299,6 +328,25 @@ fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
     stats.readlink_total = raw_content.matches("readlink(").count();
     stats.readlinkat_total = raw_content.matches("readlinkat(").count();
     stats.lstat_total = raw_content.matches("lstat(").count();
+
+    // Count unexpected/legacy syscalls
+    stats.open_total = raw_content.matches("open(\"").count(); // Exclude openat
+    stats.stat_total = raw_content.matches("stat(\"").count(); // Exclude statx, fstat
+    stats.chmod_total = raw_content.matches("chmod(\"").count(); // Exclude fchmod
+    stats.chown_total = raw_content.matches("chown(\"").count(); // Exclude fchown
+    stats.utime_total = raw_content.matches("utime(").count();
+    stats.utimes_total = raw_content.matches("utimes(").count();
+    stats.access_total = raw_content.matches("access(").count();
+    stats.creat_total = raw_content.matches("creat(").count();
+
+    // Count synchronous read/write (should be rare with io_uring)
+    // Use more precise regex to avoid matching pread/pwrite
+    let read_re = Regex::new(r"\bread\(").unwrap();
+    let write_re = Regex::new(r"\bwrite\(").unwrap();
+    stats.read_total = read_re.find_iter(raw_content).count();
+    stats.write_total = write_re.find_iter(raw_content).count();
+    stats.pread_total = raw_content.matches("pread").count();
+    stats.pwrite_total = raw_content.matches("pwrite").count();
 
     // Per-file breakdown (first 3 files)
     for i in 1..=3.min(args.num_files) {
@@ -365,6 +413,12 @@ fn generate_markdown_report(args: &Args, stats: &SyscallStats) -> Result<String>
 
     // Per-directory breakdown
     add_directory_section(&mut report, stats, &args.test_dir_src, &args.test_dir_dst);
+
+    // Unexpected/Legacy Syscalls
+    add_unexpected_syscalls_section(&mut report, stats);
+
+    // All Syscalls (comprehensive list)
+    add_all_syscalls_section(&mut report, stats);
 
     // Security Assessment
     add_security_section(&mut report, stats);
@@ -645,6 +699,203 @@ fn add_symlink_operations_section(report: &mut String, stats: &SyscallStats) {
                 fd_percentage
             ));
         }
+    }
+}
+
+fn add_unexpected_syscalls_section(report: &mut String, stats: &SyscallStats) {
+    report.push_str("## ⚠️  Unexpected/Legacy Syscalls\n\n");
+
+    let mut unexpected = Vec::new();
+
+    if stats.open_total > 0 {
+        unexpected.push(format!(
+            "- `open()`: {} calls (use `openat()` instead)",
+            stats.open_total
+        ));
+    }
+    if stats.stat_total > 0 {
+        unexpected.push(format!(
+            "- `stat()`: {} calls (use `statx()` or `fstat()` instead)",
+            stats.stat_total
+        ));
+    }
+    if stats.chmod_total > 0 {
+        unexpected.push(format!(
+            "- `chmod()`: {} calls (use `fchmod()` instead)",
+            stats.chmod_total
+        ));
+    }
+    if stats.chown_total > 0 {
+        unexpected.push(format!(
+            "- `chown()`: {} calls (use `fchown()` instead)",
+            stats.chown_total
+        ));
+    }
+    if stats.utime_total > 0 {
+        unexpected.push(format!(
+            "- `utime()`: {} calls (use `utimensat()` instead)",
+            stats.utime_total
+        ));
+    }
+    if stats.utimes_total > 0 {
+        unexpected.push(format!(
+            "- `utimes()`: {} calls (use `utimensat()` instead)",
+            stats.utimes_total
+        ));
+    }
+    if stats.access_total > 0 {
+        unexpected.push(format!(
+            "- `access()`: {} calls (TOCTOU-vulnerable, avoid)",
+            stats.access_total
+        ));
+    }
+    if stats.creat_total > 0 {
+        unexpected.push(format!(
+            "- `creat()`: {} calls (deprecated, use `openat()` instead)",
+            stats.creat_total
+        ));
+    }
+
+    // Synchronous I/O (should be minimal with io_uring)
+    if stats.read_total > 50 {
+        unexpected.push(format!(
+            "- `read()`: {} calls (high count, should use io_uring)",
+            stats.read_total
+        ));
+    }
+    if stats.write_total > 50 {
+        unexpected.push(format!(
+            "- `write()`: {} calls (high count, should use io_uring)",
+            stats.write_total
+        ));
+    }
+    if stats.pread_total > 0 {
+        unexpected.push(format!(
+            "- `pread()`: {} calls (use io_uring `read_at` instead)",
+            stats.pread_total
+        ));
+    }
+    if stats.pwrite_total > 0 {
+        unexpected.push(format!(
+            "- `pwrite()`: {} calls (use io_uring `write_at` instead)",
+            stats.pwrite_total
+        ));
+    }
+
+    if unexpected.is_empty() {
+        report.push_str("✅ **EXCELLENT:** No unexpected or legacy syscalls detected!\n\n");
+    } else {
+        report.push_str("**Found unexpected syscalls:**\n\n");
+        for item in unexpected {
+            report.push_str(&format!("{}\n", item));
+        }
+        report
+            .push_str("\n> These syscalls indicate potential performance or security issues.\n\n");
+    }
+}
+
+fn add_all_syscalls_section(report: &mut String, stats: &SyscallStats) {
+    report.push_str("## 📊 All Syscalls (Complete Inventory)\n\n");
+
+    if stats.all_syscalls.is_empty() {
+        report.push_str("ℹ️  **INFO:** No syscalls parsed (trace may be empty)\n\n");
+        return;
+    }
+
+    // Sort by count (descending)
+    let mut syscalls: Vec<_> = stats.all_syscalls.iter().collect();
+    syscalls.sort_by(|a, b| b.1.cmp(a.1));
+
+    // Known/expected syscalls to categorize
+    let known_io_uring = ["io_uring_setup", "io_uring_enter", "io_uring_register"];
+    let known_file_ops = [
+        "openat",
+        "statx",
+        "fallocate",
+        "read",
+        "write",
+        "pread64",
+        "pwrite64",
+        "close",
+        "lseek",
+    ];
+    let known_metadata = ["fchmod", "fchown", "utimensat", "fstat", "lstat"];
+    let known_dir = ["mkdir", "mkdirat", "getdents64", "getcwd", "chdir"];
+    let known_symlink = ["symlink", "symlinkat", "readlink", "readlinkat"];
+    let known_process = ["clone3", "execve", "wait4", "exit", "exit_group"];
+    let known_memory = ["mmap", "munmap", "mprotect", "brk"];
+    let known_thread = ["futex", "set_robust_list", "set_tid_address"];
+    let known_signal = ["rt_sigaction", "rt_sigprocmask", "sigaltstack", "rseq"];
+    let known_misc = [
+        "getrandom",
+        "sched_getaffinity",
+        "prlimit64",
+        "arch_prctl",
+        "poll",
+        "clock_gettime",
+        "clock_nanosleep",
+        "eventfd2",
+        "sched_yield",
+        "prctl",
+    ];
+
+    report.push_str("<details>\n<summary>Click to expand full syscall list</summary>\n\n");
+    report.push_str("| Syscall | Count | Category |\n");
+    report.push_str("|---------|-------|----------|\n");
+
+    for (syscall, count) in &syscalls {
+        let category = if known_io_uring.contains(&syscall.as_str()) {
+            "🔄 io_uring"
+        } else if known_file_ops.contains(&syscall.as_str()) {
+            "📁 File I/O"
+        } else if known_metadata.contains(&syscall.as_str()) {
+            "📋 Metadata"
+        } else if known_dir.contains(&syscall.as_str()) {
+            "📂 Directory"
+        } else if known_symlink.contains(&syscall.as_str()) {
+            "🔗 Symlink"
+        } else if known_process.contains(&syscall.as_str()) {
+            "⚙️  Process"
+        } else if known_memory.contains(&syscall.as_str()) {
+            "💾 Memory"
+        } else if known_thread.contains(&syscall.as_str()) {
+            "🧵 Threading"
+        } else if known_signal.contains(&syscall.as_str()) {
+            "🚦 Signal"
+        } else if known_misc.contains(&syscall.as_str()) {
+            "🔧 System"
+        } else {
+            "❓ **Unknown**"
+        };
+
+        report.push_str(&format!("| `{}` | {} | {} |\n", syscall, count, category));
+    }
+
+    report.push_str("\n</details>\n\n");
+
+    // Highlight unknown syscalls
+    let unknown: Vec<_> = syscalls
+        .iter()
+        .filter(|(name, _)| {
+            !known_io_uring.contains(&name.as_str())
+                && !known_file_ops.contains(&name.as_str())
+                && !known_metadata.contains(&name.as_str())
+                && !known_dir.contains(&name.as_str())
+                && !known_symlink.contains(&name.as_str())
+                && !known_process.contains(&name.as_str())
+                && !known_memory.contains(&name.as_str())
+                && !known_thread.contains(&name.as_str())
+                && !known_signal.contains(&name.as_str())
+                && !known_misc.contains(&name.as_str())
+        })
+        .collect();
+
+    if !unknown.is_empty() {
+        report.push_str("### ❓ Unknown/Uncategorized Syscalls\n\n");
+        for (syscall, count) in unknown {
+            report.push_str(&format!("- **`{}`**: {} calls\n", syscall, count));
+        }
+        report.push_str("\n> These syscalls are not in our expected categories. Review to ensure they're intentional.\n\n");
     }
 }
 
