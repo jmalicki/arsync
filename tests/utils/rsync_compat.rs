@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
 /// Check if rsync is available on the system
+#[allow(dead_code)]
 pub fn rsync_available() -> bool {
     StdCommand::new("rsync")
         .arg("--version")
