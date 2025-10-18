@@ -46,9 +46,9 @@ jobs:
           sudo apt-get update && sudo apt-get install -y strace
           
           # Run analysis (Rust binary does everything now)
-          # Note: Using absolute path since cd changes directory context
-          ${{ github.workspace }}/benchmarks/target/release/syscall-analyzer \
-            --arsync-bin ${{ github.workspace }}/target/release/arsync \
+          # Note: Binary is built in main workspace target/release
+          ./target/release/syscall-analyzer \
+            --arsync-bin ./target/release/arsync \
             --num-files 5 \
             --file-size-mb 10 \
             --output /tmp/syscall-analysis-report.md

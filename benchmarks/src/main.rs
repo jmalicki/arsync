@@ -59,6 +59,15 @@ struct SyscallStats {
     utimensat_total: usize,
     utimensat_fd_based: usize,
     utimensat_path_based: usize,
+    // Directory operations
+    mkdir_total: usize,
+    mkdirat_total: usize,
+    // Symlink operations
+    symlink_total: usize,
+    symlinkat_total: usize,
+    readlink_total: usize,
+    readlinkat_total: usize,
+    lstat_total: usize,
     per_file: HashMap<String, FileStats>,
     dir_stats: DirectoryStats,
 }
@@ -174,6 +183,36 @@ fn create_test_dataset(args: &Args) -> Result<()> {
         }
     }
 
+    // Create nested directories to test directory operations
+    let nested_dir = args.test_dir_src.join("subdir1/subdir2");
+    fs::create_dir_all(&nested_dir).context("Failed to create nested directories")?;
+
+    // Create a file in the nested directory
+    let nested_file = nested_dir.join("nested_file.txt");
+    fs::write(&nested_file, b"test content in nested directory")
+        .context("Failed to create nested file")?;
+
+    // Create symlinks to test symlink operations
+    // 1. Symlink to a regular file
+    let link_to_file = args.test_dir_src.join("link_to_file1.bin");
+    let target_file = args.test_dir_src.join("file1.bin");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&target_file, &link_to_file)
+        .context("Failed to create symlink to file")?;
+
+    // 2. Symlink to a directory
+    let link_to_dir = args.test_dir_src.join("link_to_subdir");
+    let target_dir = args.test_dir_src.join("subdir1");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&target_dir, &link_to_dir)
+        .context("Failed to create symlink to directory")?;
+
+    // 3. Relative symlink
+    let relative_link = args.test_dir_src.join("relative_link.txt");
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("nested_file.txt", &relative_link)
+        .context("Failed to create relative symlink")?;
+
     Ok(())
 }
 
@@ -250,6 +289,17 @@ fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
     let utimens_path_re = Regex::new(r#"utimensat\(AT_FDCWD, "/"#).unwrap();
     stats.utimensat_path_based = utimens_path_re.find_iter(raw_content).count();
 
+    // Count directory operations
+    stats.mkdir_total = raw_content.matches("mkdir(").count();
+    stats.mkdirat_total = raw_content.matches("mkdirat(").count();
+
+    // Count symlink operations
+    stats.symlink_total = raw_content.matches("symlink(").count();
+    stats.symlinkat_total = raw_content.matches("symlinkat(").count();
+    stats.readlink_total = raw_content.matches("readlink(").count();
+    stats.readlinkat_total = raw_content.matches("readlinkat(").count();
+    stats.lstat_total = raw_content.matches("lstat(").count();
+
     // Per-file breakdown (first 3 files)
     for i in 1..=3.min(args.num_files) {
         let filename = format!("file{}.bin", i);
@@ -306,6 +356,12 @@ fn generate_markdown_report(args: &Args, stats: &SyscallStats) -> Result<String>
 
     // Metadata Preservation
     add_metadata_preservation_section(&mut report, stats, args.num_files);
+
+    // Directory Operations
+    add_directory_operations_section(&mut report, stats);
+
+    // Symlink Operations
+    add_symlink_operations_section(&mut report, stats);
 
     // Per-directory breakdown
     add_directory_section(&mut report, stats, &args.test_dir_src, &args.test_dir_dst);
@@ -516,8 +572,84 @@ fn add_metadata_preservation_section(report: &mut String, stats: &SyscallStats, 
     }
 }
 
+fn add_directory_operations_section(report: &mut String, stats: &SyscallStats) {
+    report.push_str("## 📁 Directory Creation\n\n");
+
+    report.push_str(&format!(
+        "| Operation | Count | Type |\n\
+        |-----------|-------|------|\n\
+        | mkdir | {} | Path-based |\n\
+        | mkdirat | {} | FD-based |\n\
+        | **Total directory creates** | **{}** | |\n\n",
+        stats.mkdir_total,
+        stats.mkdirat_total,
+        stats.mkdir_total + stats.mkdirat_total
+    ));
+
+    let total_mkdir = stats.mkdir_total + stats.mkdirat_total;
+    if total_mkdir > 0 {
+        let fd_percentage = (stats.mkdirat_total as f64 / total_mkdir as f64 * 100.0) as usize;
+        if stats.mkdirat_total == total_mkdir {
+            report.push_str("✅ **EXCELLENT:** 100% FD-based directory creation (TOCTOU-safe)\n\n");
+        } else if fd_percentage >= 80 {
+            report.push_str(&format!(
+                "✅ **GOOD:** {}% FD-based directory creation\n\n",
+                fd_percentage
+            ));
+        } else {
+            report.push_str(&format!(
+                "⚠️  **WARNING:** Only {}% FD-based directory creation (TOCTOU risk)\n\n",
+                fd_percentage
+            ));
+        }
+    }
+}
+
+fn add_symlink_operations_section(report: &mut String, stats: &SyscallStats) {
+    report.push_str("## 🔗 Symlink Operations\n\n");
+
+    report.push_str(&format!(
+        "| Operation | Count | Type |\n\
+        |-----------|-------|------|\n\
+        | symlink | {} | Path-based |\n\
+        | symlinkat | {} | FD-based |\n\
+        | readlink | {} | Path-based |\n\
+        | readlinkat | {} | FD-based |\n\
+        | lstat | {} | Path-based (symlink metadata) |\n\n",
+        stats.symlink_total,
+        stats.symlinkat_total,
+        stats.readlink_total,
+        stats.readlinkat_total,
+        stats.lstat_total
+    ));
+
+    let total_symlink_ops =
+        stats.symlink_total + stats.symlinkat_total + stats.readlink_total + stats.readlinkat_total;
+
+    if total_symlink_ops == 0 {
+        report.push_str("ℹ️  **INFO:** No symlink operations detected in test\n\n");
+    } else {
+        let fd_based = stats.symlinkat_total + stats.readlinkat_total;
+        let fd_percentage = (fd_based as f64 / total_symlink_ops as f64 * 100.0) as usize;
+
+        if fd_percentage == 100 {
+            report.push_str("✅ **EXCELLENT:** 100% FD-based symlink operations (TOCTOU-safe)\n\n");
+        } else if fd_percentage >= 80 {
+            report.push_str(&format!(
+                "✅ **GOOD:** {}% FD-based symlink operations\n\n",
+                fd_percentage
+            ));
+        } else {
+            report.push_str(&format!(
+                "⚠️  **WARNING:** Only {}% FD-based symlink operations (TOCTOU risk)\n\n",
+                fd_percentage
+            ));
+        }
+    }
+}
+
 fn add_directory_section(report: &mut String, stats: &SyscallStats, src: &PathBuf, dst: &PathBuf) {
-    report.push_str("## 📂 Directory Operations\n\n");
+    report.push_str("## 📂 Directory Traversal Details\n\n");
 
     report.push_str(&format!(
         "**Source directory** (`{}`):\n\
