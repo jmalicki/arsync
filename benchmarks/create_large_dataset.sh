@@ -26,7 +26,15 @@ for i in $(seq -f "%03g" 1 $NUM_FILES); do
     
     # Skip if file already exists and is correct size
     if [ -f "$FILE_PATH" ]; then
-        ACTUAL_SIZE=$(stat -f "%z" "$FILE_PATH" 2>/dev/null || stat -c "%s" "$FILE_PATH" 2>/dev/null)
+        # Try GNU stat first (more common in Linux), then BSD stat
+        if stat -c "%s" "$FILE_PATH" > /dev/null 2>&1; then
+            ACTUAL_SIZE=$(stat -c "%s" "$FILE_PATH")
+        elif stat -f "%z" "$FILE_PATH" > /dev/null 2>&1; then
+            ACTUAL_SIZE=$(stat -f "%z" "$FILE_PATH")
+        else
+            echo "Error: stat command not supported"
+            exit 1
+        fi
         EXPECTED_SIZE=$((FILE_SIZE_GB * 1024 * 1024 * 1024))
         if [ "$ACTUAL_SIZE" -eq "$EXPECTED_SIZE" ]; then
             echo "[$i/$NUM_FILES] ✓ file_${i}.bin already exists (${FILE_SIZE_GB}GB)"

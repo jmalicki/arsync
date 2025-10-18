@@ -162,7 +162,8 @@ echo "" | tee -a "$RESULTS_FILE"
 
 # Data integrity check (sample 5 random files)
 echo "=== Data Integrity Check (5 random files) ===" | tee -a "$RESULTS_FILE"
-for i in $(shuf -i 1-250 -n 5); do
+NUM_FILES_ACTUAL=$(find "$SOURCE" -maxdepth 1 -type f -name "file_*.bin" | wc -l)
+for i in $(shuf -i 1-"$NUM_FILES_ACTUAL" -n 5); do
     file=$(printf "file_%03d.bin" $i)
     echo "Checking $file..." | tee -a "$RESULTS_FILE"
     sha256sum "$SOURCE/$file" /mnt/benchmark/dest-*-1tb/$file 2>&1 | tee -a "$RESULTS_FILE"
