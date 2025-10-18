@@ -3,6 +3,8 @@
 //! These tests ensure that parallel copying produces byte-perfect copies
 //! and properly handles edge cases.
 
+#![allow(clippy::expect_used)] // expect() is idiomatic in tests
+
 use arsync::cli::ParallelCopyConfig;
 use arsync::copy::copy_file;
 use arsync::metadata::MetadataConfig;
