@@ -65,7 +65,6 @@ compio-fs-extended = { path = "crates/compio-fs-extended", features = ["xattr"] 
 compio-sync = { git = "https://github.com/jmalicki/compio-sync", tag = "v0.0.2" }
 
 # Remote sync dependencies (optional)
-tokio = { version = "1.0", features = ["process", "io-util", "rt", "fs", "macros"], optional = true }
 rand = { version = "0.9.2", optional = true }
 
 # Build dependencies
@@ -100,7 +99,7 @@ cargo-audit = "0.21"
 [features]
 default = ["remote-sync"]
 benchmarks = ["criterion"]
-remote-sync = ["tokio", "rand"]
+remote-sync = ["rand"]
 rand = ["dep:rand"]
 
 [profile.release]
