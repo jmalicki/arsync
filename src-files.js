@@ -1,0 +1,2 @@
+createSrcSidebar('[["arsync",["",[["protocol",[],["checksum.rs","handshake.rs","mod.rs","pipe.rs","rsync.rs","rsync_compat.rs","ssh.rs","transport.rs","varint.rs"]]],["adaptive_concurrency.rs","cli.rs","copy.rs","directory.rs","error.rs","hardlink_tracker.rs","i18n.rs","io_uring.rs","lib.rs","metadata.rs","progress.rs","stats.rs","sync.rs"]]]]');
+//{"start":19,"fragment_lengths":[325]}

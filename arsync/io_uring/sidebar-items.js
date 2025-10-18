@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CopyStatus"],"struct":["CopyOperation","FileMetadata","FileOperations"]};

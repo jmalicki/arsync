@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EN_US","EN_X_PIRATE"],"enum":["I18nError","Language","TranslationKey"],"fn":["create_bundle","get_ftl_for_locale","get_language","set_language"],"static":["CURRENT_LOCALE","EN_US_FTL","X_PIRATE_FTL"]};

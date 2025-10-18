@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["copy_directory","copy_symlink","handle_existing_hardlink","preserve_directory_metadata","preserve_directory_xattr","preserve_file_metadata","process_directory_entry_with_compio","process_file","process_symlink","traverse_and_copy_directory_iterative"],"struct":["DirectoryStats","ExtendedMetadata"]};

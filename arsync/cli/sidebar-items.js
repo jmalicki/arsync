@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["CopyMethod"],"struct":["Args","ConcurrencyConfig","IoConfig","OutputConfig","ParallelCopyConfig","PathConfig"]};
