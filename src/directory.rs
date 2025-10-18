@@ -73,9 +73,26 @@ impl ExtendedMetadata {
     ///
     /// This is the preferred constructor - uses `io_uring` and is TOCTOU-safe.
     #[must_use]
-    #[allow(dead_code)] // Used in Phase 2 dirfd refactor
     pub const fn from_statx(metadata: compio_fs_extended::FileMetadata) -> Self {
         Self { metadata }
+    }
+
+    /// Create using `DirectoryFd` (TOCTOU-safe, `io_uring`)
+    ///
+    /// This is the most efficient constructor - uses dirfd + `io_uring` statx.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if statx operation fails
+    #[cfg(target_os = "linux")]
+    #[allow(clippy::future_not_send)]
+    pub async fn from_dirfd(dir: &compio_fs_extended::DirectoryFd, filename: &str) -> Result<Self> {
+        let metadata = dir.statx_full(filename).await.map_err(|e| {
+            SyncError::FileSystem(format!(
+                "Failed to get metadata via dirfd for {filename}: {e}"
+            ))
+        })?;
+        Ok(Self::from_statx(metadata))
     }
 
     /// Check if this is a directory
@@ -345,6 +362,8 @@ async fn traverse_and_copy_directory_iterative(
         concurrency_controller,
         metadata_config_arc,
         parallel_config_arc,
+        None, // Root directory has no parent
+        None, // Root directory has no filename
     )
     .await;
 
@@ -412,6 +431,7 @@ async fn traverse_and_copy_directory_iterative(
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::future_not_send)]
 #[allow(clippy::used_underscore_binding)]
+#[allow(clippy::too_many_lines)]
 async fn process_directory_entry_with_compio(
     dispatcher: &'static Dispatcher,
     src_path: PathBuf,
@@ -423,6 +443,8 @@ async fn process_directory_entry_with_compio(
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
     parallel_config: Arc<crate::cli::ParallelCopyConfig>,
+    src_parent_dir: Option<Arc<compio_fs_extended::DirectoryFd>>,
+    src_filename: Option<String>,
 ) -> Result<()> {
     // Clone controller before acquiring permit to avoid borrow/move conflict
     let controller = Arc::clone(&concurrency_controller);
@@ -432,8 +454,15 @@ async fn process_directory_entry_with_compio(
     // The permit is held for the entire operation (directory, file, or symlink)
     let _permit = controller.acquire().await;
 
-    // Get comprehensive metadata using compio's async operations
-    let extended_metadata = ExtendedMetadata::new(&src_path).await?;
+    // Get comprehensive metadata using io_uring statx via DirectoryFd if available
+    let extended_metadata =
+        if let (Some(dir), Some(name)) = (src_parent_dir.as_ref(), src_filename.as_ref()) {
+            // FAST PATH: Use DirectoryFd::statx_full() - io_uring, TOCTOU-safe, single call
+            ExtendedMetadata::from_dirfd(dir, name).await?
+        } else {
+            // FALLBACK: Path-based for root directory - slower, TOCTOU-vulnerable
+            ExtendedMetadata::new(&src_path).await?
+        };
 
     if extended_metadata.is_dir() {
         // ========================================================================
@@ -456,6 +485,18 @@ async fn process_directory_entry_with_compio(
             preserve_directory_metadata(&src_path, &dst_path, &extended_metadata, &metadata_config)
                 .await?;
         }
+
+        // Open source directory as DirectoryFd for TOCTOU-safe operations
+        let src_dir = Arc::new(
+            compio_fs_extended::DirectoryFd::open(&src_path)
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to open source directory {}: {e}",
+                        src_path.display()
+                    ))
+                })?,
+        );
 
         // Read directory entries using compio-fs-extended wrapper
         // This abstracts whether read_dir is blocking or uses io_uring (currently blocking due to kernel limitation)
@@ -490,6 +531,7 @@ async fn process_directory_entry_with_compio(
                 SyncError::FileSystem(format!("Invalid file name in {}", child_src_path.display()))
             })?;
             let child_dst_path = dst_path.join(file_name);
+            let file_name_string = file_name.to_string_lossy().to_string();
 
             // Dispatch all entries to the same function regardless of type
             // This creates a unified processing pipeline where each entry
@@ -503,6 +545,7 @@ async fn process_directory_entry_with_compio(
             let file_ops_clone = Arc::clone(&file_ops);
             let metadata_config_clone = Arc::clone(&metadata_config);
             let parallel_config_clone = Arc::clone(&parallel_config);
+            let src_dir_clone = Arc::clone(&src_dir);
             let receiver = dispatcher
                 .dispatch(move || {
                     process_directory_entry_with_compio(
@@ -516,6 +559,8 @@ async fn process_directory_entry_with_compio(
                         concurrency_controller, // Move instead of clone - already cloned above
                         metadata_config_clone,
                         parallel_config_clone,
+                        Some(src_dir_clone),    // Pass parent DirectoryFd
+                        Some(file_name_string), // Pass filename
                     )
                 })
                 .map_err(|e| {
@@ -1138,6 +1183,7 @@ mod tests {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::expect_used)]
     use super::*;
+    use std::os::unix::fs::MetadataExt;
     use tempfile::TempDir;
 
     /// Test ExtendedMetadata creation and basic functionality
