@@ -8,9 +8,12 @@ use compio_fs_extended::xattr::{
 };
 use tempfile::TempDir;
 
-/// Test that demonstrates the bug: set_xattr_at_path follows symlinks
+/// Test that regular xattr functions follow symlinks (by design)
 ///
-/// This test FAILS with regular xattr functions, proving they follow symlinks.
+/// **Status**: GREEN ✅ (documents expected behavior, not a bug)
+///
+/// Regular xattr functions SHOULD follow symlinks - this is standard Unix behavior.
+/// This test documents that design and proves it works correctly.
 #[compio::test]
 #[cfg(unix)] // xattrs are Unix-only
 async fn test_regular_xattr_follows_symlinks() {
@@ -49,9 +52,12 @@ async fn test_regular_xattr_follows_symlinks() {
     // But when you want to operate on symlinks themselves, use l* functions
 }
 
-/// Test the FIX: lset_xattr_at_path doesn't follow symlinks
+/// Test that l* xattr functions don't follow symlinks
 ///
-/// This test PASSES, proving that l* functions don't follow symlinks.
+/// **Status**: GREEN ✅ (l* functions correctly use NoFollow)
+///
+/// The l* variants use lgetxattr (Linux) or XATTR_NOFOLLOW (macOS) to operate
+/// on symlinks themselves, not their targets.
 #[compio::test]
 #[cfg(unix)]
 async fn test_l_xattr_does_not_follow_symlinks() {

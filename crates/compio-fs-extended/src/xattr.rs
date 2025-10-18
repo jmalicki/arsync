@@ -25,6 +25,10 @@
 //! extra parameters, making it functionally equivalent to Linux's simpler API.
 
 use crate::error::{xattr_error, Result};
+
+// macOS-specific constant for xattr operations on symlinks
+#[cfg(target_os = "macos")]
+const XATTR_NOFOLLOW: libc::c_int = 0x0001;
 #[cfg(target_os = "linux")]
 use compio::driver::OpCode;
 use compio::fs::File;
@@ -491,7 +495,6 @@ pub async fn lget_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
     let size = unsafe {
         #[cfg(target_os = "macos")]
         {
-            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
             libc::getxattr(
                 path_cstr.as_ptr(),
                 name_cstr.as_ptr(),
@@ -532,7 +535,6 @@ pub async fn lget_xattr_at_path(path: &Path, name: &str) -> Result<Vec<u8>> {
     let actual_size = unsafe {
         #[cfg(target_os = "macos")]
         {
-            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
             libc::getxattr(
                 path_cstr.as_ptr(),
                 name_cstr.as_ptr(),
@@ -661,7 +663,6 @@ pub async fn lset_xattr_at_path(path: &Path, name: &str, value: &[u8]) -> Result
     let result = unsafe {
         #[cfg(target_os = "macos")]
         {
-            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
             libc::setxattr(
                 path_cstr.as_ptr(),
                 name_cstr.as_ptr(),
@@ -827,7 +828,6 @@ pub async fn llist_xattr_at_path(path: &Path) -> Result<Vec<String>> {
     let size = unsafe {
         #[cfg(target_os = "macos")]
         {
-            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
             libc::listxattr(path_cstr.as_ptr(), std::ptr::null_mut(), 0, XATTR_NOFOLLOW)
         }
         #[cfg(target_os = "linux")]
@@ -854,7 +854,6 @@ pub async fn llist_xattr_at_path(path: &Path) -> Result<Vec<String>> {
     let actual_size = unsafe {
         #[cfg(target_os = "macos")]
         {
-            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
             libc::listxattr(
                 path_cstr.as_ptr(),
                 buffer.as_mut_ptr() as *mut libc::c_char,
@@ -980,7 +979,6 @@ pub async fn lremove_xattr_at_path(path: &Path, name: &str) -> Result<()> {
     let result = unsafe {
         #[cfg(target_os = "macos")]
         {
-            const XATTR_NOFOLLOW: libc::c_int = 0x0001;
             libc::removexattr(path_cstr.as_ptr(), name_cstr.as_ptr(), XATTR_NOFOLLOW)
         }
         #[cfg(target_os = "linux")]

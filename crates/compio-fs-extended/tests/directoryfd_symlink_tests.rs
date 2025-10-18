@@ -7,9 +7,11 @@ use compio_fs_extended::directory::DirectoryFd;
 use std::os::unix::fs::MetadataExt;
 use tempfile::TempDir;
 
-/// Test: Verify lfchownat doesn't follow symlinks (GREEN test)
+/// Test: Verify lfchownat doesn't follow symlinks
 ///
-/// This test should PASS after implementing AT_SYMLINK_NOFOLLOW.
+/// **Status**: GREEN ✅ (passes with AT_SYMLINK_NOFOLLOW flag)
+///
+/// This test proves that lfchownat operates on symlinks, not their targets.
 #[compio::test]
 #[cfg(unix)]
 async fn test_lfchownat_does_not_follow_symlinks() {
@@ -71,9 +73,11 @@ async fn test_lfchownat_does_not_follow_symlinks() {
     }
 }
 
-/// Test: Verify lutimensat doesn't follow symlinks (GREEN test)
+/// Test: Verify lutimensat doesn't follow symlinks
 ///
-/// This test should PASS after changing to NoFollowSymlink flag.
+/// **Status**: GREEN ✅ (passes with NoFollowSymlink flag)
+///
+/// This test proves that lutimensat changes symlink timestamps, not target timestamps.
 #[compio::test]
 #[cfg(unix)]
 async fn test_lutimensat_does_not_follow_symlinks() {
@@ -143,10 +147,12 @@ async fn test_lutimensat_does_not_follow_symlinks() {
     }
 }
 
-/// Test: Verify lfchmodat doesn't follow symlinks (GREEN test)
+/// Test: Verify lfchmodat doesn't follow symlinks
 ///
-/// On Linux: Always succeeds (no-op, symlinks always 0777)
-/// On macOS: Uses NoFollowSymlink flag
+/// **Status**: GREEN ✅
+///
+/// - **Linux**: No-op (symlinks always 0777), target unchanged
+/// - **macOS**: Uses NoFollowSymlink flag, operates on symlink
 #[compio::test]
 #[cfg(unix)]
 async fn test_lfchmodat_does_not_follow_symlinks() {
