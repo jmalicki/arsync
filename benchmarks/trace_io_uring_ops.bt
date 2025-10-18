@@ -1,0 +1,94 @@
+#!/usr/bin/env bpftrace
+/*
+ * trace_io_uring_ops.bt - Trace io_uring operation submissions
+ *
+ * This bpftrace script traces io_uring operations to show what opcodes
+ * are being submitted (READ, WRITE, STATX, FALLOCATE, etc.)
+ *
+ * Usage:
+ *   sudo bpftrace trace_io_uring_ops.bt -c './target/release/arsync /src /dst -a'
+ *
+ * Output: Histogram of io_uring opcodes submitted
+ */
+
+BEGIN
+{
+    printf("Tracing io_uring operations... Hit Ctrl-C to end.\n\n");
+    
+    // Opcode names (from io_uring.h)
+    @opcode[0] = "NOP";
+    @opcode[1] = "READV";
+    @opcode[2] = "WRITEV";
+    @opcode[3] = "FSYNC";
+    @opcode[4] = "READ_FIXED";
+    @opcode[5] = "WRITE_FIXED";
+    @opcode[6] = "POLL_ADD";
+    @opcode[7] = "POLL_REMOVE";
+    @opcode[8] = "SYNC_FILE_RANGE";
+    @opcode[9] = "SENDMSG";
+    @opcode[10] = "RECVMSG";
+    @opcode[11] = "TIMEOUT";
+    @opcode[12] = "TIMEOUT_REMOVE";
+    @opcode[13] = "ACCEPT";
+    @opcode[14] = "ASYNC_CANCEL";
+    @opcode[15] = "LINK_TIMEOUT";
+    @opcode[16] = "CONNECT";
+    @opcode[17] = "FALLOCATE";
+    @opcode[18] = "OPENAT";
+    @opcode[19] = "CLOSE";
+    @opcode[20] = "FILES_UPDATE";
+    @opcode[21] = "STATX";
+    @opcode[22] = "READ";
+    @opcode[23] = "WRITE";
+    @opcode[24] = "FADVISE";
+    @opcode[25] = "MADVISE";
+    @opcode[26] = "SEND";
+    @opcode[27] = "RECV";
+    @opcode[28] = "OPENAT2";
+    @opcode[29] = "EPOLL_CTL";
+    @opcode[30] = "SPLICE";
+    @opcode[31] = "PROVIDE_BUFFERS";
+    @opcode[32] = "REMOVE_BUFFERS";
+    @opcode[33] = "TEE";
+    @opcode[34] = "SHUTDOWN";
+    @opcode[35] = "RENAMEAT";
+    @opcode[36] = "UNLINKAT";
+    @opcode[37] = "MKDIRAT";
+    @opcode[38] = "SYMLINKAT";
+    @opcode[39] = "LINKAT";
+    @opcode[40] = "MSG_RING";
+    @opcode[41] = "FSETXATTR";
+    @opcode[42] = "SETXATTR";
+    @opcode[43] = "FGETXATTR";
+    @opcode[44] = "GETXATTR";
+    @opcode[45] = "SOCKET";
+    @opcode[46] = "URING_CMD";
+}
+
+// Trace io_uring submission
+tracepoint:io_uring:io_uring_submit_sqe
+{
+    $opcode = args->opcode;
+    @ops[$opcode]++;
+    @op_names[@opcode[$opcode]]++;
+}
+
+END
+{
+    printf("\n=== io_uring Operations Submitted ===\n\n");
+    
+    printf("By opcode number:\n");
+    print(@ops);
+    printf("\n");
+    
+    printf("By operation name:\n");
+    print(@op_names);
+    printf("\n");
+    
+    printf("Total io_uring operations: %d\n", @total_ops);
+    
+    clear(@opcode);
+    clear(@ops);
+    clear(@op_names);
+}
+
