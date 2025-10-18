@@ -4,6 +4,7 @@
 //! and properly handles edge cases.
 
 #![allow(clippy::expect_used)] // expect() is idiomatic in tests
+#![allow(clippy::panic)] // panic!() is acceptable in tests for failure messages
 
 use arsync::cli::ParallelCopyConfig;
 use arsync::copy::copy_file;
