@@ -272,6 +272,7 @@ impl DirectoryFd {
     /// # }
     /// ```
     #[cfg(unix)]
+    #[allow(clippy::too_many_arguments)]
     pub async fn open_file_at(
         &self,
         pathname: &str,

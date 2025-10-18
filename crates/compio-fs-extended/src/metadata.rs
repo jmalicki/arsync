@@ -346,7 +346,7 @@ pub(crate) async fn statx_impl(dir: &DirectoryFd, pathname: &str) -> Result<File
 /// Handles timestamps before 1970 (negative tv_sec) correctly.
 #[cfg(target_os = "linux")]
 fn statx_ts_to_system_time(ts: &libc::statx_timestamp) -> SystemTime {
-    let nsec = ts.tv_nsec as u32;
+    let nsec = ts.tv_nsec;
     if ts.tv_sec >= 0 {
         SystemTime::UNIX_EPOCH + std::time::Duration::new(ts.tv_sec as u64, nsec)
     } else {
