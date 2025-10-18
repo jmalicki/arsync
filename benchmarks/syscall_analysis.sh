@@ -50,10 +50,10 @@ done
 echo "✓ Created $NUM_FILES files × ${FILE_SIZE_MB}MB = $((NUM_FILES * FILE_SIZE_MB))MB"
 echo ""
 
-# Run arsync with full syscall trace
+## Run arsync with full syscall trace
 echo "Running arsync with strace..."
-strace -c -f -o "$TRACE_SUMMARY" "$ARSYNC_BIN" "$TEST_DIR_SRC" "$TEST_DIR_DST" -a 2>&1 > /dev/null || true
-strace -e trace=all -f -o "$TRACE_RAW" "$ARSYNC_BIN" "$TEST_DIR_SRC" "$TEST_DIR_DST"2 -a 2>&1 > /dev/null || true
+strace -c -f -o "$TRACE_SUMMARY" "$ARSYNC_BIN" "$TEST_DIR_SRC" "$TEST_DIR_DST" -a > /dev/null 2>&1 || true
+strace -e trace=all -f -o "$TRACE_RAW" "$ARSYNC_BIN" "$TEST_DIR_SRC" "$TEST_DIR_DST"2 -a > /dev/null 2>&1 || true
 
 echo "✓ Trace captured"
 echo ""

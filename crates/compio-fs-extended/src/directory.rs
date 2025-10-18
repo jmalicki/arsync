@@ -306,6 +306,7 @@ impl DirectoryFd {
                 flags |= libc::O_TRUNC;
             }
             flags |= libc::O_CLOEXEC; // Always close-on-exec for safety
+            flags |= libc::O_NOFOLLOW; // Don't follow symlinks (TOCTOU hardening)
 
             // SAFETY: dir_fd is valid for the duration of this call
             let fd = unsafe { libc::openat(dir_fd, path_cstr.as_ptr(), flags, 0o644) };
@@ -540,12 +541,12 @@ pub async fn read_dir(path: &Path) -> Result<std::fs::ReadDir> {
     // 2. Allow future swap to io_uring if/when kernel adds GETDENTS64
     // 3. Keep app code (src/directory.rs) abstracted from implementation details
     let path_owned = path.to_path_buf();
-    compio::runtime::spawn(async move {
+    compio::runtime::spawn_blocking(move || {
         std::fs::read_dir(path_owned)
             .map_err(|e| directory_error(&format!("Failed to read directory: {}", e)))
     })
     .await
-    .map_err(|e| directory_error(&format!("spawn failed: {:?}", e)))?
+    .map_err(|e| directory_error(&format!("spawn_blocking failed: {:?}", e)))?
 }
 
 impl Clone for DirectoryFd {

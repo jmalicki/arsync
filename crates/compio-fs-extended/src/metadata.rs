@@ -254,7 +254,7 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
     // NOTE: Kernel doesn't have IORING_OP_FUTIMENS - using safe nix wrapper
     // futimens is FD-based, better than path-based utimensat (no TOCTOU)
     let fd = file.as_raw_fd();
-    let inner = compio::runtime::spawn(async move {
+    let inner = compio::runtime::spawn_blocking(move || {
         let atime = system_time_to_timespec(accessed)?;
         let mtime = system_time_to_timespec(modified)?;
 
@@ -313,22 +313,13 @@ pub(crate) async fn statx_impl(dir: &DirectoryFd, pathname: &str) -> Result<File
             #[allow(clippy::cast_lossless)]
             let dev = (statx_buf.stx_dev_major as u64) << 32 | (statx_buf.stx_dev_minor as u64);
 
-            // Extract nanosecond timestamps
-            let atime_secs = u64::try_from(statx_buf.stx_atime.tv_sec).unwrap_or(0);
-            let atime_nanos = statx_buf.stx_atime.tv_nsec;
-            let mtime_secs = u64::try_from(statx_buf.stx_mtime.tv_sec).unwrap_or(0);
-            let mtime_nanos = statx_buf.stx_mtime.tv_nsec;
-
-            let accessed =
-                SystemTime::UNIX_EPOCH + std::time::Duration::new(atime_secs, atime_nanos);
-            let modified =
-                SystemTime::UNIX_EPOCH + std::time::Duration::new(mtime_secs, mtime_nanos);
+            // Convert timestamps with pre-epoch handling
+            let accessed = statx_ts_to_system_time(&statx_buf.stx_atime);
+            let modified = statx_ts_to_system_time(&statx_buf.stx_mtime);
 
             // Birth time (creation time) - may not be available on all filesystems
             let created = if statx_buf.stx_mask & libc::STATX_BTIME != 0 {
-                let btime_secs = u64::try_from(statx_buf.stx_btime.tv_sec).unwrap_or(0);
-                let btime_nanos = statx_buf.stx_btime.tv_nsec;
-                Some(SystemTime::UNIX_EPOCH + std::time::Duration::new(btime_secs, btime_nanos))
+                Some(statx_ts_to_system_time(&statx_buf.stx_btime))
             } else {
                 None
             };
@@ -347,6 +338,23 @@ pub(crate) async fn statx_impl(dir: &DirectoryFd, pathname: &str) -> Result<File
             })
         }
         Err(e) => Err(metadata_error(&format!("statx failed: {}", e))),
+    }
+}
+
+/// Convert statx timestamp to SystemTime with pre-epoch support
+///
+/// Handles timestamps before 1970 (negative tv_sec) correctly.
+#[cfg(target_os = "linux")]
+fn statx_ts_to_system_time(ts: &libc::statx_timestamp) -> SystemTime {
+    let nsec = ts.tv_nsec as u32;
+    if ts.tv_sec >= 0 {
+        SystemTime::UNIX_EPOCH + std::time::Duration::new(ts.tv_sec as u64, nsec)
+    } else {
+        let secs = (-ts.tv_sec) as u64;
+        // Saturate: if subtraction underflows, clamp to UNIX_EPOCH
+        SystemTime::UNIX_EPOCH
+            .checked_sub(std::time::Duration::new(secs, nsec))
+            .unwrap_or(SystemTime::UNIX_EPOCH)
     }
 }
 

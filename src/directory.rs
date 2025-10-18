@@ -317,6 +317,8 @@ async fn traverse_and_copy_directory_iterative(
     parallel_config: &crate::cli::ParallelCopyConfig,
 ) -> Result<()> {
     // Create a dispatcher for async operations
+    // Using Box::leak for &'static lifetime - dispatcher lives for program duration
+    // This is intentional: the dispatcher manages worker threads and should not be dropped
     let dispatcher = Box::leak(Box::new(Dispatcher::new()?));
 
     // Create Arc-wrapped FileOperations and configs for safe sharing across async tasks
