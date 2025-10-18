@@ -1,0 +1,18 @@
+[package]
+name = "syscall-analyzer"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.90.0"
+authors = ["arsync developers"]
+description = "Syscall analysis tool for arsync benchmarking and CI"
+license = "MIT"
+
+[dependencies]
+anyhow = "1.0"
+chrono = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+regex = "1.10"
+
+[[bin]]
+name = "syscall-analyzer"
+path = "src/main.rs"

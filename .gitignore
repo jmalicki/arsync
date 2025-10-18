@@ -39,3 +39,4 @@ test_*.txt
 
 # Pre-commit
 .pre-commit-config.yaml.bak
+/benchmarks/target/
