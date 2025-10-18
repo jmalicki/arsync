@@ -59,7 +59,14 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const report = fs.readFileSync('/tmp/syscall-analysis-report.txt', 'utf8');
+            const reportPath = '/tmp/syscall-analysis-report.txt';
+            
+            if (!fs.existsSync(reportPath)) {
+              console.log('Report file not found - syscall analysis may have crashed early');
+              return;
+            }
+            
+            const report = fs.readFileSync(reportPath, 'utf8');
             
             github.rest.issues.createComment({
               issue_number: context.issue.number,

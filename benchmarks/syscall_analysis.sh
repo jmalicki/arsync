@@ -59,34 +59,40 @@ echo "✓ Trace captured"
 echo ""
 
 # Extract counts (use wc -l instead of grep -c to avoid multi-line output on failures)
-total_syscalls=$(grep -v "^---" "$TRACE_SUMMARY" | grep -v "^%" | grep -v "^$" | wc -l)
-statx_count=$(grep "statx" "$TRACE_RAW" | wc -l)
-openat_count=$(grep "openat" "$TRACE_RAW" | wc -l)
-io_uring_enter_count=$(grep "io_uring_enter" "$TRACE_RAW" | wc -l)
-io_uring_setup_count=$(grep "io_uring_setup" "$TRACE_RAW" | wc -l)
-fallocate_count=$(grep "^[0-9].*fallocate" "$TRACE_RAW" | wc -l)
-fchmod_count=$(grep "fchmod" "$TRACE_RAW" | wc -l)
-fchown_count=$(grep "fchown" "$TRACE_RAW" | wc -l)
-utimensat_count=$(grep "utimensat" "$TRACE_RAW" | wc -l)
+# Note: All these commands should not fail even if pattern not found (wc -l returns 0)
+total_syscalls=$(grep -v "^---" "$TRACE_SUMMARY" 2>/dev/null | grep -v "^%" | grep -v "^$" | wc -l || echo 0)
+statx_count=$(grep "statx" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+openat_count=$(grep "openat" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+io_uring_enter_count=$(grep "io_uring_enter" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+io_uring_setup_count=$(grep "io_uring_setup" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+fallocate_count=$(grep "^[0-9].*fallocate" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+fchmod_count=$(grep "fchmod" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+fchown_count=$(grep "fchown" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+utimensat_count=$(grep "utimensat" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
 
 # Count path-based vs FD-based operations
-statx_path_based=$(grep "statx(AT_FDCWD" "$TRACE_RAW" | grep -v '""' | wc -l)
-statx_fd_based=$(grep "statx([0-9]" "$TRACE_RAW" | wc -l)
-openat_path_based=$(grep 'openat(AT_FDCWD, "/' "$TRACE_RAW" | grep -vE "(/etc|/lib|/proc|/sys)" | wc -l)
-utimensat_fd_based=$(grep 'utimensat([0-9][0-9]*, NULL' "$TRACE_RAW" | wc -l)
-utimensat_path_based=$(grep 'utimensat(AT_FDCWD, "/' "$TRACE_RAW" | wc -l)
+statx_path_based=$(grep "statx(AT_FDCWD" "$TRACE_RAW" 2>/dev/null | grep -v '""' | wc -l || echo 0)
+statx_fd_based=$(grep "statx([0-9]" "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+openat_path_based=$(grep 'openat(AT_FDCWD, "/' "$TRACE_RAW" 2>/dev/null | grep -vE "(/etc|/lib|/proc|/sys)" | wc -l || echo 0)
+utimensat_fd_based=$(grep 'utimensat([0-9][0-9]*, NULL' "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
+utimensat_path_based=$(grep 'utimensat(AT_FDCWD, "/' "$TRACE_RAW" 2>/dev/null | wc -l || echo 0)
 
-# Calculate per-file averages
-statx_per_file=$(echo "scale=1; $statx_count / $NUM_FILES" | bc)
-openat_per_file=$(echo "scale=1; $openat_path_based / $NUM_FILES" | bc)
+# Calculate per-file averages (protect against division by zero)
+if [ "$NUM_FILES" -gt 0 ]; then
+    statx_per_file=$(echo "scale=1; $statx_count / $NUM_FILES" | bc 2>/dev/null || echo "0.0")
+    openat_per_file=$(echo "scale=1; $openat_path_based / $NUM_FILES" | bc 2>/dev/null || echo "0.0")
+else
+    statx_per_file="0.0"
+    openat_per_file="0.0"
+fi
 
 # Extract io_uring batching info
 # io_uring_enter(fd, to_submit, min_complete, ...) - 2nd param is number of ops submitted
-io_uring_batch_sizes=$(grep "io_uring_enter" "$TRACE_RAW" | sed 's/.*io_uring_enter([0-9]*, \([0-9]*\),.*/\1/' | grep -E '^[0-9]+$')
-io_uring_batch_1=$(echo "$io_uring_batch_sizes" | grep -c "^1$" || echo 0)
-io_uring_batch_2plus=$(echo "$io_uring_batch_sizes" | grep -v "^1$" | grep -v "^0$" | wc -l)
-io_uring_batch_max=$(echo "$io_uring_batch_sizes" | sort -n | tail -1)
-io_uring_batch_avg=$(echo "$io_uring_batch_sizes" | awk '{sum+=$1; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}')
+io_uring_batch_sizes=$(grep "io_uring_enter" "$TRACE_RAW" 2>/dev/null | sed 's/.*io_uring_enter([0-9]*, \([0-9]*\),.*/\1/' | grep -E '^[0-9]+$' || echo "")
+io_uring_batch_1=$(echo "$io_uring_batch_sizes" | grep -c "^1$" 2>/dev/null || echo 0)
+io_uring_batch_2plus=$(echo "$io_uring_batch_sizes" | grep -v "^1$" | grep -v "^0$" | wc -l 2>/dev/null || echo 0)
+io_uring_batch_max=$(echo "$io_uring_batch_sizes" | sort -n | tail -1 2>/dev/null || echo 0)
+io_uring_batch_avg=$(echo "$io_uring_batch_sizes" | awk '{sum+=$1; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}' 2>/dev/null || echo "0.0")
 
 # Generate report
 {
