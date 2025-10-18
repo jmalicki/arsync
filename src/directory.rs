@@ -518,6 +518,7 @@ async fn process_directory_entry_with_compio(
             hardlink_tracker,
             concurrency_controller,
             metadata_config,
+            dispatcher,
         )
         .await?;
     } else if extended_metadata.is_symlink() {
@@ -563,6 +564,7 @@ async fn process_file(
     hardlink_tracker: Arc<FilesystemTracker>,
     _concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
+    dispatcher: &'static Dispatcher,
 ) -> Result<()> {
     debug!(
         "Processing file: {} (link_count: {})",
@@ -593,7 +595,14 @@ async fn process_file(
             min_file_size_mb: 128,
             chunk_size_mb: 2,
         };
-        copy_file(&src_path, &dst_path, &metadata_config, &disabled_parallel).await?;
+        copy_file(
+            &src_path,
+            &dst_path,
+            &metadata_config,
+            &disabled_parallel,
+            Some(dispatcher),
+        )
+        .await?;
 
         stats.increment_files_copied();
         stats.increment_bytes_copied(metadata.len());
@@ -635,7 +644,14 @@ async fn process_file(
             min_file_size_mb: 128,
             chunk_size_mb: 2,
         };
-        copy_file(&src_path, &dst_path, &metadata_config, &disabled_parallel).await?;
+        copy_file(
+            &src_path,
+            &dst_path,
+            &metadata_config,
+            &disabled_parallel,
+            Some(dispatcher),
+        )
+        .await?;
 
         stats.increment_files_copied();
         stats.increment_bytes_copied(metadata.len());

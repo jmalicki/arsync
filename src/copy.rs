@@ -42,6 +42,7 @@
 use crate::cli::ParallelCopyConfig;
 use crate::error::{Result, SyncError};
 use crate::metadata::{get_precise_timestamps, preserve_file_metadata, MetadataConfig};
+use compio::dispatcher::Dispatcher;
 use compio::fs::{File, OpenOptions};
 use compio::io::{AsyncReadAt, AsyncWriteAt};
 use std::path::Path;
@@ -73,6 +74,7 @@ pub async fn copy_file(
     dst: &Path,
     metadata_config: &MetadataConfig,
     parallel_config: &ParallelCopyConfig,
+    dispatcher: Option<&'static Dispatcher>,
 ) -> Result<()> {
     // Get file size to decide whether to use parallel copy
     let file_size = compio::fs::metadata(src)
@@ -82,9 +84,17 @@ pub async fn copy_file(
 
     // Decide whether to use parallel copy
     if parallel_config.should_use_parallel(file_size) {
-        copy_read_write_parallel(src, dst, metadata_config, parallel_config, file_size).await
+        copy_read_write_parallel(
+            src,
+            dst,
+            metadata_config,
+            parallel_config,
+            file_size,
+            dispatcher,
+        )
+        .await
     } else {
-        copy_read_write(src, dst, metadata_config).await
+        copy_read_write(src, dst, metadata_config, parallel_config, file_size).await
     }
 }
 
@@ -125,7 +135,13 @@ pub async fn copy_file(
 /// }
 /// ```
 #[allow(clippy::future_not_send, clippy::too_many_lines)]
-async fn copy_read_write(src: &Path, dst: &Path, metadata_config: &MetadataConfig) -> Result<()> {
+async fn copy_read_write(
+    src: &Path,
+    dst: &Path,
+    metadata_config: &MetadataConfig,
+    _parallel_config: &ParallelCopyConfig,
+    _file_size: u64,
+) -> Result<()> {
     // Capture source timestamps BEFORE any reads to avoid atime/mtime drift
     let (src_accessed, src_modified) = get_precise_timestamps(src).await?;
 
@@ -307,12 +323,14 @@ async fn copy_read_write(src: &Path, dst: &Path, metadata_config: &MetadataConfi
 /// Returns `Ok(())` if the file was copied successfully, or `Err(SyncError)` if failed.
 #[allow(clippy::future_not_send)]
 #[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_arguments)]
 async fn copy_read_write_parallel(
     src: &Path,
     dst: &Path,
     metadata_config: &MetadataConfig,
     parallel_config: &ParallelCopyConfig,
     file_size: u64,
+    dispatcher: Option<&'static Dispatcher>,
 ) -> Result<()> {
     let max_depth = parallel_config.max_depth;
     let max_tasks = 1 << max_depth; // 2^max_depth
@@ -401,40 +419,102 @@ async fn copy_read_write_parallel(
     let num_tasks = 1 << max_depth; // 2^max_depth
     let region_size = file_size / num_tasks as u64;
 
-    let mut handles = Vec::with_capacity(num_tasks);
+    tracing::info!(
+        "PARALLEL COPY: {} tasks, {} MB per region, chunk={} KB, thread={:?}, multi-threaded={}",
+        num_tasks,
+        region_size / 1_048_576,
+        chunk_size / 1024,
+        std::thread::current().id(),
+        dispatcher.is_some()
+    );
 
-    for task_id in 0..num_tasks {
-        let start = task_id as u64 * region_size;
-        let end = if task_id == num_tasks - 1 {
-            file_size // Last task handles remainder
-        } else {
-            (task_id as u64 + 1) * region_size
-        };
+    // Use dispatcher if available, otherwise fall back to single-threaded async spawn
+    if let Some(dispatcher) = dispatcher {
+        // Multi-threaded: dispatch to worker threads
+        let mut receivers = Vec::with_capacity(num_tasks);
 
-        // Align to page boundaries (except first and last)
-        let start_aligned = if task_id > 0 {
-            align_to_page(start, HUGE_PAGE_SIZE)
-        } else {
-            start
-        };
+        for task_id in 0..num_tasks {
+            let start = task_id as u64 * region_size;
+            let end = if task_id == num_tasks - 1 {
+                file_size // Last task handles remainder
+            } else {
+                (task_id as u64 + 1) * region_size
+            };
 
-        // Clone file handles for this task
-        let src = src_file.clone();
-        let mut dst = dst_file.clone();
+            // Align to page boundaries (except first and last)
+            let start_aligned = if task_id > 0 {
+                align_to_page(start, HUGE_PAGE_SIZE)
+            } else {
+                start
+            };
 
-        // Spawn task using compio (matches pattern in directory.rs)
-        let handle = compio::runtime::spawn(async move {
-            copy_region_sequential(&src, &mut dst, start_aligned, end, chunk_size).await
-        });
+            // Clone file handles for this task
+            let src = src_file.clone();
+            let mut dst = dst_file.clone();
 
-        handles.push(handle);
-    }
+            // Dispatch to worker thread - each gets its own io_uring instance
+            let receiver = dispatcher
+                .dispatch(move || async move {
+                    copy_region_sequential(&src, &mut dst, start_aligned, end, chunk_size).await
+                })
+                .map_err(|e| {
+                    SyncError::CopyFailed(format!("Failed to dispatch parallel copy task: {e:?}"))
+                })?;
 
-    // 6. Wait for all tasks to complete
-    for (task_id, handle) in handles.into_iter().enumerate() {
-        handle
-            .await
-            .map_err(|e| SyncError::CopyFailed(format!("Task {task_id} join failed: {e:?}")))??;
+            receivers.push(receiver);
+        }
+
+        // Wait for all dispatched tasks
+        for (task_id, receiver) in receivers.into_iter().enumerate() {
+            receiver
+                .await
+                .map_err(|e| {
+                    SyncError::CopyFailed(format!("Task {task_id} channel failed: {e:?}"))
+                })?
+                .map_err(|e| {
+                    SyncError::CopyFailed(format!("Task {task_id} execution failed: {e:?}"))
+                })?;
+        }
+    } else {
+        // Single-threaded fallback: use compio::runtime::spawn
+        let mut handles = Vec::with_capacity(num_tasks);
+
+        for task_id in 0..num_tasks {
+            let start = task_id as u64 * region_size;
+            let end = if task_id == num_tasks - 1 {
+                file_size // Last task handles remainder
+            } else {
+                (task_id as u64 + 1) * region_size
+            };
+
+            // Align to page boundaries (except first and last)
+            let start_aligned = if task_id > 0 {
+                align_to_page(start, HUGE_PAGE_SIZE)
+            } else {
+                start
+            };
+
+            // Clone file handles for this task
+            let src = src_file.clone();
+            let mut dst = dst_file.clone();
+
+            // Spawn task on same thread (async concurrency, not parallelism)
+            let handle = compio::runtime::spawn(async move {
+                copy_region_sequential(&src, &mut dst, start_aligned, end, chunk_size).await
+            });
+
+            handles.push(handle);
+        }
+
+        // Wait for all spawned tasks
+        for (task_id, handle) in handles.into_iter().enumerate() {
+            handle
+                .await
+                .map_err(|e| SyncError::CopyFailed(format!("Task {task_id} join failed: {e:?}")))?
+                .map_err(|e| {
+                    SyncError::CopyFailed(format!("Task {task_id} execution failed: {e:?}"))
+                })?;
+        }
     }
 
     // 7. Sync all data to disk
@@ -478,6 +558,13 @@ async fn copy_region_sequential(
     end: u64,
     chunk_size: usize,
 ) -> Result<()> {
+    tracing::debug!(
+        "copy_region_sequential: start={} MB, end={} MB, thread={:?}",
+        start / 1_048_576,
+        end / 1_048_576,
+        std::thread::current().id()
+    );
+
     let mut buffer = vec![0u8; chunk_size];
     let mut offset = start;
 
@@ -618,6 +705,7 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
         )
         .await
         .unwrap();
@@ -669,6 +757,7 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
         )
         .await
         .unwrap();
@@ -770,6 +859,7 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
         )
         .await
         .unwrap();
@@ -825,6 +915,7 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
         )
         .await
         .unwrap();
@@ -889,6 +980,7 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
         )
         .await
         .unwrap();
@@ -923,6 +1015,7 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
         )
         .await
         .unwrap();
@@ -958,6 +1051,7 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
         )
         .await
         .unwrap();
