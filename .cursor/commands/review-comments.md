@@ -1,14 +1,20 @@
-# /coderabbit-review
+# /review-comments
 
-Read CodeRabbit AI review comments on the current PR and provide AI assistant's opinion on each suggestion **without changing any code**.
+Read and analyze ALL review comments on the current PR (from any reviewer: humans, CodeRabbit, bots) and provide AI assistant's opinion on each suggestion **without changing any code**.
 
 ```bash
-/coderabbit-review
+/review-comments
+```
+
+Optionally filter by reviewer:
+```bash
+/review-comments coderabbitai
+/review-comments @username
 ```
 
 This command should:
-1. **Fetch PR review comments** from CodeRabbit using GitHub API
-2. **Group comments by file** and organize by severity/category
+1. **Fetch all PR review comments** using GitHub API (from all reviewers by default)
+2. **Group comments by file and reviewer**
 3. **Provide opinion on each comment**:
    - Agree / Disagree / Neutral
    - Rationale for opinion
@@ -19,18 +25,19 @@ This command should:
 ## Output Format
 
 ```markdown
-## CodeRabbit Review Analysis
+## PR Review Analysis
 
 PR: #[number] - [title]
-Total Comments: [N]
-Categories: [list categories]
+Total Comments: [N] from [M] reviewers
+Reviewers: [list]
 
 ---
 
 ### [Filename]
 
 #### Comment 1: [Summary]
-**CodeRabbit says:** [suggestion]
+**Reviewer:** [@username or bot-name]
+**Comment:** [suggestion]
 **Location:** Lines [X-Y]
 
 **My Opinion:** [Agree/Disagree/Neutral]
@@ -73,16 +80,25 @@ Use GitHub API to fetch PR review comments:
 # Get current PR number
 PR_NUM=$(gh pr view --json number -q .number)
 
-# Get review comments from CodeRabbit
-gh api repos/jmalicki/arsync/pulls/$PR_NUM/comments \
-  --jq '.[] | select(.user.login == "coderabbitai") | {
-    path, line, body, created_at
+# Get ALL review comments (inline comments on code)
+gh api "repos/OWNER/REPO/pulls/$PR_NUM/comments" \
+  --jq '.[] | {
+    id, path, line, body, 
+    user: .user.login, 
+    created_at
   }'
 
-# Get review comments on specific commits
-gh pr view --json reviews --jq '.reviews[] | 
-  select(.author.login == "coderabbitai") | 
-  {state, body, submittedAt}'
+# Get review summaries (top-level review comments)
+gh pr view --json reviews --jq '.reviews[] | {
+  author: .author.login,
+  state,
+  body,
+  submittedAt
+}'
+
+# Filter by specific reviewer (optional):
+gh api "repos/OWNER/REPO/pulls/$PR_NUM/comments" \
+  --jq '.[] | select(.user.login == "coderabbitai[bot]") | ...'
 ```
 
 ## Analysis Guidelines
@@ -113,22 +129,23 @@ When providing opinion:
 
 ```bash
 # User runs:
-/coderabbit-review
+/review-comments
 
 # Agent output:
-## CodeRabbit Review Analysis
+## PR Review Analysis
 
 PR: #72 - Cross-platform support for compio-fs-extended
 
-Total Comments: 15
-Categories: Performance (3), Safety (5), Style (4), Documentation (3)
+Total Comments: 23 from 3 reviewers
+Reviewers: coderabbitai[bot] (20), @alice (2), @bob (1)
 
 ---
 
 ### crates/compio-fs-extended/src/xattr.rs
 
 #### Comment 1: Consider using const for XATTR_NOFOLLOW
-**CodeRabbit says:** "Define XATTR_NOFOLLOW as a module-level const instead of inline"
+**Reviewer:** coderabbitai[bot]
+**Comment:** "Define XATTR_NOFOLLOW as a module-level const instead of inline"
 **Location:** Lines 494-501
 
 **My Opinion:** Agree
@@ -144,7 +161,8 @@ Categories: Performance (3), Safety (5), Style (4), Documentation (3)
 ---
 
 #### Comment 2: Potential panic in CString::new()
-**CodeRabbit says:** "CString::new() can panic on interior nulls, handle error"
+**Reviewer:** coderabbitai[bot]
+**Comment:** "CString::new() can panic on interior nulls, handle error"
 **Location:** Line 388
 
 **My Opinion:** Disagree
