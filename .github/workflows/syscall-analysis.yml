@@ -35,6 +35,11 @@ jobs:
       - name: Build arsync (release)
         run: cargo build --release
       
+      - name: Build syscall-analyzer
+        run: |
+          cd benchmarks
+          cargo build --release
+      
       - name: Run syscall analysis
         run: |
           # Install strace if needed
