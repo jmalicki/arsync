@@ -1,7 +1,7 @@
 # 📊 Syscall Analysis Report
 
-**Date:** 2025-10-18 09:17:08 -07:00
-**Test:** 2 files × 3MB
+**Date:** 2025-10-18 09:21:03 -07:00
+**Test:** 3 files × 5MB
 **Binary:** `./target/release/arsync`
 
 ---
@@ -9,7 +9,7 @@
 ## 🔄 io_uring Usage
 
 - **io_uring_setup calls:** 129 (one per worker thread + main)
-- **io_uring_enter calls:** 1184
+- **io_uring_enter calls:** 1561
 
 ✅ **PASS:** Heavy io_uring usage
 
@@ -17,9 +17,9 @@
 
 | Metric | Value |
 |--------|-------|
-| Single-op submissions (batch=1) | 432 |
-| Multi-op submissions (batch≥2) | 2 |
-| Average batch size | 0.7 ops/submit |
+| Single-op submissions (batch=1) | 458 |
+| Multi-op submissions (batch≥2) | 170 |
+| Average batch size | 1.0 ops/submit |
 | Maximum batch size | 2 ops/submit |
 
 ⚠️  **WARNING:** Poor batching (avg≤1.5, mostly single-op submissions)
@@ -36,25 +36,28 @@
 
 Based on syscall patterns:
 
-- **io_uring_enter calls**: 1184 (operations submitted)
-- **Direct read() calls**: 168 (should be low)
-- **Direct write() calls**: 168 (should be low)
-- **Direct statx calls**: 9 (mixed with io_uring statx)
+- **io_uring_enter calls**: 1561 (operations submitted)
+- **File read() calls (FD≥100)**: 0 (should be 0 with io_uring)
+- **File write() calls (FD≥100)**: 0 (should be 0 with io_uring)
+- **pread/pwrite calls**: 0 (should use io_uring read_at/write_at)
+- **Direct statx calls**: 10 (some may be io_uring)
 
-⚠️  **High direct syscall counts** - may not be fully utilizing io_uring
+> Note: 174 read() and 174 write() calls on low FDs (eventfd/pipe for thread sync) excluded from file I/O counts
+
+✅ **EXCELLENT:** All file I/O via io_uring (no direct read/write syscalls)
 
 ## 📋 Metadata Operations
 
 | Metric | Count |
 |--------|-------|
-| Total statx calls | 9 |
-| Path-based (AT_FDCWD + path) | 9 |
+| Total statx calls | 10 |
+| Path-based (AT_FDCWD + path) | 10 |
 | FD-based (dirfd + filename) | 0 |
-| **Average per file** | **4.5** |
+| **Average per file** | **3.3** |
 
 ⚠️  **WARNING:** High path-based statx count (TOCTOU-vulnerable)
-- Expected: ≤4 (1-2 per file)
-- Got: 9 (~4.5 per file)
+- Expected: ≤6 (1-2 per file)
+- Got: 10 (~3.3 per file)
 
 ### Per-File Breakdown
 
@@ -64,6 +67,11 @@ Based on syscall patterns:
 - total mentions: 2
 
 **file2.bin:**
+- statx: 1
+- openat: 0
+- total mentions: 1
+
+**file3.bin:**
 - statx: 1
 - openat: 0
 - total mentions: 1
@@ -87,12 +95,12 @@ Based on syscall patterns:
 | Operation | Count |
 |-----------|-------|
 | fchmod (FD-based permissions) | 18 |
-| fchown (FD-based ownership) | 18 |
-| utimensat (total) | 17 |
-| └─ FD-based (fd, NULL, ...) | 9 |
+| fchown (FD-based ownership) | 20 |
+| utimensat (total) | 20 |
+| └─ FD-based (fd, NULL, ...) | 10 |
 | └─ Path-based (AT_FDCWD, path, ...) | 0 |
 
-✅ **EXCELLENT:** 52% FD-based timestamp preservation (TOCTOU-safe)
+✅ **EXCELLENT:** 50% FD-based timestamp preservation (TOCTOU-safe)
 
 ## 📁 Directory Creation
 
@@ -123,16 +131,11 @@ Based on syscall patterns:
 
 **Destination directory** (`/tmp/syscall-test-dst`):
 - fchmod: 18 (includes files)
-- fchown: 18 (includes files)
+- fchown: 20 (includes files)
 
 ## ⚠️  Unexpected/Legacy Syscalls
 
-**Found unexpected syscalls:**
-
-- `read()`: 68 calls (high count, should use io_uring)
-- `write()`: 68 calls (high count, should use io_uring)
-
-> These syscalls indicate potential performance or security issues.
+✅ **EXCELLENT:** No unexpected or legacy syscalls detected!
 
 ## 📊 All Syscalls (Complete Inventory)
 
@@ -141,29 +144,29 @@ Based on syscall patterns:
 
 | Syscall | Count | Category |
 |---------|-------|----------|
-| `io_uring_enter` | 524 | 🔄 io_uring |
-| `futex` | 350 | 🧵 Threading |
-| `read` | 168 | 📁 File I/O |
-| `write` | 168 | 📁 File I/O |
-| `clock_gettime` | 93 | 🔧 System |
-| `close` | 34 | 📁 File I/O |
-| `rt_sigprocmask` | 16 | 🚦 Signal |
-| `mprotect` | 15 | 💾 Memory |
-| `mmap` | 15 | 💾 Memory |
-| `sched_yield` | 14 | 🔧 System |
-| `sigaltstack` | 12 | 🚦 Signal |
+| `io_uring_enter` | 715 | 🔄 io_uring |
+| `futex` | 355 | 🧵 Threading |
+| `write` | 174 | 📁 File I/O |
+| `read` | 174 | 📁 File I/O |
+| `clock_gettime` | 96 | 🔧 System |
+| `close` | 36 | 📁 File I/O |
+| `mprotect` | 11 | 💾 Memory |
+| `sched_yield` | 11 | 🔧 System |
+| `statx` | 10 | 📁 File I/O |
+| `fchmod` | 10 | 📋 Metadata |
+| `utimensat` | 10 | 📋 Metadata |
 | `getdents64` | 10 | 📂 Directory |
-| `fchown` | 9 | 📋 Metadata |
-| `utimensat` | 9 | 📋 Metadata |
-| `fchmod` | 9 | 📋 Metadata |
-| `statx` | 9 | 📁 File I/O |
+| `fchown` | 10 | 📋 Metadata |
+| `mmap` | 9 | 💾 Memory |
+| `rt_sigprocmask` | 9 | 🚦 Signal |
+| `sigaltstack` | 8 | 🚦 Signal |
 | `munmap` | 6 | 💾 Memory |
-| `set_robust_list` | 5 | 🧵 Threading |
-| `clone3` | 5 | ⚙️  Process |
-| `rseq` | 5 | 🚦 Signal |
-| `sched_getaffinity` | 5 | 🔧 System |
-| `openat` | 4 | 📁 File I/O |
 | `fstat` | 4 | 📋 Metadata |
+| `openat` | 4 | 📁 File I/O |
+| `rseq` | 3 | 🚦 Signal |
+| `clone3` | 3 | ⚙️  Process |
+| `set_robust_list` | 3 | 🧵 Threading |
+| `sched_getaffinity` | 3 | 🔧 System |
 | `exit_group` | 1 | ⚙️  Process |
 
 </details>
@@ -176,7 +179,7 @@ Based on syscall patterns:
 
 ## 💡 Recommendations
 
-- **Reduce redundant statx calls** (currently ~4.5 per file)
+- **Reduce redundant statx calls** (currently ~3.3 per file)
 - Target: 1 statx per file via `DirectoryFd::statx()`
 
 - **Use dirfd-relative operations** instead of `AT_FDCWD` + absolute paths
@@ -189,13 +192,13 @@ Based on syscall patterns:
 
 | Operation | Count | Target | Status |
 |-----------|-------|--------|--------|
-| io_uring_enter | 1184 | >100 | ✅ PASS |
-| statx (total) | 9 | <4 | ⚠️  WARN |
-| statx (path-based) | 9 | =0 | ⚠️  WARN |
-| openat (user files) | 0 | <8 | ✅ PASS |
+| io_uring_enter | 1561 | >100 | ✅ PASS |
+| statx (total) | 10 | <6 | ⚠️  WARN |
+| statx (path-based) | 10 | =0 | ⚠️  WARN |
+| openat (user files) | 0 | <12 | ✅ PASS |
 | fallocate (direct) | 0 | =0 | ✅ PASS |
 | utimensat (path-based) | 0 | =0 | ✅ PASS |
-| utimensat (FD-based) | 9 | =2 | ⚠️  WARN |
+| utimensat (FD-based) | 10 | =3 | ⚠️  WARN |
 
 
 ---

@@ -385,17 +385,24 @@ fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
     stats.creat_total = content_to_analyze.matches("creat(").count();
 
     // Count synchronous read/write for FILE I/O only (not eventfd/pipe/socket)
-    // Eventfd reads/writes are 8-byte operations for thread synchronization
-    let read_file_re = Regex::new(r"read\(\d{3,},").unwrap(); // FD >= 100 (likely real files)
-    let write_file_re = Regex::new(r"write\(\d{3,},").unwrap(); // FD >= 100 (likely real files)
+    // Eventfd operations are exactly 8 bytes: "\1\0\0\0\0\0\0\0" or similar
+    // Exclude these as they're for thread synchronization, not file I/O
+    let read_re = Regex::new(r"read\(\d+,").unwrap();
+    let write_re = Regex::new(r"write\(\d+,").unwrap();
 
     for line in content_to_analyze.lines() {
-        // Only count read/write on high FD numbers (>= 100) which are likely actual files
-        // Low FDs (< 100) are eventfds, pipes, sockets for thread/process communication
-        if read_file_re.is_match(line) {
+        // Skip unfinished/resumed lines (incomplete trace entries)
+        if line.contains("<unfinished") || line.contains("<... ") {
+            continue;
+        }
+
+        // Exclude 8-byte operations (eventfd/pipe synchronization)
+        let is_8_byte = line.contains(", 8)") || line.contains("\\1\\0\\0\\0\\0\\0\\0\\0");
+
+        if read_re.is_match(line) && !is_8_byte {
             stats.read_total += 1;
         }
-        if write_file_re.is_match(line) {
+        if write_re.is_match(line) && !is_8_byte {
             stats.write_total += 1;
         }
     }
@@ -637,28 +644,44 @@ fn add_io_uring_operations_section(report: &mut String, stats: &SyscallStats) {
             stats.io_uring_enter
         ));
         report.push_str(&format!(
-            "- **Direct read() calls**: {} (should be low)\n",
-            stats.all_syscalls.get("read").unwrap_or(&0)
+            "- **File read() calls (FD≥100)**: {} (should be 0 with io_uring)\n",
+            stats.read_total
         ));
         report.push_str(&format!(
-            "- **Direct write() calls**: {} (should be low)\n",
-            stats.all_syscalls.get("write").unwrap_or(&0)
+            "- **File write() calls (FD≥100)**: {} (should be 0 with io_uring)\n",
+            stats.write_total
         ));
         report.push_str(&format!(
-            "- **Direct statx calls**: {} (mixed with io_uring statx)\n\n",
+            "- **pread/pwrite calls**: {} (should use io_uring read_at/write_at)\n",
+            stats.pread_total + stats.pwrite_total
+        ));
+        report.push_str(&format!(
+            "- **Direct statx calls**: {} (some may be io_uring)\n\n",
             stats.statx_total
         ));
 
-        if stats.io_uring_enter > 100 {
-            let read_count = *stats.all_syscalls.get("read").unwrap_or(&0);
-            let write_count = *stats.all_syscalls.get("write").unwrap_or(&0);
-            if read_count < 100 && write_count < 100 {
-                report.push_str("✅ **Likely using io_uring** for most file I/O (low direct syscall counts)\n\n");
-            } else {
-                report.push_str(
-                    "⚠️  **High direct syscall counts** - may not be fully utilizing io_uring\n\n",
-                );
-            }
+        // Note about low-FD operations
+        let total_read = *stats.all_syscalls.get("read").unwrap_or(&0);
+        let total_write = *stats.all_syscalls.get("write").unwrap_or(&0);
+        if total_read > stats.read_total || total_write > stats.write_total {
+            report.push_str(&format!(
+                "> Note: {} read() and {} write() calls on low FDs (eventfd/pipe for thread sync) excluded from file I/O counts\n\n",
+                total_read - stats.read_total,
+                total_write - stats.write_total
+            ));
+        }
+
+        if stats.read_total == 0
+            && stats.write_total == 0
+            && stats.pread_total + stats.pwrite_total == 0
+        {
+            report.push_str(
+                "✅ **EXCELLENT:** All file I/O via io_uring (no direct read/write syscalls)\n\n",
+            );
+        } else if stats.read_total < 10 && stats.write_total < 10 {
+            report.push_str("✅ **GOOD:** Minimal direct file I/O syscalls\n\n");
+        } else {
+            report.push_str("⚠️  **WARNING:** High direct file I/O syscalls detected\n\n");
         }
     }
 }
