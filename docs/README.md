@@ -1,126 +1,78 @@
 # Documentation Index
 
-This directory contains all project documentation organized **project-first** for better integration with Cursor slash commands.
+Welcome to the arsync documentation! This guide helps you find the right documentation for your needs.
 
-## Directory Structure
+## 📖 Getting Started
 
-### 📦 `projects/` - **Internal development documentation only**
+- [Main README](../README.md) - Project overview, feature comparison, and quick start
+- [Developer Guide](DEVELOPER.md) - Development setup, coding standards, and contribution guidelines
+- [Benchmark Quick Start](BENCHMARK_QUICK_START.md) - How to run performance benchmarks
+- [Changelog](CHANGELOG.md) - Version history and release notes
 
-Each project contains its related design docs, plans, and analyses bundled together. **This is for development/internal use only, not user-facing documentation.**
+## 🔧 Development
 
-```
-docs/projects/PROJECT_NAME/
-  ├── design.md           # Design document (created with /design)
-  ├── plan.md             # Implementation plan (created with /plan)
-  ├── analysis-*.md       # Analysis documents
-  ├── design-*.md         # Additional designs
-  └── README.md           # Project overview
-```
+Documentation for contributors and maintainers:
 
-**Current Projects:**
-- `main-arsync/` - Main project implementation and testing
-- `benchmarking/` - Benchmarking infrastructure
-- `cli-refactor/` - CLI architecture refactoring
-- `ci/` - CI/CD improvements
-- `compio-fs-extended/` - Advanced async filesystem library
-- `compio-metadata-bug/` - Metadata bug investigation
-- `semaphore/` - Semaphore concurrency control
+- [Codebase Analysis](development/CODEBASE_ANALYSIS.md) - Architecture overview and code structure
+- [Known Bugs](development/KNOWN_BUGS.md) - Current issues and workarounds
+- [Refactoring Summary](development/REFACTORING_SUMMARY.md) - History of major refactorings
+- [Remaining Improvements](development/REMAINING_IMPROVEMENTS.md) - Future work and roadmap
 
-See `projects/README.md` for detailed project listing.
+## 📋 Implementation Details
 
-### 🏴‍☠️ `pirate/`
-**Pirate-themed user documentation**
+Technical implementation plans and designs:
 
-Fun pirate translations of user-facing docs.
+- [Implementation Plan](implementation/IMPLEMENTATION_PLAN.md) - Overall project implementation roadmap
+- [Adaptive Concurrency](implementation/ADAPTIVE_CONCURRENCY_IMPLEMENTATION.md) - Dynamic concurrency tuning design
+- [Benchmark Implementation](implementation/BENCHMARK_IMPLEMENTATION_PLAN.md) - Benchmark suite design
+- [CI Optimization](implementation/CI_OPTIMIZATION_ANALYSIS.md) - Continuous integration optimization
 
-## Root-Level Documents (User-Facing & Reference)
+## ✨ Features
 
-All user-facing documentation stays in `docs/` root, NOT in `projects/`.
+Feature-specific documentation:
 
-### User-Facing Guides
-- `BENCHMARK_QUICK_START.md` - How to run benchmarks
-- `CHANGELOG.md` - Version history and changes
-- `RSYNC_COMPARISON.md` - Comparison with rsync
+- [Pirate Translation](features/PIRATE_FEATURE_SUMMARY.md) - Internationalization and pirate mode
+- [Pirate Translation Guide](PIRATE_TRANSLATION.md) - How the pirate translation works
+- [Pirate Art Prompts](PIRATE_ART_PROMPTS.md) - Prompts used to generate pirate artwork
 
-### Developer Reference
-- `DEVELOPER.md` - Development guide and workflow
-- `DOCUMENTATION_STANDARDS.md` - Doc writing standards
-- `INDUSTRY_STANDARDS.md` - Industry best practices reference
+## 🏴‍☠️ Pirate Edition
 
-### Technical Reference
-- `NVME_ARCHITECTURE.md` - NVMe architecture reference
-- `POWER_MEASUREMENT.md` - Power measurement guide
-- `LINUX_KERNEL_CONTRIBUTIONS.md` - Kernel contribution guide
+Arrr! Documentation in pirate speak:
 
-### Specialized
-- `PIRATE_ART_PROMPTS.md` - AI art generation prompts
-- `PIRATE_TRANSLATION.md` - Pirate translation guide
+- [Pirate README](pirate/) - Full documentation translated to pirate speak
 
-## Workflow Integration
+## 🔬 Technical Deep Dives
 
-### Creating New Documentation
+In-depth technical documentation:
 
-1. **Design a feature**:
-   ```bash
-   /design "feature-name"
-   # Creates: docs/projects/feature-name/design.md
-   ```
+- [NVMe Architecture](NVME_ARCHITECTURE.md) - Why NVMe needs io_uring
+- [rsync Comparison](RSYNC_COMPARISON.md) - Detailed feature comparison
+- [Industry Standards](INDUSTRY_STANDARDS.md) - Standards and best practices
+- [Linux Kernel Contributions](LINUX_KERNEL_CONTRIBUTIONS.md) - Upstream contribution guidelines
+- [Power Measurement](POWER_MEASUREMENT.md) - Energy efficiency benchmarking
+- [Documentation Standards](DOCUMENTATION_STANDARDS.md) - How we write documentation
 
-2. **Plan implementation**:
-   ```bash
-   /plan
-   # Auto-finds design in project folder
-   # Creates: docs/projects/feature-name/plan.md
-   ```
+## 📊 Historical Records
 
-3. **Execute the plan**:
-   ```bash
-   /implement
-   # Auto-finds plan in project folder
-   # Executes: docs/projects/feature-name/plan.md
-   ```
+Past pull requests and development history:
 
-4. **If issues arise**:
-   ```bash
-   /debug "issue description"
-   # May create: docs/projects/feature-name/analysis-issue.md
-   ```
+- [PR Archive](pr-archive/) - Historical pull request documentation and metadata
 
-### Document Lifecycle
+## 🤝 Contributing
 
-```
-Idea/Discussion
-    ↓
-docs/projects/feature-name/design.md    ← /design
-    ↓
-docs/projects/feature-name/plan.md      ← /plan (auto-finds design.md)
-    ↓
-Implementation                           ← /implement (auto-finds plan.md)
-    ↓
-(if issues)
-docs/projects/feature-name/analysis.md  ← /debug
-```
+Want to contribute? Start here:
 
-## Naming Conventions
+1. Read the [Developer Guide](DEVELOPER.md)
+2. Check [Known Bugs](development/KNOWN_BUGS.md) and [Remaining Improvements](development/REMAINING_IMPROVEMENTS.md)
+3. Review the [Implementation Plan](implementation/IMPLEMENTATION_PLAN.md)
+4. Follow our [Documentation Standards](DOCUMENTATION_STANDARDS.md)
 
-### Internal Development Docs (projects/)
-- **Projects**: `project-name/` directory (kebab-case)
-- **Within projects**:
-  - `design.md` - Main design document
-  - `plan.md` - Main implementation plan
-  - `analysis.md` or `analysis-TOPIC.md` - Analysis documents
-  - `design-ASPECT.md` - Additional designs
-  - `plan-ASPECT.md` - Additional plans
-  - `README.md` - Project overview
+## 📚 Projects
 
-### User-Facing Docs (docs/ root)
-- Clear, descriptive names (SCREAMING_SNAKE_CASE for compatibility)
-- Examples: `BENCHMARK_QUICK_START.md`, `CHANGELOG.md`
-- Should be easily discoverable by end users
+Detailed project-specific documentation:
 
-## See Also
+- [projects/](projects/) - Per-project design documents and status updates
 
-- `.cursor/commands/README.md` - All available slash commands
-- `DEVELOPER.md` - Development workflow guide
-- `DOCUMENTATION_STANDARDS.md` - Writing standards
+---
 
+**Note:** This documentation is organized to help you find information quickly. If you're lost, start with the [Main README](../README.md) or [Developer Guide](DEVELOPER.md).

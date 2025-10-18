@@ -29,6 +29,7 @@ Thumbs.db
 # Test artifacts
 /test-data/
 /benchmark-results/
+/benchmark-results-*/
 /coverage/
 test_*.txt
 *.test

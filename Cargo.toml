@@ -21,6 +21,33 @@ path = "src/main.rs"
 [workspace]
 members = ["crates/compio-fs-extended"]
 
+# Workspace-wide lints configuration (replaces clippy.toml)
+# This enforces high documentation and code quality standards
+[workspace.lints.clippy]
+# Complexity and code quality lints
+too-many-arguments = "warn"
+too-many-lines = "warn"
+many-single-char-names = "warn"
+
+# Correctness and best practices
+unwrap-used = "warn"
+expect-used = "warn"
+panic = "warn"
+
+# Documentation
+missing-docs-in-private-items = "allow"
+missing-errors-doc = "warn"
+missing-panics-doc = "warn"
+
+# Note: The following settings from clippy.toml cannot be directly migrated to [lints]:
+# - doc-valid-idents, disallowed-names, disallowed-types, disallowed-methods
+# - allow-unwrap-in-tests, allow-expect-in-tests
+# These still require a clippy.toml file if needed, or use #[allow] attributes in code
+
+# Apply workspace lints to the main package
+[lints]
+workspace = true
+
 [dependencies]
 # Core async runtime
 compio = { version = "0.16", features = ["macros", "dispatcher", "process"] }

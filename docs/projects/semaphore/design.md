@@ -200,6 +200,6 @@ Location: `tests/performance_metadata_tests.rs`
 
 ### Related Documents
 
-- [`IMPLEMENTATION_PLAN.md`](../IMPLEMENTATION_PLAN.md) - Overall project plan
+- [`IMPLEMENTATION_PLAN.md`](../implementation/IMPLEMENTATION_PLAN.md) - Overall project plan
 - [`crates/compio-sync/README.md`](../crates/compio-sync/README.md) - compio-sync crate documentation
 - [`TESTING_STRATEGY.md`](../TESTING_STRATEGY.md) - Comprehensive testing approach

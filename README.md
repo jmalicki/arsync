@@ -11,7 +11,7 @@ High-performance async file copying for Linux - a modern rsync alternative built
 [![CI](https://github.com/jmalicki/arsync/workflows/CI/badge.svg)](https://github.com/jmalicki/arsync/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-📚 **Documentation**: [Developer Guide](docs/DEVELOPER.md) • [Implementation Plan](docs/IMPLEMENTATION_PLAN.md) • [Testing Strategy](docs/TESTING_STRATEGY.md)
+📚 **Documentation**: [Developer Guide](docs/DEVELOPER.md) • [Implementation Plan](docs/implementation/IMPLEMENTATION_PLAN.md)
 
 ---
 
