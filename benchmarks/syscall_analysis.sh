@@ -297,7 +297,8 @@ io_uring_batch_avg=$(echo "$io_uring_batch_sizes" | awk '{sum+=$1; count++} END 
     
 } | tee "$REPORT"
 
-# Show summary table
+# Show summary table (disable errexit for conditional checks)
+set +e
 echo ""
 echo "=== Quick Reference Table ==="
 echo "+-------------------------+--------+--------+---------+"
@@ -326,6 +327,7 @@ printf "| %-23s | %6d | %6s | " "utimensat (FD-based)" "$utimensat_fd_based" "=$
 
 echo "+-------------------------+--------+--------+---------+"
 echo ""
+set -e
 
 echo "Report saved to: $REPORT"
 
