@@ -1,0 +1,76 @@
+name: Syscall Analysis
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  syscall-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-syscall-${{ hashFiles('**/Cargo.lock') }}
+      
+      - name: Build arsync (release)
+        run: cargo build --release
+      
+      - name: Run syscall analysis
+        run: |
+          # Install strace if needed
+          sudo apt-get update && sudo apt-get install -y strace bc
+          
+          # Run analysis
+          ./benchmarks/syscall_analysis.sh /tmp/test-src /tmp/test-dst 5 10
+        continue-on-error: true
+        id: syscall_check
+      
+      - name: Upload syscall report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: syscall-analysis-report
+          path: /tmp/syscall-analysis-report.txt
+          retention-days: 30
+      
+      - name: Comment on PR (if warnings/failures)
+        if: github.event_name == 'pull_request' && steps.syscall_check.outcome != 'success'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('/tmp/syscall-analysis-report.txt', 'utf8');
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Syscall Analysis Report\n\n\`\`\`\n${report}\n\`\`\``
+            });
+      
+      - name: Fail if critical issues
+        if: steps.syscall_check.outcome == 'failure'
+        run: |
+          echo "❌ Syscall analysis detected critical issues"
+          exit 1
+
