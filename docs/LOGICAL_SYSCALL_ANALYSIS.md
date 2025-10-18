@@ -252,15 +252,15 @@ Bytes/io_uring_op:   1,952 bytes
 4. futimens(fd, times)                                    ✅ FD-based
 ```
 
-**I/O (5,122 logical syscalls):**
+**I/O (5,121-5,122 logical syscalls):**
 ```
  1. FALLOCATE(fd, 0, 10485760) via io_uring              ✅ Preallocate
  2-2561. READ(fd, 4096 bytes) × 2,560 via io_uring       ✅ Async reads
  2562-5121. WRITE(fd, 4096 bytes) × 2,560 via io_uring   ✅ Async writes
- 5122. FSYNC(fd) via io_uring                             ✅ Async flush
+ 5122. FSYNC(fd) via io_uring (OPTIONAL with --fsync)    ⚙️  User choice
 ```
 
-**Total: 5,126 logical syscalls**
+**Total: 5,125-5,126 logical syscalls** (5,125 default, 5,126 with --fsync)
 - Direct syscalls: 3 (0.06%)
 - io_uring operations: 5,123 (99.94%)
 
