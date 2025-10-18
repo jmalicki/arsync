@@ -495,21 +495,23 @@ Expected performance on modern NVMe:
 ## Example Usage
 
 ```bash
-# Enable parallel copy with defaults (128MB threshold, depth 2 = 4 tasks)
-arsync --enabled /source /dest
+# Enable with 4 parallel tasks (depth 2)
+arsync --parallel-max-depth 2 /source /dest
 
-# Customize parameters
-arsync --enabled \
-       --min-file-size-mb 256 \    # 256 MB minimum
-       --max-depth 3 \              # 2^3 = 8 parallel tasks max
-       --chunk-size-mb 4 \          # 4 MB chunks
+# Customize all parameters
+arsync --parallel-max-depth 3 \              # 2^3 = 8 parallel tasks
+       --parallel-min-size-mb 256 \          # 256 MB minimum file size
+       --parallel-chunk-size-mb 4 \          # 4 MB chunks
        /source /dest
 
 # More aggressive (16 tasks for very large files)
-arsync --enabled --max-depth 4 /source /dest
+arsync --parallel-max-depth 4 /source /dest
 
 # View which files were copied in parallel (with verbose logging)
-arsync --enabled -vv /source /dest
+arsync --parallel-max-depth 2 -vv /source /dest
+
+# Disabled by default (max-depth defaults to 0)
+arsync /source /dest  # Sequential copy only
 ```
 
 ## Metrics and Observability
