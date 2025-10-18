@@ -231,10 +231,9 @@ async fn test_no_region_overlap() {
 /// Benchmark helper: Test page alignment function
 #[test]
 fn test_align_to_page() {
-    // This would test the align_to_page function if it were pub
-    // For now, we test it indirectly through parallel copy behavior
-    assert!(
-        true,
-        "Page alignment tested indirectly through parallel copy"
-    );
+    // This tests the align_to_page function indirectly through parallel copy behavior
+    // The function is private but tested via test_no_region_overlap and
+    // test_parallel_copy_data_integrity_large_file which verify correct alignment
+
+    // Placeholder test - real testing done in integration tests above
 }

@@ -34,6 +34,7 @@ async fn test_permission_preservation() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
     )
     .await
     .unwrap();
@@ -78,6 +79,7 @@ async fn test_timestamp_preservation() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
     )
     .await
     .unwrap();

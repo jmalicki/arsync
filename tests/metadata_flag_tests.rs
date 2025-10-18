@@ -62,6 +62,7 @@ async fn test_permissions_not_preserved_when_flag_off() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
     )
     .await
     .unwrap();
@@ -107,6 +108,7 @@ async fn test_permissions_preserved_when_flag_on() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
     )
     .await
     .unwrap();
@@ -153,6 +155,7 @@ async fn test_timestamps_not_preserved_when_flag_off() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
     )
     .await
     .unwrap();
@@ -199,6 +202,7 @@ async fn test_timestamps_preserved_when_flag_on() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
     )
     .await
     .unwrap();
@@ -254,6 +258,7 @@ async fn test_archive_mode_preserves_all_metadata() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
     )
     .await
     .unwrap();
@@ -395,6 +400,7 @@ async fn test_individual_flags_match_archive_components() {
         &dst_path1_perms,
         &args_perms.metadata,
         &common::disabled_parallel_config(),
+        None,
     )
     .await
     .unwrap();
@@ -406,6 +412,7 @@ async fn test_individual_flags_match_archive_components() {
         &dst_path1_archive,
         &args_archive.metadata,
         &common::disabled_parallel_config(),
+        None,
     )
     .await
     .unwrap();
