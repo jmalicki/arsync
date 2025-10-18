@@ -24,7 +24,7 @@ ARSYNC_BIN="${5:-./target/release/arsync}"
 # Output files
 TRACE_RAW="/tmp/syscall-analysis-raw.txt"
 TRACE_SUMMARY="/tmp/syscall-analysis-summary.txt"
-REPORT="/tmp/syscall-analysis-report.txt"
+REPORT="/tmp/syscall-analysis-report.md"
 
 # Exit codes
 EXIT_SUCCESS=0
@@ -94,41 +94,51 @@ io_uring_batch_2plus=$(echo "$io_uring_batch_sizes" | grep -v "^1$" | grep -v "^
 io_uring_batch_max=$(echo "$io_uring_batch_sizes" | sort -n | tail -1 2>/dev/null || echo 0)
 io_uring_batch_avg=$(echo "$io_uring_batch_sizes" | awk '{sum+=$1; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}' 2>/dev/null || echo "0.0")
 
-# Generate report
+# Generate markdown report
 {
-    echo "============================================"
-    echo "arsync Syscall Analysis Report"
-    echo "============================================"
-    echo "Date: $(date)"
-    echo "Test: $NUM_FILES files × ${FILE_SIZE_MB}MB"
-    echo "Binary: $ARSYNC_BIN"
-    echo ""
-    
-    echo "--- IO_URING USAGE ---"
-    echo "io_uring_setup calls: $io_uring_setup_count (one per worker thread + main)"
-    echo "io_uring_enter calls: $io_uring_enter_count"
+    cat <<EOF
+# 📊 Syscall Analysis Report
+
+**Date:** $(date)  
+**Test:** $NUM_FILES files × ${FILE_SIZE_MB}MB  
+**Binary:** \`$ARSYNC_BIN\`
+
+---
+
+## 🔄 io_uring Usage
+
+- **io_uring_setup calls:** $io_uring_setup_count (one per worker thread + main)
+- **io_uring_enter calls:** $io_uring_enter_count
+
+EOF
     
     if [ "$io_uring_enter_count" -gt 100 ]; then
-        echo "  ✅ PASS: Heavy io_uring usage"
+        echo "✅ **PASS:** Heavy io_uring usage"
     else
-        echo "  ❌ FAIL: Low io_uring usage (expected >100 for ${NUM_FILES} files)"
+        echo "❌ **FAIL:** Low io_uring usage (expected >100 for ${NUM_FILES} files)"
         exit_code=$EXIT_FAILURE
     fi
     
-    echo ""
-    echo "io_uring batching efficiency:"
-    echo "  Single-op submissions (batch=1): $io_uring_batch_1"
-    echo "  Multi-op submissions (batch≥2): $io_uring_batch_2plus"
-    echo "  Average batch size: $io_uring_batch_avg ops/submit"
-    echo "  Maximum batch size: $io_uring_batch_max ops/submit"
+    cat <<EOF
+
+### Batching Efficiency
+
+| Metric | Value |
+|--------|-------|
+| Single-op submissions (batch=1) | $io_uring_batch_1 |
+| Multi-op submissions (batch≥2) | $io_uring_batch_2plus |
+| Average batch size | $io_uring_batch_avg ops/submit |
+| Maximum batch size | $io_uring_batch_max ops/submit |
+
+EOF
     
     if [ "$io_uring_batch_avg" = "1.0" ] || [ "${io_uring_batch_avg%.*}" -eq 1 ] 2>/dev/null; then
-        echo "  ⚠️  WARNING: Poor batching (avg=1.0, mostly single-op submissions)"
-        echo "             Better batching could reduce syscall overhead"
+        echo "⚠️  **WARNING:** Poor batching (avg=1.0, mostly single-op submissions)  "
+        echo "> Better batching could reduce syscall overhead"
     elif [ "${io_uring_batch_avg%.*}" -ge 3 ] 2>/dev/null; then
-        echo "  ✅ EXCELLENT: Good batching (avg≥3 ops/submit)"
+        echo "✅ **EXCELLENT:** Good batching (avg≥3 ops/submit)"
     else
-        echo "  ✅ GOOD: Decent batching (avg>1 ops/submit)"
+        echo "✅ **GOOD:** Decent batching (avg>1 ops/submit)"
     fi
     echo ""
     
