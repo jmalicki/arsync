@@ -27,7 +27,7 @@
 ### Data Integrity
 
 ✅ **All checksums match perfectly**
-```
+```text
 470baec2840a852adaa65887b3e990fc62e30ab8578b0c5898cd79f5aa6fb58b (source)
 470baec2840a852adaa65887b3e990fc62e30ab8578b0c5898cd79f5aa6fb58b (rsync copy)
 470baec2840a852adaa65887b3e990fc62e30ab8578b0c5898cd79f5aa6fb58b (arsync sequential)
