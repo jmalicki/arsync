@@ -2,6 +2,8 @@
 //!
 //! Tests for symlink chains, directory symlinks, and dereferencing behavior.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::fs;
 use std::path::Path;
 use tempfile::TempDir;
