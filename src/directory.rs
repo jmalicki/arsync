@@ -615,8 +615,14 @@ async fn process_directory_entry_with_compio(
             // Copy symlink as symlink (preserve target)
             process_symlink(src_path, dst_path, stats).await?;
         } else {
-            // Follow symlink and copy target as regular file
-            // Read the target and get its metadata
+            // Dereference symlink: recursively process the target
+            // This handles files, directories, and even chains of symlinks correctly
+            warn!(
+                "Dereferencing symlink (will copy target): {}",
+                src_path.display()
+            );
+
+            // Read symlink target
             let target = std::fs::read_link(&src_path).map_err(|e| {
                 SyncError::FileSystem(format!(
                     "Failed to read symlink {}: {}",
@@ -640,32 +646,35 @@ async fn process_directory_entry_with_compio(
                     .join(target)
             };
 
-            // Get target metadata and process as file
-            let target_metadata = ExtendedMetadata::new(&target_path).await?;
-            if target_metadata.is_file() {
-                process_file(
-                    target_path,
-                    dst_path,
-                    target_metadata,
-                    file_ops,
-                    _copy_method,
-                    stats,
-                    hardlink_tracker,
-                    concurrency_controller,
-                    metadata_config,
-                    parallel_config,
-                    dispatcher,
-                )
-                .await?;
-            } else if target_metadata.is_dir() {
-                // Recursively copy the directory that the symlink points to
-                warn!(
-                    "Symlink points to directory (dereferencing): {}",
-                    src_path.display()
-                );
-                // Process as directory...
-                // For now, just skip it to avoid infinite loops
-            }
+            // Recursively process the target (handles files, dirs, and symlink chains)
+            // Note: We lose the parent DirectoryFd context here (target may be elsewhere)
+            // Use dispatcher to avoid recursive async function issues
+            let receiver = dispatcher
+                .dispatch(move || {
+                    process_directory_entry_with_compio(
+                        dispatcher,
+                        target_path,
+                        dst_path,
+                        file_ops,
+                        _copy_method,
+                        stats,
+                        hardlink_tracker,
+                        concurrency_controller,
+                        metadata_config,
+                        parallel_config,
+                        None, // No parent dirfd for dereferenced symlink target
+                        None, // No filename for dereferenced symlink target
+                    )
+                })
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to dispatch symlink target processing: {e:?}"
+                    ))
+                })?;
+
+            receiver.await.map_err(|e| {
+                SyncError::FileSystem(format!("Symlink target processing failed: {e:?}"))
+            })??;
         }
     }
 
