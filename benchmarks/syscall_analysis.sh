@@ -94,12 +94,23 @@ io_uring_batch_2plus=$(echo "$io_uring_batch_sizes" | grep -v "^1$" | grep -v "^
 io_uring_batch_max=$(echo "$io_uring_batch_sizes" | sort -n | tail -1 2>/dev/null || echo 0)
 io_uring_batch_avg=$(echo "$io_uring_batch_sizes" | awk '{sum+=$1; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}' 2>/dev/null || echo "0.0")
 
-# Build Rust analyzer if needed
-ANALYZER_BIN="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/target/release/syscall-analyzer"
+# Find Rust analyzer binary
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+ANALYZER_BIN="$SCRIPT_DIR/target/release/syscall-analyzer"
+
+# Build if not found
 if [ ! -f "$ANALYZER_BIN" ]; then
     echo "Building syscall-analyzer..."
-    cd "$( dirname "${BASH_SOURCE[0]}" )" && cargo build --release --quiet
-    cd - > /dev/null
+    (cd "$SCRIPT_DIR" && cargo build --release --quiet) || {
+        echo "❌ Failed to build syscall-analyzer"
+        exit 1
+    }
+fi
+
+# Verify binary exists after build attempt
+if [ ! -f "$ANALYZER_BIN" ]; then
+    echo "❌ ERROR: syscall-analyzer binary not found at: $ANALYZER_BIN"
+    exit 1
 fi
 
 # Generate markdown report using Rust tool
