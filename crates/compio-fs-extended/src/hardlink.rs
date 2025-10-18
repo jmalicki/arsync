@@ -100,12 +100,12 @@ pub async fn create_hardlink_at_path(original_path: &Path, link_path: &Path) -> 
     let original = original_path.to_path_buf();
     let link = link_path.to_path_buf();
 
-    compio::runtime::spawn(async move {
+    compio::runtime::spawn_blocking(move || {
         std::fs::hard_link(&original, &link)
             .map_err(|e| hardlink_error(&format!("hard_link failed: {}", e)))
     })
     .await
-    .map_err(|e| hardlink_error(&format!("spawn failed: {:?}", e)))?
+    .map_err(|e| hardlink_error(&format!("spawn_blocking failed: {:?}", e)))?
 }
 
 // Windows: create_hardlink_at_path not defined
