@@ -15,15 +15,22 @@ cargo build --release
 
 ## Usage
 
+From workspace root:
 ```bash
 ./target/release/syscall-analyzer \
-  --arsync-bin ../target/release/arsync \
+  --arsync-bin ./target/release/arsync \
   --num-files 5 \
   --file-size-mb 10 \
   --output /tmp/syscall-analysis-report.md
 ```
 
-All options have sensible defaults. See `--help` for details.
+From benchmarks directory:
+```bash
+../target/release/syscall-analyzer \
+  --arsync-bin ../target/release/arsync
+```
+
+All options have sensible defaults. Run `--help` for full documentation.
 
 ## Features
 
