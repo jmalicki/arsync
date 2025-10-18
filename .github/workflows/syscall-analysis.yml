@@ -56,6 +56,7 @@ jobs:
       
       - name: Post syscall analysis to PR
         if: github.event_name == 'pull_request'
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |
@@ -69,34 +70,41 @@ jobs:
             
             const report = fs.readFileSync(reportPath, 'utf8');
             
-            // Find existing comment
-            const { data: comments } = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            
-            const botComment = comments.find(comment => 
-              comment.user.type === 'Bot' && 
-              comment.body.includes('Syscall Analysis Report')
-            );
-            
-            if (botComment) {
-              // Update existing comment
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: report
-              });
-            } else {
-              // Create new comment
-              await github.rest.issues.createComment({
+            try {
+              // Find existing comment
+              const { data: comments } = await github.rest.issues.listComments({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: report
               });
+              
+              const botComment = comments.find(comment => 
+                comment.user.type === 'Bot' && 
+                comment.body.includes('Syscall Analysis Report')
+              );
+              
+              if (botComment) {
+                // Update existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: botComment.id,
+                  body: report
+                });
+                console.log('Updated existing syscall analysis comment');
+              } else {
+                // Create new comment
+                await github.rest.issues.createComment({
+                  issue_number: context.issue.number,
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  body: report
+                });
+                console.log('Created new syscall analysis comment');
+              }
+            } catch (error) {
+              console.log('Could not post comment (likely permissions issue):', error.message);
+              console.log('Report is available as artifact');
             }
       
       - name: Fail if critical issues
