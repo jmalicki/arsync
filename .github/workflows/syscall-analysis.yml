@@ -43,10 +43,14 @@ jobs:
       - name: Run syscall analysis
         run: |
           # Install strace if needed
-          sudo apt-get update && sudo apt-get install -y strace bc
+          sudo apt-get update && sudo apt-get install -y strace
           
-          # Run analysis
-          ./benchmarks/syscall_analysis.sh /tmp/test-src /tmp/test-dst 5 10
+          # Run analysis (Rust binary does everything now)
+          ./benchmarks/target/release/syscall-analyzer \
+            --arsync-bin ./target/release/arsync \
+            --num-files 5 \
+            --file-size-mb 10 \
+            --output /tmp/syscall-analysis-report.md
         continue-on-error: true
         id: syscall_check
       

@@ -1,10 +1,10 @@
 //! Syscall analysis tool for arsync
 //!
-//! Parses strace output and generates markdown reports analyzing:
-//! - io_uring usage and batching efficiency
-//! - Metadata operations (statx, openat, etc.)
-//! - Security posture (FD-based vs path-based operations)
-//! - Per-file and per-directory syscall breakdowns
+//! End-to-end analysis tool that:
+//! - Creates test dataset
+//! - Runs arsync with strace
+//! - Parses syscall output
+//! - Generates markdown reports
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -12,41 +12,34 @@ use regex::Regex;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 #[derive(Parser)]
 #[command(name = "syscall-analyzer")]
-#[command(about = "Analyze strace output for arsync performance and security")]
+#[command(about = "End-to-end syscall analysis for arsync")]
 struct Args {
-    /// Path to strace raw output file
+    /// Path to arsync binary to analyze
     #[arg(long)]
-    trace_raw: PathBuf,
+    arsync_bin: PathBuf,
 
-    /// Path to strace summary output file  
-    #[arg(long)]
-    trace_summary: PathBuf,
-
-    /// Output markdown report path
-    #[arg(long)]
-    output: PathBuf,
-
-    /// Number of test files
-    #[arg(long)]
+    /// Number of test files to create
+    #[arg(long, default_value = "5")]
     num_files: usize,
 
     /// File size in MB
-    #[arg(long)]
+    #[arg(long, default_value = "10")]
     file_size_mb: usize,
 
-    /// Binary path being analyzed
-    #[arg(long)]
-    binary: String,
+    /// Output markdown report path
+    #[arg(long, default_value = "/tmp/syscall-analysis-report.md")]
+    output: PathBuf,
 
-    /// Source test directory
-    #[arg(long)]
+    /// Source test directory (will be created)
+    #[arg(long, default_value = "/tmp/syscall-test-src")]
     test_dir_src: PathBuf,
 
-    /// Destination test directory
-    #[arg(long)]
+    /// Destination test directory (will be created)
+    #[arg(long, default_value = "/tmp/syscall-test-dst")]
     test_dir_dst: PathBuf,
 }
 
@@ -96,28 +89,119 @@ enum ExitCode {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Parse strace output
-    let stats = parse_strace_output(&args)?;
+    println!("============================================");
+    println!("arsync Syscall Analysis");
+    println!("============================================");
+    println!();
 
-    // Generate markdown report
+    // Step 1: Create test dataset
+    println!("Creating test dataset...");
+    create_test_dataset(&args)?;
+    println!(
+        "✓ Created {} files × {}MB = {}MB",
+        args.num_files,
+        args.file_size_mb,
+        args.num_files * args.file_size_mb
+    );
+    println!();
+
+    // Step 2: Run arsync with strace
+    println!("Running arsync with strace...");
+    let trace_raw = run_strace_analysis(&args)?;
+    println!("✓ Trace captured");
+    println!();
+
+    // Step 3: Parse strace output
+    let stats = parse_strace_output(&args, &trace_raw)?;
+
+    // Step 4: Generate markdown report
     let report = generate_markdown_report(&args, &stats)?;
 
-    // Write report
+    // Step 5: Write report
     fs::write(&args.output, report)
         .with_context(|| format!("Failed to write report to {:?}", args.output))?;
 
-    println!("✅ Report generated: {:?}", args.output);
+    println!("✓ Report generated: {:?}", args.output);
+    println!();
 
     // Determine exit code based on analysis
     let exit_code = determine_exit_code(&stats, args.num_files);
 
-    std::process::exit(exit_code as i32);
+    // Exit 0 for success or warnings (don't fail CI on warnings)
+    // Exit non-zero only for critical failures
+    match exit_code {
+        ExitCode::Success => {
+            println!("✅ Analysis complete: No issues detected");
+            std::process::exit(0);
+        }
+        ExitCode::Warning => {
+            println!("⚠️  Analysis complete: Warnings detected (not failing)");
+            std::process::exit(0);
+        }
+        ExitCode::Failure => {
+            println!("❌ Analysis complete: Critical issues detected");
+            std::process::exit(2);
+        }
+    }
 }
 
-fn parse_strace_output(args: &Args) -> Result<SyscallStats> {
-    let raw_content = fs::read_to_string(&args.trace_raw)
-        .with_context(|| format!("Failed to read {:?}", args.trace_raw))?;
+fn create_test_dataset(args: &Args) -> Result<()> {
+    // Remove old directories
+    let _ = fs::remove_dir_all(&args.test_dir_src);
+    let _ = fs::remove_dir_all(&args.test_dir_dst);
 
+    // Create source directory
+    fs::create_dir_all(&args.test_dir_src)
+        .with_context(|| format!("Failed to create {:?}", args.test_dir_src))?;
+
+    // Create test files using dd
+    for i in 1..=args.num_files {
+        let filename = format!("file{}.bin", i);
+        let filepath = args.test_dir_src.join(&filename);
+
+        let status = Command::new("dd")
+            .arg("if=/dev/urandom")
+            .arg(format!("of={}", filepath.display()))
+            .arg("bs=1M")
+            .arg(format!("count={}", args.file_size_mb))
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .context("Failed to run dd command")?;
+
+        if !status.success() {
+            anyhow::bail!("Failed to create test file: {}", filename);
+        }
+    }
+
+    Ok(())
+}
+
+fn run_strace_analysis(args: &Args) -> Result<String> {
+    // Run strace on arsync
+    let output = Command::new("strace")
+        .arg("-e")
+        .arg("trace=all")
+        .arg("-f")
+        .arg(&args.arsync_bin)
+        .arg(&args.test_dir_src)
+        .arg(&args.test_dir_dst)
+        .arg("-a")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .output()
+        .context("Failed to run strace")?;
+
+    // strace writes to stderr
+    let trace_output = String::from_utf8_lossy(&output.stderr).to_string();
+
+    // Save trace to temp file for debugging
+    fs::write("/tmp/syscall-analysis-raw.txt", &trace_output)?;
+
+    Ok(trace_output)
+}
+
+fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
     let mut stats = SyscallStats::default();
 
     // Count io_uring operations
@@ -126,7 +210,7 @@ fn parse_strace_output(args: &Args) -> Result<SyscallStats> {
 
     // Parse io_uring batch sizes
     let batch_re = Regex::new(r"io_uring_enter\([0-9]+, (\d+),").unwrap();
-    for cap in batch_re.captures_iter(&raw_content) {
+    for cap in batch_re.captures_iter(raw_content) {
         if let Ok(size) = cap[1].parse::<usize>() {
             stats.io_uring_batch_sizes.push(size);
         }
@@ -162,9 +246,9 @@ fn parse_strace_output(args: &Args) -> Result<SyscallStats> {
 
     // Count FD-based vs path-based utimensat
     let utimens_fd_re = Regex::new(r"utimensat\(\d+, NULL").unwrap();
-    stats.utimensat_fd_based = utimens_fd_re.find_iter(&raw_content).count();
+    stats.utimensat_fd_based = utimens_fd_re.find_iter(raw_content).count();
     let utimens_path_re = Regex::new(r#"utimensat\(AT_FDCWD, "/"#).unwrap();
-    stats.utimensat_path_based = utimens_path_re.find_iter(&raw_content).count();
+    stats.utimensat_path_based = utimens_path_re.find_iter(raw_content).count();
 
     // Per-file breakdown (first 3 files)
     for i in 1..=3.min(args.num_files) {
@@ -208,7 +292,7 @@ fn generate_markdown_report(args: &Args, stats: &SyscallStats) -> Result<String>
         chrono::Local::now().format("%Y-%m-%d %H:%M:%S %Z"),
         args.num_files,
         args.file_size_mb,
-        args.binary
+        args.arsync_bin.display()
     ));
 
     // io_uring Usage
@@ -239,7 +323,6 @@ fn generate_markdown_report(args: &Args, stats: &SyscallStats) -> Result<String>
     report.push_str(
         "\n---\n\n\
         📄 **Full Traces:**\n\
-        - Summary: `/tmp/syscall-analysis-summary.txt`\n\
         - Detailed: `/tmp/syscall-analysis-raw.txt`\n",
     );
 

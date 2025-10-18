@@ -1,6 +1,10 @@
 # Syscall Analyzer
 
-Standalone Rust tool for analyzing arsync syscall patterns via strace.
+End-to-end syscall analysis tool for arsync. Does everything automatically:
+- Creates test dataset
+- Runs arsync with strace
+- Parses syscall output  
+- Generates markdown reports
 
 ## Building
 
@@ -9,35 +13,33 @@ cd benchmarks
 cargo build --release
 ```
 
-The binary will be at `target/release/syscall-analyzer`.
-
 ## Usage
 
 ```bash
-syscall-analyzer \
-  --trace-raw /tmp/syscall-analysis-raw.txt \
-  --trace-summary /tmp/syscall-analysis-summary.txt \
-  --output /tmp/syscall-analysis-report.md \
+./target/release/syscall-analyzer \
+  --arsync-bin ../target/release/arsync \
   --num-files 5 \
   --file-size-mb 10 \
-  --binary ./target/release/arsync \
-  --test-dir-src /tmp/test-src \
-  --test-dir-dst /tmp/test-dst
+  --output /tmp/syscall-analysis-report.md
 ```
+
+All options have sensible defaults. See `--help` for details.
 
 ## Features
 
-- Parses strace output for arsync performance metrics
-- Generates markdown reports with:
+- **Automated test dataset creation** - no manual setup needed
+- **Runs strace automatically** - captures all syscalls
+- **Comprehensive analysis:**
   - io_uring usage and batching efficiency
-  - Metadata operation analysis (statx, openat, etc.)
+  - Metadata operation patterns (statx, openat, etc.)
   - Security assessment (TOCTOU-safe FD-based operations)
   - Per-file and per-directory syscall breakdowns
-- Exit codes: 0 (success), 1 (warnings), 2 (critical failures)
+- **Markdown reports** - ready for GitHub display
+- **Smart exit codes:** 0 (success/warnings), 2 (critical failures)
 
-## Integration
+## CI Integration
 
-Used by `syscall_analysis.sh` for automated CI analysis.
+Used directly in GitHub Actions - no shell script wrapper needed.
 
 ## Note
 
