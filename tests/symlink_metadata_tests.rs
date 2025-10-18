@@ -23,13 +23,14 @@
 
 use tempfile::TempDir;
 
-/// Test: compio-fs-extended ownership functions follow symlinks (RED - will FAIL)
+/// Test: Documents that FD-based ownership operations follow symlinks (design constraint)
 ///
-/// **Bug**: Uses fchown which follows symlinks (operates on target, not symlink)
-/// **Fix**: Need fchownat with AT_SYMLINK_NOFOLLOW or lchown
+/// **Design Constraint**: Uses fchown which operates on the file the FD points to
+/// **Issue**: File::open(symlink) opens the TARGET, so fchown changes target's ownership
+/// **Solution**: Use path-based l* functions (lchown, lfchownat) for symlink metadata
 #[compio::test]
 #[cfg(unix)]
-#[ignore] // Will FAIL - demonstrates the bug, requires root to test fully
+#[ignore] // Ignored - requires root to test ownership changes fully
 async fn test_ownership_ops_follow_symlinks_bug() {
     use compio_fs_extended::{ExtendedFile, OwnershipOps};
     use std::os::unix::fs::MetadataExt;
@@ -191,11 +192,11 @@ fn test_symlink_timestamps_need_l_variants() {
     println!("      to preserve symlink timestamps without following them");
 }
 
-/// Test: XattrOps trait uses file descriptors which follow symlinks (RED - will FAIL)
+/// Test: Documents that XattrOps trait (FD-based) follows symlinks (design constraint)
 ///
-/// **Bug**: XattrOps trait uses fd-based operations (fgetxattr, fsetxattr)
-/// **Critical Issue**: File::open on symlink opens the TARGET, not the symlink!
-/// **Fix**: Can't use fd-based xattr operations on symlinks - must use path-based l* functions
+/// **Design Constraint**: XattrOps trait uses fd-based operations (fgetxattr, fsetxattr)
+/// **Fundamental Issue**: File::open(symlink) opens the TARGET, not the symlink!
+/// **Solution**: Can't use fd-based xattr operations on symlinks - must use path-based l* functions
 #[compio::test]
 #[cfg(unix)]
 async fn test_xattr_ops_trait_follows_symlinks_bug() {
