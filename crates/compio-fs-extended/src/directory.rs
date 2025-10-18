@@ -192,6 +192,46 @@ impl DirectoryFd {
         crate::metadata::futimens_fd(self.as_file(), accessed, modified).await
     }
 
+    /// Get file metadata using io_uring STATX
+    ///
+    /// This method retrieves full file metadata for a file relative to this directory
+    /// using io_uring's STATX operation for maximum performance and TOCTOU-safety.
+    ///
+    /// # Arguments
+    ///
+    /// * `pathname` - Relative path to the file (e.g., "file.txt" or "subdir/file.txt")
+    ///
+    /// # Returns
+    ///
+    /// Returns `FileMetadata` with complete file information including:
+    /// - Size, mode, permissions
+    /// - Owner (uid/gid)
+    /// - Hardlink info (ino, dev, nlink)
+    /// - Nanosecond-precision timestamps
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the statx operation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use compio_fs_extended::DirectoryFd;
+    /// use std::path::Path;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let dir = DirectoryFd::open(Path::new("/tmp")).await?;
+    /// let metadata = dir.statx("file.txt").await?;
+    /// println!("Size: {} bytes", metadata.size);
+    /// println!("Permissions: {:o}", metadata.permissions());
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(target_os = "linux")]
+    pub async fn statx_full(&self, pathname: &str) -> crate::Result<crate::FileMetadata> {
+        crate::metadata::statx_impl(self, pathname).await
+    }
+
     /// Set permissions on this directory itself
     ///
     /// FD-based operation that sets permissions on the directory,
@@ -259,7 +299,8 @@ impl DirectoryFd {
         &self,
         pathname: &str,
     ) -> Result<(std::time::SystemTime, std::time::SystemTime)> {
-        crate::metadata::statx_impl(self, pathname).await
+        let full = crate::metadata::statx_impl(self, pathname).await?;
+        Ok((full.accessed, full.modified))
     }
 
     /// Change file permissions without following symlinks

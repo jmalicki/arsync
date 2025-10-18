@@ -14,19 +14,25 @@ use crate::metadata::MetadataConfig;
 use crate::stats::SharedStats;
 // io_uring_extended removed - using compio directly
 use compio::dispatcher::Dispatcher;
-use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, info, warn};
 
-/// Extended metadata using `compio::fs` metadata support
+/// Extended metadata using `io_uring` statx or compio metadata
+///
+/// This wraps `compio_fs_extended::FileMetadata` which uses `io_uring` STATX
+/// for maximum performance and TOCTOU-safety when created via dirfd.
 pub struct ExtendedMetadata {
-    /// The underlying filesystem metadata (from `compio::fs`)
-    pub metadata: compio::fs::Metadata,
+    /// The underlying filesystem metadata (from `io_uring` statx or fallback)
+    pub metadata: compio_fs_extended::FileMetadata,
 }
 
 impl ExtendedMetadata {
-    /// Create extended metadata using compio's built-in metadata support
+    /// Create extended metadata from path (fallback - uses blocking statx syscall)
+    ///
+    /// ⚠️ DEPRECATED: This uses path-based statx which is TOCTOU-vulnerable
+    /// and doesn't use `io_uring`. Prefer creating from `DirectoryFd` when possible.
     ///
     /// # Errors
     ///
@@ -35,16 +41,41 @@ impl ExtendedMetadata {
     /// - Permission is denied to read the path
     /// - The path is not accessible
     #[allow(clippy::future_not_send)]
+    #[allow(clippy::items_after_statements)]
     pub async fn new(path: &Path) -> Result<Self> {
-        // Use compio::fs::symlink_metadata for async metadata retrieval
-        let metadata = compio::fs::symlink_metadata(path).await.map_err(|e| {
+        // TODO: Use DirectoryFd-based approach instead
+        // For now, fall back to compio::fs::metadata and convert
+        let compio_metadata = compio::fs::symlink_metadata(path).await.map_err(|e| {
             SyncError::FileSystem(format!(
                 "Failed to get metadata for {}: {}",
                 path.display(),
                 e
             ))
         })?;
+
+        use std::os::unix::fs::MetadataExt;
+        let metadata = compio_fs_extended::FileMetadata {
+            size: compio_metadata.len(),
+            mode: compio_metadata.mode(),
+            uid: compio_metadata.uid(),
+            gid: compio_metadata.gid(),
+            nlink: compio_metadata.nlink(),
+            ino: compio_metadata.ino(),
+            dev: compio_metadata.dev(),
+            accessed: compio_metadata.accessed().unwrap_or(std::time::UNIX_EPOCH),
+            modified: compio_metadata.modified().unwrap_or(std::time::UNIX_EPOCH),
+            created: compio_metadata.created().ok(),
+        };
         Ok(Self { metadata })
+    }
+
+    /// Create from `io_uring` statx result (TOCTOU-safe, async)
+    ///
+    /// This is the preferred constructor - uses `io_uring` and is TOCTOU-safe.
+    #[must_use]
+    #[allow(dead_code)] // Used in Phase 2 dirfd refactor
+    pub const fn from_statx(metadata: compio_fs_extended::FileMetadata) -> Self {
+        Self { metadata }
     }
 
     /// Check if this is a directory
@@ -62,38 +93,38 @@ impl ExtendedMetadata {
     /// Check if this is a symlink
     #[must_use]
     pub fn is_symlink(&self) -> bool {
-        self.metadata.file_type().is_symlink()
+        self.metadata.is_symlink()
     }
 
     /// Get file size
     #[must_use]
-    pub fn len(&self) -> u64 {
-        self.metadata.len()
+    pub const fn len(&self) -> u64 {
+        self.metadata.size
     }
 
     /// Check if file is empty
     #[allow(dead_code)]
     #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.metadata.len() == 0
+    pub const fn is_empty(&self) -> bool {
+        self.metadata.size == 0
     }
 
     /// Get device ID (for filesystem boundary detection)
     #[must_use]
-    pub fn device_id(&self) -> u64 {
-        self.metadata.dev()
+    pub const fn device_id(&self) -> u64 {
+        self.metadata.dev
     }
 
     /// Get inode number (for hardlink detection)
     #[must_use]
-    pub fn inode_number(&self) -> u64 {
-        self.metadata.ino()
+    pub const fn inode_number(&self) -> u64 {
+        self.metadata.ino
     }
 
     /// Get link count (for hardlink detection)
     #[must_use]
-    pub fn link_count(&self) -> u64 {
-        self.metadata.nlink()
+    pub const fn link_count(&self) -> u64 {
+        self.metadata.nlink
     }
 }
 
@@ -1019,8 +1050,7 @@ pub async fn preserve_directory_metadata(
 
     // Preserve directory permissions if requested
     if metadata_config.should_preserve_permissions() {
-        let src_permissions = extended_metadata.metadata.permissions();
-        let mode = src_permissions.mode();
+        let mode = extended_metadata.metadata.permissions();
         let compio_permissions = compio::fs::Permissions::from_mode(mode);
 
         // Open destination directory for permission operations
@@ -1047,8 +1077,8 @@ pub async fn preserve_directory_metadata(
 
     // Preserve directory ownership if requested
     if metadata_config.should_preserve_ownership() {
-        let source_uid = extended_metadata.metadata.uid();
-        let source_gid = extended_metadata.metadata.gid();
+        let source_uid = extended_metadata.metadata.uid;
+        let source_gid = extended_metadata.metadata.gid;
 
         // Open destination directory for ownership operations
         let dst_dir = compio::fs::File::open(dst_path).await.map_err(|e| {
@@ -1072,14 +1102,8 @@ pub async fn preserve_directory_metadata(
 
     // Preserve directory timestamps if requested
     if metadata_config.should_preserve_timestamps() {
-        let src_accessed = extended_metadata.metadata.accessed().map_err(|e| {
-            SyncError::FileSystem(format!("Failed to get source directory access time: {e}"))
-        })?;
-        let src_modified = extended_metadata.metadata.modified().map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to get source directory modification time: {e}"
-            ))
-        })?;
+        let src_accessed = extended_metadata.metadata.accessed;
+        let src_modified = extended_metadata.metadata.modified;
 
         // Use DirectoryFd for TOCTOU-safe timestamp preservation
         let dst_dir = compio_fs_extended::directory::DirectoryFd::open(dst_path)

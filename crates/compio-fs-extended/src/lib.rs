@@ -53,6 +53,7 @@ pub mod xattr;
 // Re-export main types
 pub use error::{ExtendedError, Result};
 pub use extended_file::ExtendedFile;
+pub use metadata::FileMetadata;
 
 // Re-export specific operation modules
 // DirectoryOps removed - use compio::fs directly for basic directory operations

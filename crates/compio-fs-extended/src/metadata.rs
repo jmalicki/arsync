@@ -63,6 +63,60 @@ use std::pin::Pin;
 #[cfg(unix)]
 use std::time::SystemTime;
 
+/// Full file metadata from io_uring statx operation
+///
+/// This struct contains all file metadata fields from `statx(2)` syscall,
+/// providing a complete view of file attributes with nanosecond-precision timestamps.
+#[derive(Debug, Clone)]
+pub struct FileMetadata {
+    /// File size in bytes
+    pub size: u64,
+    /// File mode (type + permissions)
+    pub mode: u32,
+    /// User ID of owner
+    pub uid: u32,
+    /// Group ID of owner
+    pub gid: u32,
+    /// Number of hard links
+    pub nlink: u64,
+    /// Inode number
+    pub ino: u64,
+    /// Device ID
+    pub dev: u64,
+    /// Last access time
+    pub accessed: SystemTime,
+    /// Last modification time
+    pub modified: SystemTime,
+    /// Creation time (birth time) if available
+    pub created: Option<SystemTime>,
+}
+
+impl FileMetadata {
+    /// Check if this is a regular file
+    #[must_use]
+    pub fn is_file(&self) -> bool {
+        (self.mode & libc::S_IFMT) == libc::S_IFREG
+    }
+
+    /// Check if this is a directory
+    #[must_use]
+    pub fn is_dir(&self) -> bool {
+        (self.mode & libc::S_IFMT) == libc::S_IFDIR
+    }
+
+    /// Check if this is a symlink
+    #[must_use]
+    pub fn is_symlink(&self) -> bool {
+        (self.mode & libc::S_IFMT) == libc::S_IFLNK
+    }
+
+    /// Get file permissions (mode & 0o7777)
+    #[must_use]
+    pub fn permissions(&self) -> u32 {
+        self.mode & 0o7777
+    }
+}
+
 /// io_uring statx operation for getting file metadata with nanosecond timestamps
 #[cfg(target_os = "linux")]
 pub struct StatxOp {
@@ -226,16 +280,13 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
 ///
 /// # Returns
 ///
-/// Returns `(atime, mtime)` with nanosecond precision
+/// Returns full `FileMetadata` with nanosecond precision timestamps
 ///
 /// # Errors
 ///
 /// Returns an error if the statx operation fails
 #[cfg(target_os = "linux")]
-pub(crate) async fn statx_impl(
-    dir: &DirectoryFd,
-    pathname: &str,
-) -> Result<(SystemTime, SystemTime)> {
+pub(crate) async fn statx_impl(dir: &DirectoryFd, pathname: &str) -> Result<FileMetadata> {
     let dir_fd = dir.as_raw_fd();
     let path_cstr =
         CString::new(pathname).map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
@@ -250,16 +301,50 @@ pub(crate) async fn statx_impl(
         Ok(_) => {
             let statx_buf = result.1.statxbuf;
 
+            // Extract all metadata fields
+            let size = statx_buf.stx_size;
+            let mode = statx_buf.stx_mode as u32;
+            let uid = statx_buf.stx_uid;
+            let gid = statx_buf.stx_gid;
+            let nlink = statx_buf.stx_nlink as u64;
+            let ino = statx_buf.stx_ino;
+
+            // Combine device major/minor into single dev ID
+            #[allow(clippy::cast_lossless)]
+            let dev = (statx_buf.stx_dev_major as u64) << 32 | (statx_buf.stx_dev_minor as u64);
+
             // Extract nanosecond timestamps
             let atime_secs = u64::try_from(statx_buf.stx_atime.tv_sec).unwrap_or(0);
             let atime_nanos = statx_buf.stx_atime.tv_nsec;
             let mtime_secs = u64::try_from(statx_buf.stx_mtime.tv_sec).unwrap_or(0);
             let mtime_nanos = statx_buf.stx_mtime.tv_nsec;
 
-            let atime = SystemTime::UNIX_EPOCH + std::time::Duration::new(atime_secs, atime_nanos);
-            let mtime = SystemTime::UNIX_EPOCH + std::time::Duration::new(mtime_secs, mtime_nanos);
+            let accessed =
+                SystemTime::UNIX_EPOCH + std::time::Duration::new(atime_secs, atime_nanos);
+            let modified =
+                SystemTime::UNIX_EPOCH + std::time::Duration::new(mtime_secs, mtime_nanos);
 
-            Ok((atime, mtime))
+            // Birth time (creation time) - may not be available on all filesystems
+            let created = if statx_buf.stx_mask & libc::STATX_BTIME != 0 {
+                let btime_secs = u64::try_from(statx_buf.stx_btime.tv_sec).unwrap_or(0);
+                let btime_nanos = statx_buf.stx_btime.tv_nsec;
+                Some(SystemTime::UNIX_EPOCH + std::time::Duration::new(btime_secs, btime_nanos))
+            } else {
+                None
+            };
+
+            Ok(FileMetadata {
+                size,
+                mode,
+                uid,
+                gid,
+                nlink,
+                ino,
+                dev,
+                accessed,
+                modified,
+                created,
+            })
         }
         Err(e) => Err(metadata_error(&format!("statx failed: {}", e))),
     }
