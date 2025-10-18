@@ -328,5 +328,12 @@ echo "+-------------------------+--------+--------+---------+"
 echo ""
 
 echo "Report saved to: $REPORT"
-exit $exit_code
+
+# Exit 0 for success or warnings (don't fail CI on warnings)
+# Exit non-zero only for critical failures
+if [ $exit_code -eq $EXIT_FAILURE ]; then
+    exit $EXIT_FAILURE
+else
+    exit 0
+fi
 
