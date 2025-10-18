@@ -408,73 +408,46 @@ impl FileOperations {
     /// - File copying operation fails (I/O errors, permission issues)
     /// - Metadata preservation fails
     #[allow(clippy::future_not_send)]
-    pub async fn copy_file_with_metadata(&self, src: &Path, dst: &Path) -> Result<u64> {
-        // Ensure destination directory exists
-        if let Some(parent) = dst.parent() {
-            compio::fs::create_dir_all(parent).await.map_err(|e| {
-                SyncError::FileSystem(format!(
-                    "Failed to create directory {}: {}",
-                    parent.display(),
-                    e
-                ))
-            })?;
-        }
-
-        // Open source and destination files
-        let src_file = compio::fs::File::open(src).await.map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to open source file {}: {}",
-                src.display(),
-                e
-            ))
-        })?;
-
-        let mut dst_file = compio::fs::File::create(dst).await.map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to create destination file {}: {}",
-                dst.display(),
-                e
-            ))
-        })?;
-
-        // Get source metadata using the open file descriptor
-        let src_metadata = src_file
-            .metadata()
+    pub async fn copy_file_with_metadata(
+        &self,
+        src: &Path,
+        dst: &Path,
+        parallel_config: &crate::cli::ParallelCopyConfig,
+    ) -> Result<u64> {
+        // Get file size for stats
+        let file_size = compio::fs::metadata(src)
             .await
-            .map_err(|e| SyncError::FileSystem(format!("Failed to get source metadata: {e}")))?;
+            .map_err(|e| SyncError::FileSystem(format!("Failed to get file metadata: {e}")))?
+            .len();
 
-        // Copy file content using the descriptor-based operation
-        let offset = self.copy_file_descriptors(&src_file, &mut dst_file).await?;
+        // Use the full copy_file implementation with parallel support
+        let metadata_config = crate::metadata::MetadataConfig {
+            archive: true, // Preserve all metadata by default
+            recursive: false,
+            links: false,
+            perms: false,
+            times: false,
+            group: false,
+            owner: false,
+            devices: false,
+            xattrs: false,
+            acls: false,
+            hard_links: false,
+            atimes: false,
+            crtimes: false,
+            preserve_xattr: false,
+            preserve_acl: false,
+        };
 
-        // Preserve metadata using file descriptors (more efficient than path-based operations)
-        self.preserve_metadata_from_fd(&src_file, &dst_file, &src_metadata)
-            .await?;
+        crate::copy::copy_file(src, dst, &metadata_config, parallel_config, None).await?;
 
         debug!(
             "Copied {} bytes from {} to {} with metadata preservation",
-            offset,
+            file_size,
             src.display(),
             dst.display()
         );
-        Ok(offset)
-    }
-
-    /// Preserve file metadata using file descriptors
-    ///
-    /// This function preserves file metadata (permissions, ownership, timestamps)
-    /// using the open file descriptors, avoiding repeated path lookups.
-    #[allow(clippy::unused_async)]
-    async fn preserve_metadata_from_fd(
-        &self,
-        _src_file: &compio::fs::File,
-        _dst_file: &compio::fs::File,
-        _src_metadata: &compio::fs::Metadata,
-    ) -> Result<()> {
-        // TODO: Implement proper metadata preservation using compio's API
-        // For now, we'll skip metadata preservation as compio's API is still evolving
-        // This will be implemented in a future phase with proper compio bindings
-        tracing::debug!("Metadata preservation skipped (compio API limitations)");
-        Ok(())
+        Ok(file_size)
     }
 }
 

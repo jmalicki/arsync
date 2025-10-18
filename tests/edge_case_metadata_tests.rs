@@ -43,9 +43,15 @@ async fn test_permission_preservation_no_read_permission() {
 
     // Copy the file (this should still work as we're the owner)
     let args = create_test_args_with_archive();
-    copy_file(&src_path, &dst_path, &args.metadata)
-        .await
-        .unwrap();
+    copy_file(
+        &src_path,
+        &dst_path,
+        &args.metadata,
+        &common::disabled_parallel_config(),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Check that permissions were preserved
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -91,9 +97,15 @@ async fn test_timestamp_preservation_very_recent() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &common::disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Check that the recent timestamp was preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -154,7 +166,15 @@ async fn test_permission_preservation_execute_only() {
 
         // Copy the file - skip if permission prevents reading
         let args = create_test_args_with_archive();
-        match copy_file(&src_path, &dst_path, &args.metadata).await {
+        match copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &common::disabled_parallel_config(),
+            None,
+        )
+        .await
+        {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
@@ -219,9 +239,15 @@ async fn test_timestamp_preservation_identical_times() {
     if result == 0 {
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &common::disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Check that identical timestamps were preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -294,7 +320,15 @@ async fn test_permission_preservation_all_bits() {
 
         // Copy the file - skip if permission prevents reading or writing
         let args = create_test_args_with_archive();
-        match copy_file(&src_path, &dst_path, &args.metadata).await {
+        match copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &common::disabled_parallel_config(),
+            None,
+        )
+        .await
+        {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
@@ -354,9 +388,15 @@ async fn test_metadata_preservation_long_filename() {
 
     // Copy the file
     let args = create_test_args_with_archive();
-    copy_file(&src_path, &dst_path, &args.metadata)
-        .await
-        .unwrap();
+    copy_file(
+        &src_path,
+        &dst_path,
+        &args.metadata,
+        &common::disabled_parallel_config(),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Check that permissions were preserved
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -423,9 +463,15 @@ async fn test_metadata_preservation_special_characters() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &common::disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Check that permissions were preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -473,9 +519,15 @@ async fn test_metadata_preservation_unicode_filenames() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(&src_path, &dst_path, &args.metadata)
-            .await
-            .unwrap();
+        copy_file(
+            &src_path,
+            &dst_path,
+            &args.metadata,
+            &common::disabled_parallel_config(),
+            None,
+        )
+        .await
+        .unwrap();
 
         // Check that permissions were preserved
         let dst_metadata = fs::metadata(&dst_path).unwrap();

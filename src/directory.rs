@@ -192,6 +192,7 @@ pub async fn copy_directory(
         &mut hardlink_tracker,
         &args.metadata,
         &args.concurrency,
+        &args.io.parallel,
     )
     .await?;
 
@@ -265,6 +266,7 @@ async fn traverse_and_copy_directory_iterative(
     hardlink_tracker: &mut FilesystemTracker,
     metadata_config: &MetadataConfig,
     concurrency_config: &crate::cli::ConcurrencyConfig,
+    parallel_config: &crate::cli::ParallelCopyConfig,
 ) -> Result<()> {
     // Create a dispatcher for async operations
     let dispatcher = Box::leak(Box::new(Dispatcher::new()?));
@@ -273,6 +275,7 @@ async fn traverse_and_copy_directory_iterative(
     // No more unsafe transmute needed!
     let file_ops_arc = Arc::new(file_ops.clone());
     let metadata_config_arc = Arc::new(metadata_config.clone());
+    let parallel_config_arc = Arc::new(parallel_config.clone());
 
     // Wrap shared state in wrapper types for static lifetimes
     let stats_value = std::mem::take(stats);
@@ -310,6 +313,7 @@ async fn traverse_and_copy_directory_iterative(
         shared_hardlink_tracker.clone(),
         concurrency_controller,
         metadata_config_arc,
+        parallel_config_arc,
     )
     .await;
 
@@ -387,6 +391,7 @@ async fn process_directory_entry_with_compio(
     hardlink_tracker: Arc<FilesystemTracker>,
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
+    parallel_config: Arc<crate::cli::ParallelCopyConfig>,
 ) -> Result<()> {
     // Clone controller before acquiring permit to avoid borrow/move conflict
     let controller = Arc::clone(&concurrency_controller);
@@ -466,6 +471,7 @@ async fn process_directory_entry_with_compio(
             let concurrency_controller = concurrency_controller.clone();
             let file_ops_clone = Arc::clone(&file_ops);
             let metadata_config_clone = Arc::clone(&metadata_config);
+            let parallel_config_clone = Arc::clone(&parallel_config);
             let receiver = dispatcher
                 .dispatch(move || {
                     process_directory_entry_with_compio(
@@ -478,6 +484,7 @@ async fn process_directory_entry_with_compio(
                         hardlink_tracker,
                         concurrency_controller, // Move instead of clone - already cloned above
                         metadata_config_clone,
+                        parallel_config_clone,
                     )
                 })
                 .map_err(|e| {
@@ -518,6 +525,8 @@ async fn process_directory_entry_with_compio(
             hardlink_tracker,
             concurrency_controller,
             metadata_config,
+            parallel_config,
+            dispatcher,
         )
         .await?;
     } else if extended_metadata.is_symlink() {
@@ -563,6 +572,8 @@ async fn process_file(
     hardlink_tracker: Arc<FilesystemTracker>,
     _concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
+    parallel_config: Arc<crate::cli::ParallelCopyConfig>,
+    dispatcher: &'static Dispatcher,
 ) -> Result<()> {
     debug!(
         "Processing file: {} (link_count: {})",
@@ -586,8 +597,15 @@ async fn process_file(
             src_path.display()
         );
 
-        // Copy file (error propagates)
-        copy_file(&src_path, &dst_path, &metadata_config).await?;
+        // Copy file with parallel config from Args
+        copy_file(
+            &src_path,
+            &dst_path,
+            &metadata_config,
+            &parallel_config,
+            Some(dispatcher),
+        )
+        .await?;
 
         stats.increment_files_copied();
         stats.increment_bytes_copied(metadata.len());
@@ -623,7 +641,15 @@ async fn process_file(
             src_path.display()
         );
 
-        copy_file(&src_path, &dst_path, &metadata_config).await?;
+        // Copy file with parallel config from Args
+        copy_file(
+            &src_path,
+            &dst_path,
+            &metadata_config,
+            &parallel_config,
+            Some(dispatcher),
+        )
+        .await?;
 
         stats.increment_files_copied();
         stats.increment_bytes_copied(metadata.len());

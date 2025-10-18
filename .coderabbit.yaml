@@ -1,0 +1,41 @@
+# CodeRabbit Configuration
+# Docs: https://docs.coderabbit.ai/reference/configuration
+
+language: "en-US"
+early_access: false
+enable_free_tier: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    auto_incremental_review: true
+  
+  # Ignore patterns - tell CodeRabbit to skip certain checks
+  path_filters:
+    - "!**/*.md"  # We handle markdown linting separately
+  
+  # Custom instructions for the reviewer
+  instructions:
+    - "Do NOT suggest changing rust-version or MSRV in Cargo.toml files - this is managed by the project maintainer"
+    - "Do NOT comment on date formatting in documentation (October 18, 2025 vs October 18, 2025,)"
+    - "Focus on functional correctness, safety, and performance issues"
+    - "Defer style/formatting to rustfmt and clippy"
+
+chat:
+  auto_reply: false
+
+# Tool-specific configuration
+tools:
+  shellcheck:
+    enabled: true
+  markdownlint:
+    enabled: false  # We run this separately
+  languagetool:
+    enabled: false  # Grammar checking not needed for code
+

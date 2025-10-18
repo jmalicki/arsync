@@ -535,6 +535,7 @@ mod tests {
         }
 
         // Report all issues
+        #[allow(clippy::panic)] // panic! is the correct way to fail tests
         if !missing_translations.is_empty() {
             panic!(
                 "The following {} translation keys are missing pirate translations:\n{}",

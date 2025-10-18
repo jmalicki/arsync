@@ -226,7 +226,7 @@ pub async fn sync_files(args: &Args) -> Result<SyncStats> {
 
         // Copy the file with metadata preservation
         match file_ops
-            .copy_file_with_metadata(args.source(), args.destination())
+            .copy_file_with_metadata(args.source(), args.destination(), &args.io.parallel)
             .await
         {
             Ok(bytes_copied) => {

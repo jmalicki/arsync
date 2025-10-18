@@ -74,6 +74,118 @@ pub struct IoConfig {
     /// Number of CPU cores to use (0 = auto-detect)
     #[arg(long, default_value = "0")]
     pub cpu_count: usize,
+
+    /// Parallel copy configuration
+    #[command(flatten)]
+    pub parallel: ParallelCopyConfig,
+}
+
+/// Parallel copy configuration for large files
+///
+/// Parallel copy is enabled by setting --parallel-max-depth > 0.
+#[derive(clap::Args, Debug, Clone)]
+#[command(next_help_heading = "Parallel Copy Options")]
+pub struct ParallelCopyConfig {
+    /// Maximum recursion depth for parallel file copying
+    ///
+    /// Creates up to 2^depth parallel tasks for large files.
+    /// - Depth 0 (default): Disabled - use sequential copy
+    /// - Depth 1: 2 parallel tasks
+    /// - Depth 2: 4 parallel tasks
+    /// - Depth 3: 8 parallel tasks
+    /// - Depth 4: 16 parallel tasks
+    ///
+    /// Recommended: 2-3 for `NVMe`, 1-2 for `SSD`
+    /// Default: 0 (disabled)
+    #[arg(long = "parallel-max-depth", default_value = "0")]
+    pub max_depth: usize,
+
+    /// Minimum file size (in MB) to trigger parallel copying
+    ///
+    /// Files smaller than this threshold will be copied sequentially.
+    /// Only applies when --parallel-max-depth > 0.
+    /// Default: 128 MB
+    #[arg(long = "parallel-min-size-mb", default_value = "128")]
+    pub min_file_size_mb: u64,
+
+    /// Chunk size (in MB) for each read/write operation in parallel copy
+    ///
+    /// Larger chunks reduce syscall overhead but increase memory usage.
+    /// Only applies when --parallel-max-depth > 0.
+    /// Default: 2 MB
+    #[arg(long = "parallel-chunk-size-mb", default_value = "2")]
+    pub chunk_size_mb: usize,
+}
+
+impl ParallelCopyConfig {
+    /// Get minimum file size in bytes
+    #[must_use]
+    pub const fn min_file_size_bytes(&self) -> u64 {
+        self.min_file_size_mb * 1024 * 1024
+    }
+
+    /// Get chunk size in bytes
+    #[must_use]
+    pub const fn chunk_size_bytes(&self) -> usize {
+        self.chunk_size_mb * 1024 * 1024
+    }
+
+    /// Determine if a file should be copied in parallel
+    #[must_use]
+    pub const fn should_use_parallel(&self, file_size: u64) -> bool {
+        self.max_depth > 0 && file_size >= self.min_file_size_bytes()
+    }
+
+    /// Validate parallel copy configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `max_depth` is greater than 6 (2^6 = 64 tasks would be excessive)
+    /// - `chunk_size_mb` is 0 or greater than 64
+    /// - `min_file_size_mb` is 0
+    pub fn validate(&self) -> Result<()> {
+        if self.max_depth == 0 {
+            return Ok(()); // Disabled, nothing to validate
+        }
+
+        if self.max_depth > 6 {
+            anyhow::bail!(
+                "Parallel max depth must be <= 6 (2^6=64 tasks), got: {}",
+                self.max_depth
+            );
+        }
+
+        if self.chunk_size_mb == 0 || self.chunk_size_mb > 64 {
+            anyhow::bail!(
+                "Parallel chunk size must be between 1 and 64 MB, got: {}",
+                self.chunk_size_mb
+            );
+        }
+
+        // Ensure chunk size is a power of 2 for optimal alignment
+        if !self.chunk_size_mb.is_power_of_two() {
+            anyhow::bail!(
+                "Parallel chunk size must be a power of 2 (1, 2, 4, 8, 16, 32, or 64 MB), got: {}",
+                self.chunk_size_mb
+            );
+        }
+
+        if self.min_file_size_mb == 0 {
+            anyhow::bail!("Parallel minimum file size must be greater than 0");
+        }
+
+        // Ensure minimum file size is at least as large as chunk size
+        if self.min_file_size_mb < self.chunk_size_mb as u64 {
+            anyhow::bail!(
+                "Parallel min file size ({} MB) must be >= chunk size ({} MB)",
+                self.min_file_size_mb,
+                self.chunk_size_mb
+            );
+        }
+
+        Ok(())
+    }
 }
 
 /// Concurrency control configuration
@@ -234,6 +346,9 @@ impl Args {
         if self.output.quiet && self.output.verbose > 0 {
             anyhow::bail!("Cannot use both --quiet and --verbose options");
         }
+
+        // Validate parallel copy configuration
+        self.io.parallel.validate()?;
 
         Ok(())
     }
@@ -397,6 +512,11 @@ mod tests {
                 buffer_size_kb: 1024,
                 copy_method: CopyMethod::Auto,
                 cpu_count: 2,
+                parallel: ParallelCopyConfig {
+                    max_depth: 0,
+                    min_file_size_mb: 128,
+                    chunk_size_mb: 2,
+                },
             },
             concurrency: ConcurrencyConfig {
                 max_files_in_flight: 100,

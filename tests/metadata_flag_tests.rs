@@ -57,9 +57,15 @@ async fn test_permissions_not_preserved_when_flag_off() {
 
     // Copy WITHOUT --perms flag
     let args = create_args_no_metadata();
-    copy_file(&src_path, &dst_path, &args.metadata)
-        .await
-        .unwrap();
+    copy_file(
+        &src_path,
+        &dst_path,
+        &args.metadata,
+        &common::disabled_parallel_config(),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Destination should NOT have the same permissions as source
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -97,9 +103,15 @@ async fn test_permissions_preserved_when_flag_on() {
 
     // Copy WITH --perms flag
     let args = create_args_perms_only();
-    copy_file(&src_path, &dst_path, &args.metadata)
-        .await
-        .unwrap();
+    copy_file(
+        &src_path,
+        &dst_path,
+        &args.metadata,
+        &common::disabled_parallel_config(),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Destination SHOULD have the same permissions as source
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -138,9 +150,15 @@ async fn test_timestamps_not_preserved_when_flag_off() {
 
     // Copy WITHOUT --times flag
     let args = create_args_no_metadata();
-    copy_file(&src_path, &dst_path, &args.metadata)
-        .await
-        .unwrap();
+    copy_file(
+        &src_path,
+        &dst_path,
+        &args.metadata,
+        &common::disabled_parallel_config(),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Destination should have DIFFERENT (newer) timestamps
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -179,9 +197,15 @@ async fn test_timestamps_preserved_when_flag_on() {
 
     // Copy WITH --times flag
     let args = create_args_times_only();
-    copy_file(&src_path, &dst_path, &args.metadata)
-        .await
-        .unwrap();
+    copy_file(
+        &src_path,
+        &dst_path,
+        &args.metadata,
+        &common::disabled_parallel_config(),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Destination SHOULD have the same timestamps as source (within precision)
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -229,9 +253,15 @@ async fn test_archive_mode_preserves_all_metadata() {
 
     // Copy WITH --archive flag
     let args = create_args_archive();
-    copy_file(&src_path, &dst_path, &args.metadata)
-        .await
-        .unwrap();
+    copy_file(
+        &src_path,
+        &dst_path,
+        &args.metadata,
+        &common::disabled_parallel_config(),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Verify both permissions and timestamps are preserved
     let dst_metadata = fs::metadata(&dst_path).unwrap();
@@ -365,15 +395,27 @@ async fn test_individual_flags_match_archive_components() {
 
     // Copy with --perms only
     let args_perms = create_args_perms_only();
-    copy_file(&src_path1, &dst_path1_perms, &args_perms.metadata)
-        .await
-        .unwrap();
+    copy_file(
+        &src_path1,
+        &dst_path1_perms,
+        &args_perms.metadata,
+        &common::disabled_parallel_config(),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Copy with --archive
     let args_archive = create_args_archive();
-    copy_file(&src_path1, &dst_path1_archive, &args_archive.metadata)
-        .await
-        .unwrap();
+    copy_file(
+        &src_path1,
+        &dst_path1_archive,
+        &args_archive.metadata,
+        &common::disabled_parallel_config(),
+        None,
+    )
+    .await
+    .unwrap();
 
     // Both should preserve permissions identically
     let dst_mode_perms = fs::metadata(&dst_path1_perms).unwrap().permissions().mode();
