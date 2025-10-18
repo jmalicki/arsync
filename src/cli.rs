@@ -74,6 +74,103 @@ pub struct IoConfig {
     /// Number of CPU cores to use (0 = auto-detect)
     #[arg(long, default_value = "0")]
     pub cpu_count: usize,
+
+    /// Parallel copy configuration
+    #[command(flatten)]
+    pub parallel: ParallelCopyConfig,
+}
+
+/// Parallel copy configuration for large files
+///
+/// Uses recursive binary splitting to copy large files in parallel.
+#[derive(clap::Args, Debug, Clone)]
+#[command(next_help_heading = "Parallel Copy Options")]
+pub struct ParallelCopyConfig {
+    /// Enable parallel copying for large files
+    ///
+    /// When enabled, files larger than --parallel-min-size will be split
+    /// recursively and copied by multiple tasks concurrently.
+    /// This can significantly improve throughput for large files on fast
+    /// storage (`NVMe`), but may not help on slower devices (`HDD`).
+    #[arg(long)]
+    pub enabled: bool,
+
+    /// Minimum file size (in MB) to trigger parallel copying
+    ///
+    /// Files smaller than this threshold will be copied sequentially.
+    /// Default: 128 MB
+    #[arg(long, default_value = "128", requires = "enabled")]
+    pub min_file_size_mb: u64,
+
+    /// Maximum recursion depth for parallel splits
+    ///
+    /// Creates up to 2^depth parallel tasks.
+    /// Depth 2 = 4 tasks, Depth 3 = 8 tasks, Depth 4 = 16 tasks
+    /// Recommended: 2-3 for `NVMe`, 1-2 for `SSD`
+    /// Default: 2 (4 tasks)
+    #[arg(long, default_value = "2", requires = "enabled")]
+    pub max_depth: usize,
+
+    /// Chunk size (in MB) for each read/write operation
+    ///
+    /// Larger chunks reduce syscall overhead but increase memory usage.
+    /// Default: 2 MB
+    #[arg(long, default_value = "2", requires = "enabled")]
+    pub chunk_size_mb: usize,
+}
+
+impl ParallelCopyConfig {
+    /// Get minimum file size in bytes
+    #[must_use]
+    pub const fn min_file_size_bytes(&self) -> u64 {
+        self.min_file_size_mb * 1024 * 1024
+    }
+
+    /// Get chunk size in bytes
+    #[must_use]
+    pub const fn chunk_size_bytes(&self) -> usize {
+        self.chunk_size_mb * 1024 * 1024
+    }
+
+    /// Determine if a file should be copied in parallel
+    #[must_use]
+    pub const fn should_use_parallel(&self, file_size: u64) -> bool {
+        self.enabled && file_size >= self.min_file_size_bytes()
+    }
+
+    /// Validate parallel copy configuration
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - `max_depth` is greater than 6 (2^6 = 64 tasks would be excessive)
+    /// - `chunk_size_mb` is 0 or greater than 64
+    /// - `min_file_size_mb` is 0
+    pub fn validate(&self) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+
+        if self.max_depth > 6 {
+            anyhow::bail!(
+                "Parallel max depth must be <= 6 (2^6=64 tasks), got: {}",
+                self.max_depth
+            );
+        }
+
+        if self.chunk_size_mb == 0 || self.chunk_size_mb > 64 {
+            anyhow::bail!(
+                "Parallel chunk size must be between 1 and 64 MB, got: {}",
+                self.chunk_size_mb
+            );
+        }
+
+        if self.min_file_size_mb == 0 {
+            anyhow::bail!("Parallel minimum file size must be greater than 0");
+        }
+
+        Ok(())
+    }
 }
 
 /// Concurrency control configuration
@@ -234,6 +331,9 @@ impl Args {
         if self.output.quiet && self.output.verbose > 0 {
             anyhow::bail!("Cannot use both --quiet and --verbose options");
         }
+
+        // Validate parallel copy configuration
+        self.io.parallel.validate()?;
 
         Ok(())
     }
@@ -397,6 +497,12 @@ mod tests {
                 buffer_size_kb: 1024,
                 copy_method: CopyMethod::Auto,
                 cpu_count: 2,
+                parallel: ParallelCopyConfig {
+                    enabled: false,
+                    min_file_size_mb: 128,
+                    max_depth: 2,
+                    chunk_size_mb: 2,
+                },
             },
             concurrency: ConcurrencyConfig {
                 max_files_in_flight: 100,

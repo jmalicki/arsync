@@ -17,6 +17,7 @@ pub fn create_minimal_test_args() -> Args {
             buffer_size_kb: 64,
             copy_method: CopyMethod::Auto,
             cpu_count: 1,
+            parallel: super::disabled_parallel_config(),
         },
         concurrency: ConcurrencyConfig {
             max_files_in_flight: 1024,

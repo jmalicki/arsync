@@ -587,7 +587,14 @@ async fn process_file(
         );
 
         // Copy file (error propagates)
-        copy_file(&src_path, &dst_path, &metadata_config).await?;
+        // TODO: Thread ParallelCopyConfig through the call chain
+        let disabled_parallel = crate::cli::ParallelCopyConfig {
+            enabled: false,
+            min_file_size_mb: 128,
+            max_depth: 2,
+            chunk_size_mb: 2,
+        };
+        copy_file(&src_path, &dst_path, &metadata_config, &disabled_parallel).await?;
 
         stats.increment_files_copied();
         stats.increment_bytes_copied(metadata.len());
@@ -623,7 +630,14 @@ async fn process_file(
             src_path.display()
         );
 
-        copy_file(&src_path, &dst_path, &metadata_config).await?;
+        // TODO: Thread ParallelCopyConfig through the call chain
+        let disabled_parallel = crate::cli::ParallelCopyConfig {
+            enabled: false,
+            min_file_size_mb: 128,
+            max_depth: 2,
+            chunk_size_mb: 2,
+        };
+        copy_file(&src_path, &dst_path, &metadata_config, &disabled_parallel).await?;
 
         stats.increment_files_copied();
         stats.increment_bytes_copied(metadata.len());

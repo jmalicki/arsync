@@ -1,8 +1,20 @@
+use arsync::cli::ParallelCopyConfig;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
 pub mod test_args;
+
+/// Helper to create a disabled parallel copy config for tests
+#[allow(dead_code)]
+pub fn disabled_parallel_config() -> ParallelCopyConfig {
+    ParallelCopyConfig {
+        enabled: false,
+        min_file_size_mb: 128,
+        max_depth: 2,
+        chunk_size_mb: 2,
+    }
+}
 
 #[allow(dead_code)]
 pub struct TestTimeoutGuard {
