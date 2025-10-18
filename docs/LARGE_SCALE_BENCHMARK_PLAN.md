@@ -12,38 +12,50 @@
 - **Result:** Entire dataset fits in page cache!
 - **Measured:** Memory-to-memory copy speed, not disk I/O
 
-## Solution: Exceed RAM Capacity
+## Solution: Exceed RAM Capacity by 4×
 
-**New benchmark dataset: 400GB**
-- 2× available RAM (256GB)
-- Forces kernel to evict pages
-- Measures true disk-to-disk performance
+**New benchmark dataset: 1TB (1024GB)**
+- **4× available RAM** (247GB × 4 = 988GB ≈ 1TB)
+- Guarantees kernel must evict pages continuously
+- Measures true sustained disk-to-disk performance
+- Leaves 5.3TB for destination copies
 
 ### Dataset Structure
 
 **Option A: Many medium files (recommended)**
 ```text
-100 files × 4GB = 400GB total
+250 files × 4GB = 1TB total
 
 Why this works:
-- Exceeds page cache (400GB > 256GB RAM)
+- Far exceeds page cache (1TB >> 247GB RAM)
 - Realistic workload (mix of directory + file parallelism)
 - Tests both arsync concurrency levels:
-  * Directory: 100 files in flight
-  * Per-file: 2-16 parallel tasks per file
+  * Directory: 250 files in flight
+  * Per-file: 2-16 parallel tasks per 4GB file
+- Sustainable: Each test uses ~1TB source + 1TB dest = 2TB
 ```
 
-**Option B: Few very large files**
+**Option B: Fewer very large files**
 ```text
-10 files × 40GB = 400GB total
+100 files × 10GB = 1TB total
 
 Why this works:
-- Each file is 40GB >> 256GB / 10 = much larger than per-file cache
-- Better tests per-file parallelism
-- Less directory concurrency (only 10 files)
+- Each file 10GB >> per-file cache allocation
+- Better tests per-file parallelism (more regions to split)
+- Still good directory concurrency (100 files)
 ```
 
-**Recommendation: Use Option A** for more realistic mixed workload
+**Option C: Maximum stress test**
+```text
+500 files × 4GB = 2TB total
+
+- 8× RAM capacity
+- Maximum stress on array
+- Total space per test: 2TB source + 2TB dest = 4TB
+- Still fits in 6.3TB available
+```
+
+**Recommendation: Start with Option A (1TB), can scale to Option C if needed**
 
 ## Benchmark Matrix
 
@@ -115,30 +127,31 @@ iostat -xm 5 /dev/md127
 
 ## Dataset Creation
 
-### Option A: 100 × 4GB files
+### Option A: 250 × 4GB files = 1TB
 
 ```bash
 #!/bin/bash
-# Create 100 × 4GB = 400GB dataset
-# ETA: ~45 minutes on this array
+# Create 250 × 4GB = 1TB dataset (4× RAM)
+# ETA: ~25-30 minutes on this array
 
-mkdir -p /mnt/benchmark/source-400gb
+mkdir -p /mnt/benchmark/source-1tb
 
-for i in {001..100}; do
-    echo "Creating file $i/100 (4GB)..."
-    dd if=/dev/urandom of=/mnt/benchmark/source-400gb/file_${i}.bin \
+for i in $(seq -f "%03g" 1 250); do
+    echo "Creating file $i/250 (4GB)..."
+    dd if=/dev/urandom of=/mnt/benchmark/source-1tb/file_${i}.bin \
        bs=1M count=4096 \
        oflag=direct \
-       2>&1 | grep -E "(copied|GB)"
+       status=progress \
+       2>&1 | tail -2
 done
 
-echo "Dataset creation complete: 400GB"
-du -sh /mnt/benchmark/source-400gb
+echo "Dataset creation complete: 1TB"
+du -sh /mnt/benchmark/source-1tb
 ```
 
 **Creation time estimate:**
-- 400GB at ~7 GB/s write = 57 seconds theoretical
-- With urandom overhead: ~10-15 minutes realistic
+- 1TB at ~7 GB/s write = 143 seconds theoretical
+- With urandom overhead: ~25-30 minutes realistic
 
 ### Option B: Use existing data (faster)
 
