@@ -531,6 +531,7 @@ mod tests {
                 group: false,
                 owner: false,
                 devices: false,
+                fsync: false,
                 xattrs: true,
                 acls: false,
                 hard_links: false,

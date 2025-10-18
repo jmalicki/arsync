@@ -282,11 +282,13 @@ async fn copy_read_write(
         );
     }
 
-    // Sync the destination file to ensure data is written to disk
-    dst_file
-        .sync_all()
-        .await
-        .map_err(|e| SyncError::FileSystem(format!("Failed to sync destination file: {e}")))?;
+    // Sync the destination file to disk if requested (matches rsync --fsync)
+    if metadata_config.fsync {
+        dst_file
+            .sync_all()
+            .await
+            .map_err(|e| SyncError::FileSystem(format!("Failed to sync destination file: {e}")))?;
+    }
 
     // Preserve file metadata using the metadata module
     preserve_file_metadata(
@@ -536,11 +538,13 @@ async fn copy_read_write_parallel(
         }
     }
 
-    // 7. Sync all data to disk
-    dst_file
-        .sync_all()
-        .await
-        .map_err(|e| SyncError::FileSystem(format!("Failed to sync destination file: {e}")))?;
+    // 7. Sync all data to disk if requested (matches rsync --fsync)
+    if metadata_config.fsync {
+        dst_file
+            .sync_all()
+            .await
+            .map_err(|e| SyncError::FileSystem(format!("Failed to sync destination file: {e}")))?;
+    }
 
     // 8. Preserve file metadata
     preserve_file_metadata(
@@ -690,6 +694,7 @@ mod tests {
                 group: false,
                 owner: false,
                 devices: false,
+                fsync: false,
                 xattrs: false,
                 acls: false,
                 hard_links: false,

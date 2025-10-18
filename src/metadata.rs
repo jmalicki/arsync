@@ -72,6 +72,13 @@ pub struct MetadataConfig {
     #[arg(short = 'D', long)]
     pub devices: bool,
 
+    /// Sync each file to disk after writing (like rsync --fsync)
+    ///
+    /// By default, arsync relies on OS page cache (like rsync).
+    /// This flag forces fsync on each file for durability at the cost of performance.
+    #[arg(long)]
+    pub fsync: bool,
+
     /// Preserve extended attributes
     #[arg(short = 'X', long)]
     pub xattrs: bool,
@@ -427,6 +434,7 @@ mod tests {
             group: false,
             owner: false,
             devices: false,
+            fsync: false,
             xattrs: false,
             acls: false,
             hard_links: false,
@@ -454,6 +462,7 @@ mod tests {
             group: false,
             owner: false,
             devices: false,
+            fsync: false,
             xattrs: false,
             acls: false,
             hard_links: false,
