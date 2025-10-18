@@ -69,14 +69,7 @@ struct SyscallStats {
     readlinkat_total: usize,
     lstat_total: usize,
     // io_uring operation types (from SQE submissions)
-    io_uring_op_read: usize,
-    io_uring_op_write: usize,
-    io_uring_op_statx: usize,
-    io_uring_op_fallocate: usize,
-    io_uring_op_openat: usize,
-    io_uring_op_close: usize,
-    io_uring_op_fsync: usize,
-    io_uring_op_other: usize,
+    io_uring_ops: HashMap<String, usize>,
     // Unexpected/legacy syscalls (should not be used)
     open_total: usize,   // Should use openat
     stat_total: usize,   // Should use statx or fstat
@@ -241,6 +234,20 @@ fn create_test_dataset(args: &Args) -> Result<()> {
 }
 
 fn run_strace_analysis(args: &Args) -> Result<String> {
+    // Clean destination before running to ensure we see all mkdir/create operations
+    if args.test_dir_dst.exists() {
+        fs::remove_dir_all(&args.test_dir_dst)
+            .with_context(|| format!("Failed to remove {:?}", args.test_dir_dst))?;
+    }
+
+    // Verify destination is gone
+    if args.test_dir_dst.exists() {
+        anyhow::bail!(
+            "Destination directory still exists after cleanup: {:?}",
+            args.test_dir_dst
+        );
+    }
+
     // Run strace on arsync with full metadata preservation
     // -a = archive mode (preserves permissions, times, etc.)
     // -r = recursive (copies directories and their contents)
@@ -272,10 +279,25 @@ fn run_strace_analysis(args: &Args) -> Result<String> {
 fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
     let mut stats = SyscallStats::default();
 
-    // Parse all syscalls first (to build complete inventory)
+    // Filter trace to only include syscalls after first getdents
+    // This excludes program initialization (library loading, etc.)
+    let filtered_content: String = raw_content
+        .lines()
+        .skip_while(|line| !line.contains("getdents"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let content_to_analyze = if filtered_content.is_empty() {
+        // If no getdents found, use all content
+        raw_content
+    } else {
+        &filtered_content
+    };
+
+    // Parse all syscalls (to build complete inventory)
     // Match format: "syscall_name(...)" or "PID syscall_name(...)"
-    let syscall_re = Regex::new(r"(?:^\d+\s+)?(\w+)\(").unwrap();
-    for line in raw_content.lines() {
+    let syscall_re = Regex::new(r"(?:^\[?pid \d+\]?\s+)?(\w+)\(").unwrap();
+    for line in content_to_analyze.lines() {
         // Skip lines that are continuations or don't contain syscalls
         if line.trim_start().starts_with('<') || line.trim_start().starts_with('=') {
             continue;
@@ -286,11 +308,11 @@ fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
         }
     }
 
-    // Count io_uring operations
+    // Count io_uring operations (use full raw_content for these)
     stats.io_uring_setup = raw_content.matches("io_uring_setup").count();
     stats.io_uring_enter = raw_content.matches("io_uring_enter").count();
 
-    // Parse io_uring batch sizes
+    // Parse io_uring batch sizes (use full raw_content)
     let batch_re = Regex::new(r"io_uring_enter\([0-9]+, (\d+),").unwrap();
     for cap in batch_re.captures_iter(raw_content) {
         if let Ok(size) = cap[1].parse::<usize>() {
@@ -298,16 +320,16 @@ fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
         }
     }
 
-    // Count statx operations
-    stats.statx_total = raw_content.matches("statx(").count();
-    stats.statx_path_based = raw_content.matches("statx(AT_FDCWD").count()
-        - raw_content.matches("statx(AT_FDCWD, \"\"").count();
-    stats.statx_fd_based = raw_content.matches("statx(").count() - stats.statx_path_based;
+    // Count statx operations (use filtered content)
+    stats.statx_total = content_to_analyze.matches("statx(").count();
+    stats.statx_path_based = content_to_analyze.matches("statx(AT_FDCWD").count()
+        - content_to_analyze.matches("statx(AT_FDCWD, \"\"").count();
+    stats.statx_fd_based = content_to_analyze.matches("statx(").count() - stats.statx_path_based;
 
-    // Count openat operations
-    stats.openat_total = raw_content.matches("openat(").count();
+    // Count openat operations (use filtered content)
+    stats.openat_total = content_to_analyze.matches("openat(").count();
     let openat_user_re = Regex::new(r#"openat\(AT_FDCWD, "/[^"]*""#).unwrap();
-    for line in raw_content.lines() {
+    for line in content_to_analyze.lines() {
         if openat_user_re.is_match(line) {
             // Exclude system paths
             if !line.contains("/etc")
@@ -320,91 +342,90 @@ fn parse_strace_output(args: &Args, raw_content: &str) -> Result<SyscallStats> {
         }
     }
 
-    // Count other operations
-    stats.fallocate = raw_content.matches("fallocate(").count();
-    stats.fchmod = raw_content.matches("fchmod").count();
-    stats.fchown = raw_content.matches("fchown").count();
-    stats.utimensat_total = raw_content.matches("utimensat").count();
+    // Count other operations (use filtered content)
+    stats.fallocate = content_to_analyze.matches("fallocate(").count();
+    stats.fchmod = content_to_analyze.matches("fchmod").count();
+    stats.fchown = content_to_analyze.matches("fchown").count();
+    stats.utimensat_total = content_to_analyze.matches("utimensat").count();
 
     // Count FD-based vs path-based utimensat
     let utimens_fd_re = Regex::new(r"utimensat\(\d+, NULL").unwrap();
-    stats.utimensat_fd_based = utimens_fd_re.find_iter(raw_content).count();
+    stats.utimensat_fd_based = utimens_fd_re.find_iter(content_to_analyze).count();
     let utimens_path_re = Regex::new(r#"utimensat\(AT_FDCWD, "/"#).unwrap();
-    stats.utimensat_path_based = utimens_path_re.find_iter(raw_content).count();
+    stats.utimensat_path_based = utimens_path_re.find_iter(content_to_analyze).count();
 
     // Count directory operations
-    stats.mkdir_total = raw_content.matches("mkdir(").count();
-    stats.mkdirat_total = raw_content.matches("mkdirat(").count();
+    stats.mkdir_total = content_to_analyze.matches("mkdir(\"").count();
+    stats.mkdirat_total = content_to_analyze.matches("mkdirat(").count();
 
     // Count symlink operations
-    stats.symlink_total = raw_content.matches("symlink(").count();
-    stats.symlinkat_total = raw_content.matches("symlinkat(").count();
-    stats.readlink_total = raw_content.matches("readlink(").count();
-    stats.readlinkat_total = raw_content.matches("readlinkat(").count();
-    stats.lstat_total = raw_content.matches("lstat(").count();
+    stats.symlink_total = content_to_analyze.matches("symlink(\"").count();
+    stats.symlinkat_total = content_to_analyze.matches("symlinkat(").count();
+    stats.readlink_total = content_to_analyze.matches("readlink(\"").count();
+    stats.readlinkat_total = content_to_analyze.matches("readlinkat(").count();
+    stats.lstat_total = content_to_analyze.matches("lstat(\"").count();
 
     // Parse io_uring operation types from traces
-    // Look for patterns like "sqe->opcode = IORING_OP_READ" in kernel traces
-    // Or count operations by checking what's between io_uring_enter calls
-    // For now, estimate based on syscall patterns and io_uring_enter counts
-    stats.io_uring_op_read = raw_content.matches("IORING_OP_READ").count();
-    stats.io_uring_op_write = raw_content.matches("IORING_OP_WRITE").count();
-    stats.io_uring_op_statx = raw_content.matches("IORING_OP_STATX").count();
-    stats.io_uring_op_fallocate = raw_content.matches("IORING_OP_FALLOCATE").count();
-    stats.io_uring_op_openat = raw_content.matches("IORING_OP_OPENAT").count();
-    stats.io_uring_op_close = raw_content.matches("IORING_OP_CLOSE").count();
-    stats.io_uring_op_fsync = raw_content.matches("IORING_OP_FSYNC").count();
-
-    // If we don't have opcode info from kernel traces, estimate from syscall absences
-    // High io_uring_enter + low direct syscalls = operations via io_uring
-    if stats.io_uring_enter > 100 && stats.io_uring_op_read == 0 {
-        // Estimate: if we have io_uring_enter but no direct read/write syscalls for file I/O
-        // then reads/writes are likely going through io_uring
-        stats.io_uring_op_other = stats.io_uring_enter; // Placeholder
+    // These can come from bpftrace or strace with specific filters
+    // Pattern: IORING_OP_<NAME>
+    let io_uring_op_re = Regex::new(r"IORING_OP_(\w+)").unwrap();
+    for cap in io_uring_op_re.captures_iter(raw_content) {
+        let op_name = cap[1].to_string();
+        *stats.io_uring_ops.entry(op_name).or_insert(0) += 1;
     }
 
-    // Count unexpected/legacy syscalls
-    stats.open_total = raw_content.matches("open(\"").count(); // Exclude openat
-    stats.stat_total = raw_content.matches("stat(\"").count(); // Exclude statx, fstat
-    stats.chmod_total = raw_content.matches("chmod(\"").count(); // Exclude fchmod
-    stats.chown_total = raw_content.matches("chown(\"").count(); // Exclude fchown
-    stats.utime_total = raw_content.matches("utime(").count();
-    stats.utimes_total = raw_content.matches("utimes(").count();
-    stats.access_total = raw_content.matches("access(").count();
-    stats.creat_total = raw_content.matches("creat(").count();
+    // Count unexpected/legacy syscalls (use filtered content)
+    stats.open_total = content_to_analyze.matches("open(\"").count(); // Exclude openat
+    stats.stat_total = content_to_analyze.matches("stat(\"").count(); // Exclude statx, fstat
+    stats.chmod_total = content_to_analyze.matches("chmod(\"").count(); // Exclude fchmod
+    stats.chown_total = content_to_analyze.matches("chown(\"").count(); // Exclude fchown
+    stats.utime_total = content_to_analyze.matches("utime(").count();
+    stats.utimes_total = content_to_analyze.matches("utimes(").count();
+    stats.access_total = content_to_analyze.matches("access(").count();
+    stats.creat_total = content_to_analyze.matches("creat(").count();
 
     // Count synchronous read/write (should be rare with io_uring)
-    // Use more precise regex to avoid matching pread/pwrite
+    // Exclude eventfd writes (8-byte synchronization writes)
+    // Filter out library/system reads from startup
     let read_re = Regex::new(r"\bread\(").unwrap();
     let write_re = Regex::new(r"\bwrite\(").unwrap();
-    stats.read_total = read_re.find_iter(raw_content).count();
-    stats.write_total = write_re.find_iter(raw_content).count();
-    stats.pread_total = raw_content.matches("pread").count();
-    stats.pwrite_total = raw_content.matches("pwrite").count();
+    stats.read_total = read_re.find_iter(content_to_analyze).count();
 
-    // Per-file breakdown (first 3 files)
+    // Only count writes that aren't 8-byte eventfd writes
+    for line in content_to_analyze.lines() {
+        if write_re.is_match(line) && !line.contains(", 8)") && !line.contains("\"\\1\\0\\0\\0") {
+            stats.write_total += 1;
+        }
+    }
+
+    stats.pread_total = content_to_analyze.matches("pread").count();
+    stats.pwrite_total = content_to_analyze.matches("pwrite").count();
+
+    // Per-file breakdown (first 3 files) - use filtered content
     for i in 1..=3.min(args.num_files) {
         let filename = format!("file{}.bin", i);
         let mut file_stats = FileStats::default();
 
-        file_stats.statx = raw_content.matches(&format!("statx.*{}", filename)).count();
-        file_stats.openat = raw_content
+        file_stats.statx = content_to_analyze
+            .matches(&format!("statx.*{}", filename))
+            .count();
+        file_stats.openat = content_to_analyze
             .matches(&format!("openat.*{}", filename))
             .count();
-        file_stats.mentions = raw_content.matches(&filename).count();
+        file_stats.mentions = content_to_analyze.matches(&filename).count();
 
         stats.per_file.insert(filename, file_stats);
     }
 
-    // Directory stats
+    // Directory stats (use filtered content)
     let src_path = args.test_dir_src.to_string_lossy();
-    stats.dir_stats.src_statx = raw_content
+    stats.dir_stats.src_statx = content_to_analyze
         .matches(&format!("statx.*\"{}\"", src_path))
         .count();
-    stats.dir_stats.src_openat = raw_content
+    stats.dir_stats.src_openat = content_to_analyze
         .matches(&format!("openat.*\"{}\".*O_DIRECTORY", src_path))
         .count();
-    stats.dir_stats.getdents = raw_content.matches("getdents").count();
+    stats.dir_stats.getdents = content_to_analyze.matches("getdents").count();
     stats.dir_stats.dst_fchmod = stats.fchmod;
     stats.dir_stats.dst_fchown = stats.fchown;
 
@@ -540,48 +561,63 @@ fn add_io_uring_section(report: &mut String, stats: &SyscallStats, _num_files: u
 fn add_io_uring_operations_section(report: &mut String, stats: &SyscallStats) {
     report.push_str("## 🔄 io_uring Operations Breakdown\n\n");
 
-    let total_ops = stats.io_uring_op_read
-        + stats.io_uring_op_write
-        + stats.io_uring_op_statx
-        + stats.io_uring_op_fallocate
-        + stats.io_uring_op_openat
-        + stats.io_uring_op_close
-        + stats.io_uring_op_fsync;
+    if !stats.io_uring_ops.is_empty() {
+        // We have actual io_uring operation data (from bpftrace or similar)
+        let mut ops: Vec<_> = stats.io_uring_ops.iter().collect();
+        ops.sort_by(|a, b| b.1.cmp(a.1));
 
-    if total_ops > 0 {
-        report.push_str("| Operation | Count | Notes |\n");
-        report.push_str("|-----------|-------|-------|\n");
-        report.push_str(&format!(
-            "| READ | {} | Async file reads |\n",
-            stats.io_uring_op_read
-        ));
-        report.push_str(&format!(
-            "| WRITE | {} | Async file writes |\n",
-            stats.io_uring_op_write
-        ));
-        report.push_str(&format!(
-            "| STATX | {} | Async metadata reads |\n",
-            stats.io_uring_op_statx
-        ));
-        report.push_str(&format!(
-            "| FALLOCATE | {} | Async space allocation |\n",
-            stats.io_uring_op_fallocate
-        ));
-        report.push_str(&format!(
-            "| OPENAT | {} | Async file opens |\n",
-            stats.io_uring_op_openat
-        ));
-        report.push_str(&format!(
-            "| CLOSE | {} | Async file closes |\n",
-            stats.io_uring_op_close
-        ));
-        report.push_str(&format!(
-            "| FSYNC | {} | Async file sync |\n",
-            stats.io_uring_op_fsync
-        ));
-        report.push_str(&format!("| **Total** | **{}** | | |\n\n", total_ops));
+        let total: usize = ops.iter().map(|(_, count)| *count).sum();
 
-        report.push_str("✅ **io_uring operation types visible in kernel traces**\n\n");
+        report.push_str("| Operation | Count | Expected |\n");
+        report.push_str("|-----------|-------|----------|\n");
+
+        // Expected operations for a file copy tool
+        let expected_ops = [
+            "READ",
+            "WRITE",
+            "READV",
+            "WRITEV",
+            "STATX",
+            "FSTAT",
+            "FALLOCATE",
+            "OPENAT",
+            "OPENAT2",
+            "CLOSE",
+            "FSYNC",
+            "FDATASYNC",
+            "MKDIRAT",
+            "UNLINKAT",
+            "RENAMEAT",
+            "SYMLINKAT",
+            "LINKAT",
+        ];
+
+        for (op, count) in &ops {
+            let is_expected = expected_ops.contains(&op.as_str());
+            let status = if is_expected { "✅" } else { "⚠️" };
+            report.push_str(&format!("| {} | {} | {} |\n", op, count, status));
+        }
+
+        report.push_str(&format!("\n**Total io_uring operations:** {}\n\n", total));
+
+        // Flag unexpected operations
+        let unexpected: Vec<_> = ops
+            .iter()
+            .filter(|(op, _)| !expected_ops.contains(&op.as_str()))
+            .collect();
+
+        if !unexpected.is_empty() {
+            report.push_str("### ⚠️  Unexpected io_uring Operations\n\n");
+            for (op, count) in unexpected {
+                report.push_str(&format!(
+                    "- **`IORING_OP_{}`**: {} submissions\n",
+                    op, count
+                ));
+            }
+            report.push_str("\n> These operations are unexpected for a file copy tool. Review to ensure they're intentional.\n\n");
+        } else {
+            report.push_str("✅ **All io_uring operations are expected for file copying**\n\n");
+        }
     } else {
         report.push_str(
             "ℹ️  **INFO:** io_uring operation types not visible in standard strace output.\n\n",
