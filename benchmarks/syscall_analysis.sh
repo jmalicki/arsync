@@ -94,7 +94,40 @@ io_uring_batch_2plus=$(echo "$io_uring_batch_sizes" | grep -v "^1$" | grep -v "^
 io_uring_batch_max=$(echo "$io_uring_batch_sizes" | sort -n | tail -1 2>/dev/null || echo 0)
 io_uring_batch_avg=$(echo "$io_uring_batch_sizes" | awk '{sum+=$1; count++} END {if(count>0) printf "%.1f", sum/count; else print "0"}' 2>/dev/null || echo "0.0")
 
-# Generate markdown report
+# Build Rust analyzer if needed
+ANALYZER_BIN="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/target/release/syscall-analyzer"
+if [ ! -f "$ANALYZER_BIN" ]; then
+    echo "Building syscall-analyzer..."
+    cd "$( dirname "${BASH_SOURCE[0]}" )" && cargo build --release --quiet
+    cd - > /dev/null
+fi
+
+# Generate markdown report using Rust tool
+"$ANALYZER_BIN" \
+    --trace-raw "$TRACE_RAW" \
+    --trace-summary "$TRACE_SUMMARY" \
+    --output "$REPORT" \
+    --num-files "$NUM_FILES" \
+    --file-size-mb "$FILE_SIZE_MB" \
+    --binary "$ARSYNC_BIN" \
+    --test-dir-src "$TEST_DIR_SRC" \
+    --test-dir-dst "$TEST_DIR_DST"
+
+# Determine exit code from analyzer
+exit_code=$?
+
+# Convert Rust exit codes to our shell exit codes
+if [ $exit_code -eq 2 ]; then
+    exit_code=$EXIT_FAILURE
+elif [ $exit_code -eq 1 ]; then
+    exit_code=$EXIT_WARNING
+else
+    exit_code=$EXIT_SUCCESS
+fi
+
+# OLD: Generate report manually (now done by Rust tool)
+# Keeping this commented for reference
+: <<'LEGACY_REPORT'
 {
     cat <<EOF
 # 📊 Syscall Analysis Report
@@ -339,10 +372,14 @@ echo "+-------------------------+--------+--------+---------+"
 echo ""
 set -e
 
+LEGACY_REPORT
+
+# Show summary
+echo ""
 echo "Report saved to: $REPORT"
 
 # Exit 0 for success or warnings (don't fail CI on warnings)
-# Exit non-zero only for critical failures
+# Exit non-zero only for critical failures  
 if [ $exit_code -eq $EXIT_FAILURE ]; then
     exit $EXIT_FAILURE
 else
