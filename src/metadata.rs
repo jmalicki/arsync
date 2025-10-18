@@ -172,7 +172,7 @@ impl MetadataConfig {
 pub async fn preserve_file_metadata(
     src_file: &compio::fs::File,
     dst_file: &compio::fs::File,
-    dst_path: &Path,
+    _dst_path: &Path,
     src_accessed: SystemTime,
     src_modified: SystemTime,
     config: &MetadataConfig,
@@ -191,7 +191,7 @@ pub async fn preserve_file_metadata(
     }
 
     if config.should_preserve_timestamps() {
-        preserve_timestamps(dst_path, src_accessed, src_modified).await?;
+        preserve_timestamps_from_fd(dst_file, src_accessed, src_modified).await?;
     }
 
     Ok(())
@@ -302,19 +302,22 @@ pub async fn preserve_xattr_from_fd(
     Ok(())
 }
 
-/// Preserve timestamps with nanosecond precision
+/// Preserve timestamps with nanosecond precision using FD
 ///
-/// Public wrapper for timestamp preservation.
+/// FD-based timestamp preservation using futimens(2) - TOCTOU-free!
 ///
 /// # Errors
 ///
-/// Returns error if utimensat syscall fails
-pub async fn preserve_timestamps(
-    dst_path: &Path,
+/// Returns error if futimens syscall fails
+pub async fn preserve_timestamps_from_fd(
+    dst_file: &compio::fs::File,
     accessed: SystemTime,
     modified: SystemTime,
 ) -> Result<()> {
-    preserve_timestamps_nanoseconds(dst_path, accessed, modified).await
+    // Use compio-fs-extended's FD-based futimens
+    compio_fs_extended::metadata::futimens_fd(dst_file, accessed, modified)
+        .await
+        .map_err(|e| SyncError::FileSystem(format!("Failed to preserve timestamps via FD: {e}")))
 }
 
 /// Get precise timestamps from a file path
@@ -328,6 +331,7 @@ pub async fn preserve_timestamps(
 /// # Errors
 ///
 /// Returns error if statx/stat syscall fails or path is invalid
+#[allow(dead_code)] // Used in copy.rs
 pub async fn get_precise_timestamps(path: &Path) -> Result<(SystemTime, SystemTime)> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
@@ -408,76 +412,6 @@ pub async fn get_precise_timestamps(path: &Path) -> Result<(SystemTime, SystemTi
     }
 }
 
-/// Preserve timestamps with nanosecond precision using utimensat
-///
-/// Uses utimensat syscall for nanosecond-precision timestamp preservation.
-///
-/// # Arguments
-///
-/// * `path` - File path to set timestamps on
-/// * `accessed` - Access time
-/// * `modified` - Modification time
-async fn preserve_timestamps_nanoseconds(
-    path: &Path,
-    accessed: SystemTime,
-    modified: SystemTime,
-) -> Result<()> {
-    use std::ffi::CString;
-    use std::os::unix::ffi::OsStrExt;
-
-    // Convert path to CString for syscall
-    let path_cstr = CString::new(path.as_os_str().as_bytes()).map_err(|e| {
-        SyncError::FileSystem(format!("Invalid path for timestamp preservation: {e}"))
-    })?;
-
-    // Convert SystemTime to timespec with nanosecond precision
-    let accessed_timespec = system_time_to_timespec(accessed);
-    let modified_timespec = system_time_to_timespec(modified);
-
-    // Create timespec array for utimensat
-    let times = [accessed_timespec, modified_timespec];
-
-    // Use spawn_blocking for the syscall since compio doesn't have utimensat support
-    compio::runtime::spawn_blocking(move || {
-        let result = unsafe {
-            libc::utimensat(
-                libc::AT_FDCWD,
-                path_cstr.as_ptr(),
-                times.as_ptr(),
-                0, // flags
-            )
-        };
-
-        if result == -1 {
-            let errno = std::io::Error::last_os_error();
-            Err(SyncError::FileSystem(format!(
-                "utimensat failed: {errno} (errno: {})",
-                errno.raw_os_error().unwrap_or(-1)
-            )))
-        } else {
-            Ok(())
-        }
-    })
-    .await
-    .map_err(|e| SyncError::FileSystem(format!("spawn_blocking failed: {e:?}")))?
-}
-
-/// Convert `SystemTime` to `libc::timespec` with nanosecond precision
-///
-/// Helper function to extract nanosecond component from `SystemTime`.
-fn system_time_to_timespec(time: SystemTime) -> libc::timespec {
-    let duration = time
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap_or_default();
-
-    #[allow(clippy::cast_possible_wrap)]
-    let tv_sec = duration.as_secs() as libc::time_t;
-    libc::timespec {
-        tv_sec,
-        tv_nsec: libc::c_long::from(duration.subsec_nanos()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,37 +468,5 @@ mod tests {
         assert!(config.should_preserve_ownership());
         assert!(config.should_preserve_timestamps());
         assert!(config.should_preserve_links());
-    }
-
-    #[test]
-    fn test_system_time_to_timespec() {
-        let now = SystemTime::now();
-        let timespec = system_time_to_timespec(now);
-
-        // Verify that the conversion produces reasonable values
-        assert!(timespec.tv_sec > 0, "Seconds should be positive");
-        assert!(timespec.tv_nsec >= 0, "Nanoseconds should be non-negative");
-        assert!(
-            timespec.tv_nsec < 1_000_000_000,
-            "Nanoseconds should be less than 1 billion"
-        );
-    }
-
-    #[test]
-    fn test_system_time_to_timespec_precision() {
-        use std::time::Duration;
-
-        let now = SystemTime::now();
-        let timespec = system_time_to_timespec(now);
-
-        // Test that we can reconstruct the original time with high precision
-        let reconstructed =
-            SystemTime::UNIX_EPOCH + Duration::new(timespec.tv_sec as u64, timespec.tv_nsec as u32);
-
-        let diff = now.duration_since(reconstructed).unwrap_or_default();
-        assert!(
-            diff.as_micros() < 1000,
-            "Reconstruction should be accurate within 1ms"
-        );
     }
 }
