@@ -16,7 +16,10 @@
 //! ## Example
 //!
 //! ```rust,no_run
+//! # #[cfg(target_os = "linux")]
+//! # {
 //! use compio_fs_extended::{ExtendedFile, Fadvise};
+//! use compio_fs_extended::fadvise::FadviseAdvice;
 //! use compio::fs::File;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -24,11 +27,14 @@
 //! let file = File::open("data.txt").await?;
 //! let extended = ExtendedFile::new(file);
 //!
-//! // Give kernel advice about access pattern
-//! extended.fadvise(0, 0, libc::POSIX_FADV_SEQUENTIAL).await?;
+//! // Give kernel advice about access pattern (advice, offset, length)
+//! extended.fadvise(FadviseAdvice::Sequential, 0, 0).await?;
 //! # Ok(())
 //! # }
+//! # }
 //! ```
+//!
+//! Note: `fadvise` operations are only available on Linux.
 //!
 pub mod device;
 pub mod directory;
