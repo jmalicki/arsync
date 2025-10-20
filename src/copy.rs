@@ -76,8 +76,11 @@ const HUGE_PAGE_SIZE: u64 = 2 * 1024 * 1024;
 /// - Source file cannot be opened or read
 /// - Destination file cannot be created or written
 /// - Metadata preservation fails
+///
+/// # Note
+/// This function is called via `io_uring::FileOperations::copy_file_with_metadata()`
+/// and from tests via the `copy_file_test` helper.
 #[allow(clippy::future_not_send)]
-#[allow(dead_code)] // Used by tests, not by binary
 #[allow(clippy::expect_used)] // Thread-local init - panic is acceptable here
 pub async fn copy_file(
     src: &Path,

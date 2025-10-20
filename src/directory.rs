@@ -435,7 +435,7 @@ async fn traverse_and_copy_directory_iterative(
 /// Extracts the common pattern of opening a path's parent as `DirectoryFd`.
 #[allow(clippy::future_not_send)]
 async fn open_parent_dirfd(path: &Path) -> Result<Arc<compio_fs_extended::DirectoryFd>> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = path.parent().unwrap_or(path);
     let dir_fd = compio_fs_extended::DirectoryFd::open(parent)
         .await
         .map_err(|e| {
@@ -578,21 +578,23 @@ async fn process_directory_entry_with_compio(
                 stats.increment_directories_created();
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                // Something exists - verify it's actually a directory
-                let existing_metadata = compio::fs::metadata(&dst_path).await.map_err(|e| {
-                    SyncError::FileSystem(format!(
-                        "Failed to check existing path {}: {}",
-                        dst_path.display(),
-                        e
-                    ))
-                })?;
+                // Something exists - verify it's actually a directory using DirectoryFd
+                // This is TOCTOU-safe: operates on already-opened parent directory
+                let existing_metadata =
+                    ExtendedMetadata::from_dirfd(&dst_parent_dir, &dst_filename)
+                        .await
+                        .map_err(|e| {
+                            SyncError::FileSystem(format!(
+                                "Failed to check existing path {}: {}",
+                                dst_path.display(),
+                                e
+                            ))
+                        })?;
 
                 if !existing_metadata.is_dir() {
                     return Err(SyncError::FileSystem(format!(
-                        "Cannot create directory {}: path exists but is not a directory (is_file: {}, is_symlink: {})",
+                        "Cannot create directory {}: path exists but is not a directory",
                         dst_path.display(),
-                        existing_metadata.is_file(),
-                        existing_metadata.is_symlink()
                     )));
                 }
 
