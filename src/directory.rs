@@ -86,10 +86,14 @@ impl ExtendedMetadata {
     /// Returns error if statx operation fails
     #[cfg(target_os = "linux")]
     #[allow(clippy::future_not_send)]
-    pub async fn from_dirfd(dir: &compio_fs_extended::DirectoryFd, filename: &str) -> Result<Self> {
+    pub async fn from_dirfd(
+        dir: &compio_fs_extended::DirectoryFd,
+        filename: &std::ffi::OsStr,
+    ) -> Result<Self> {
         let metadata = dir.statx_full(filename).await.map_err(|e| {
             SyncError::FileSystem(format!(
-                "Failed to get metadata via dirfd for {filename}: {e}"
+                "Failed to get metadata via dirfd for {}: {e}",
+                filename.to_string_lossy()
             ))
         })?;
         Ok(Self::from_statx(metadata))
@@ -467,15 +471,13 @@ async fn process_root_entry(
     let src_filename = src_path
         .file_name()
         .ok_or_else(|| SyncError::FileSystem("No filename".to_string()))?
-        .to_string_lossy()
-        .to_string();
+        .to_os_string();
 
     let dst_parent_dir = open_parent_dirfd(&dst_path).await?;
     let dst_filename = dst_path
         .file_name()
         .ok_or_else(|| SyncError::FileSystem("No filename".to_string()))?
-        .to_string_lossy()
-        .to_string();
+        .to_os_string();
 
     process_directory_entry_with_compio(
         dispatcher,
@@ -550,9 +552,9 @@ async fn process_directory_entry_with_compio(
     metadata_config: Arc<MetadataConfig>,
     parallel_config: Arc<crate::cli::ParallelCopyConfig>,
     src_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
-    src_filename: String,
+    src_filename: std::ffi::OsString,
     dst_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
-    dst_filename: String,
+    dst_filename: std::ffi::OsString,
 ) -> Result<()> {
     // Clone controller before acquiring permit to avoid borrow/move conflict
     let controller = Arc::clone(&concurrency_controller);
@@ -564,7 +566,8 @@ async fn process_directory_entry_with_compio(
 
     // Get comprehensive metadata using io_uring statx via DirectoryFd
     // ✅ ALWAYS uses DirectoryFd - no fallback, no path-based operations!
-    let extended_metadata = ExtendedMetadata::from_dirfd(&src_parent_dir, &src_filename).await?;
+    let extended_metadata =
+        ExtendedMetadata::from_dirfd(&src_parent_dir, src_filename.as_ref()).await?;
 
     if extended_metadata.is_dir() {
         // ========================================================================
@@ -581,7 +584,7 @@ async fn process_directory_entry_with_compio(
                 // Something exists - verify it's actually a directory using DirectoryFd
                 // This is TOCTOU-safe: operates on already-opened parent directory
                 let existing_metadata =
-                    ExtendedMetadata::from_dirfd(&dst_parent_dir, &dst_filename)
+                    ExtendedMetadata::from_dirfd(&dst_parent_dir, dst_filename.as_ref())
                         .await
                         .map_err(|e| {
                             SyncError::FileSystem(format!(
@@ -678,7 +681,7 @@ async fn process_directory_entry_with_compio(
                 SyncError::FileSystem(format!("Invalid file name in {}", child_src_path.display()))
             })?;
             let child_dst_path = dst_path.join(file_name);
-            let file_name_string = file_name.to_string_lossy().to_string();
+            let file_name_osstring = file_name.to_os_string();
 
             // Dispatch all entries to the same function regardless of type
             // This creates a unified processing pipeline where each entry
@@ -704,7 +707,7 @@ async fn process_directory_entry_with_compio(
                     ))
                 })?;
             let dst_dir_clone = Arc::new(dst_dir);
-            let dst_file_name_string = file_name.to_string_lossy().to_string();
+            let dst_file_name_osstring = file_name.to_os_string();
 
             let receiver = dispatcher
                 .dispatch(move || {
@@ -719,10 +722,10 @@ async fn process_directory_entry_with_compio(
                         concurrency_controller, // Move instead of clone - already cloned above
                         metadata_config_clone,
                         parallel_config_clone,
-                        src_dir_clone,        // Pass source parent DirectoryFd
-                        file_name_string,     // Pass source filename
-                        dst_dir_clone,        // Pass destination parent DirectoryFd
-                        dst_file_name_string, // Pass destination filename
+                        src_dir_clone,          // Pass source parent DirectoryFd
+                        file_name_osstring,     // Pass source filename
+                        dst_dir_clone,          // Pass destination parent DirectoryFd
+                        dst_file_name_osstring, // Pass destination filename
                     )
                 })
                 .map_err(|e| {
@@ -876,9 +879,9 @@ async fn process_file(
     parallel_config: Arc<crate::cli::ParallelCopyConfig>,
     dispatcher: &'static Dispatcher,
     src_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
-    src_filename: String,
+    src_filename: std::ffi::OsString,
     dst_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
-    dst_filename: String,
+    dst_filename: std::ffi::OsString,
 ) -> Result<()> {
     debug!(
         "Processing file: {} (link_count: {})",

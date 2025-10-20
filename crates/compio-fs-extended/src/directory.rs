@@ -228,7 +228,10 @@ impl DirectoryFd {
     /// # }
     /// ```
     #[cfg(target_os = "linux")]
-    pub async fn statx_full(&self, pathname: &str) -> crate::Result<crate::FileMetadata> {
+    pub async fn statx_full(
+        &self,
+        pathname: &std::ffi::OsStr,
+    ) -> crate::Result<crate::FileMetadata> {
         crate::metadata::statx_impl(self, pathname).await
     }
 
@@ -275,20 +278,21 @@ impl DirectoryFd {
     #[allow(clippy::too_many_arguments)]
     pub async fn open_file_at(
         &self,
-        pathname: &str,
+        pathname: &std::ffi::OsStr,
         read: bool,
         write: bool,
         create: bool,
         truncate: bool,
     ) -> Result<compio::fs::File> {
         use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
         use std::os::unix::io::FromRawFd;
 
         let dir_fd = self.as_raw_fd();
-        let pathname = pathname.to_string();
+        let pathname_bytes = pathname.as_bytes().to_vec();
 
         compio::runtime::spawn_blocking(move || {
-            let path_cstr = CString::new(pathname.as_str())
+            let path_cstr = CString::new(pathname_bytes)
                 .map_err(|e| crate::error::directory_error(&format!("Invalid pathname: {e}")))?;
 
             // Build open flags
@@ -391,7 +395,7 @@ impl DirectoryFd {
     #[cfg(target_os = "linux")]
     pub async fn statx(
         &self,
-        pathname: &str,
+        pathname: &std::ffi::OsStr,
     ) -> Result<(std::time::SystemTime, std::time::SystemTime)> {
         let full = crate::metadata::statx_impl(self, pathname).await?;
         Ok((full.accessed, full.modified))

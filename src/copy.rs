@@ -108,12 +108,11 @@ pub async fn copy_file(
 
     let src_filename = src
         .file_name()
-        .ok_or_else(|| SyncError::FileSystem("Source has no filename".to_string()))?
-        .to_string_lossy();
+        .ok_or_else(|| SyncError::FileSystem("Source has no filename".to_string()))?;
 
     // Get metadata
     let src_metadata =
-        crate::directory::ExtendedMetadata::from_dirfd(&src_parent_dir, &src_filename).await?;
+        crate::directory::ExtendedMetadata::from_dirfd(&src_parent_dir, src_filename).await?;
 
     // Set up DirectoryFd for destination
     let dst_parent_dir = compio_fs_extended::DirectoryFd::open(
@@ -124,8 +123,7 @@ pub async fn copy_file(
 
     let dst_filename = dst
         .file_name()
-        .ok_or_else(|| SyncError::FileSystem("Destination has no filename".to_string()))?
-        .to_string_lossy();
+        .ok_or_else(|| SyncError::FileSystem("Destination has no filename".to_string()))?;
 
     // Get reference to global dispatcher (initialized on first use)
     let dispatcher: &'static Dispatcher = &DISPATCHER;
@@ -138,9 +136,9 @@ pub async fn copy_file(
         dispatcher,
         &src_metadata,
         &src_parent_dir,
-        &src_filename,
+        src_filename,
         &dst_parent_dir,
-        &dst_filename,
+        dst_filename,
     )
     .await
 }
@@ -194,9 +192,9 @@ pub async fn copy_file_internal(
     dispatcher: &'static Dispatcher,
     src_metadata: &crate::directory::ExtendedMetadata,
     src_parent_dir: &compio_fs_extended::DirectoryFd,
-    src_filename: &str,
+    src_filename: &std::ffi::OsStr,
     dst_parent_dir: &compio_fs_extended::DirectoryFd,
-    dst_filename: &str,
+    dst_filename: &std::ffi::OsStr,
 ) -> Result<()> {
     // Get file size from pre-fetched metadata (no syscall needed!)
     let file_size = src_metadata.metadata.size;
@@ -280,9 +278,9 @@ async fn copy_read_write(
     file_size: u64,
     src_metadata: &crate::directory::ExtendedMetadata,
     src_parent_dir: &compio_fs_extended::DirectoryFd,
-    src_filename: &str,
+    src_filename: &std::ffi::OsStr,
     dst_parent_dir: &compio_fs_extended::DirectoryFd,
-    dst_filename: &str,
+    dst_filename: &std::ffi::OsStr,
 ) -> Result<()> {
     // Extract timestamps from pre-fetched metadata (no syscall needed!)
     let (src_accessed, src_modified) = (
@@ -480,9 +478,9 @@ async fn copy_read_write_parallel(
     dispatcher: &'static Dispatcher,
     src_metadata: &crate::directory::ExtendedMetadata,
     src_parent_dir: &compio_fs_extended::DirectoryFd,
-    src_filename: &str,
+    src_filename: &std::ffi::OsStr,
     dst_parent_dir: &compio_fs_extended::DirectoryFd,
-    dst_filename: &str,
+    dst_filename: &std::ffi::OsStr,
 ) -> Result<()> {
     let max_depth = parallel_config.max_depth;
     let max_tasks = 1 << max_depth; // 2^max_depth
@@ -783,16 +781,16 @@ mod tests {
         )
         .await
         .unwrap();
-        let src_filename = src.file_name().unwrap().to_string_lossy();
+        let src_filename = src.file_name().unwrap();
         let src_metadata =
-            crate::directory::ExtendedMetadata::from_dirfd(&src_parent_dir, &src_filename).await?;
+            crate::directory::ExtendedMetadata::from_dirfd(&src_parent_dir, src_filename).await?;
 
         let dst_parent_dir = compio_fs_extended::DirectoryFd::open(
             dst.parent().unwrap_or(std::path::Path::new(".")),
         )
         .await
         .unwrap();
-        let dst_filename = dst.file_name().unwrap().to_string_lossy();
+        let dst_filename = dst.file_name().unwrap();
 
         let dispatcher = compio::dispatcher::Dispatcher::new().unwrap();
         let dispatcher_static: &'static Dispatcher = Box::leak(Box::new(dispatcher));
@@ -805,9 +803,9 @@ mod tests {
             dispatcher_static,
             &src_metadata,
             &src_parent_dir,
-            &src_filename,
+            src_filename,
             &dst_parent_dir,
-            &dst_filename,
+            dst_filename,
         )
         .await
     }
