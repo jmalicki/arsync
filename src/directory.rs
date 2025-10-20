@@ -588,26 +588,7 @@ async fn process_directory_entry_with_compio(
                 if e.to_string().contains("File exists")
                     || e.to_string().contains("AlreadyExists") =>
             {
-                // Something exists - verify it's actually a directory using DirectoryFd
-                // This is TOCTOU-safe: operates on already-opened parent directory
-                let existing_metadata =
-                    ExtendedMetadata::from_dirfd(&dst_parent_dir, dst_filename.as_ref())
-                        .await
-                        .map_err(|e| {
-                            SyncError::FileSystem(format!(
-                                "Failed to check existing path {}: {}",
-                                dst_path.display(),
-                                e
-                            ))
-                        })?;
-
-                if !existing_metadata.is_dir() {
-                    return Err(SyncError::FileSystem(format!(
-                        "Cannot create directory {}: path exists but is not a directory",
-                        dst_path.display(),
-                    )));
-                }
-
+                // Directory already exists - we'll verify by trying to open it below
                 debug!("Directory already exists: {}", dst_path.display());
             }
             Err(e) => {
@@ -620,12 +601,15 @@ async fn process_directory_entry_with_compio(
         }
 
         // Open the destination directory immediately (for metadata and children)
+        // This also serves as our type verification: openat with O_DIRECTORY will fail
+        // if the path exists but is not a directory (e.g., it's a file or symlink).
+        // TOCTOU-safe: opens relative to already-opened parent DirectoryFd, doesn't follow symlinks.
         let dst_dir_fd = Arc::new(
-            compio_fs_extended::DirectoryFd::open(&dst_path)
+            dst_parent_dir.open_directory_at(dst_filename.as_ref())
                 .await
                 .map_err(|e| {
                     SyncError::FileSystem(format!(
-                        "Failed to open destination directory {}: {}",
+                        "Failed to open destination directory {} (path may exist but not be a directory): {}",
                         dst_path.display(),
                         e
                     ))
