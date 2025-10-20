@@ -9,7 +9,6 @@ mod common;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
-use std::time::Duration;
 use tempfile::TempDir;
 
 /// Test: Re-syncing to existing directory should UPDATE metadata
@@ -160,9 +159,8 @@ async fn test_resync_preserves_directory_timestamps() {
         std::io::Error::last_os_error()
     );
 
-    // Create destination directory with current timestamp
+    // Create destination directory with current timestamp (will differ from source's 2021 timestamp)
     fs::create_dir(&dst_dir).unwrap();
-    compio::time::sleep(Duration::from_millis(100)).await;
 
     // Sync with --archive (should update timestamps)
     let mut args = common::test_args::create_archive_test_args();
