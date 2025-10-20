@@ -5,7 +5,6 @@
 
 mod common;
 
-use arsync::cli::Args;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
@@ -17,7 +16,6 @@ use tempfile::TempDir;
 /// This verifies rsync-compatible behavior: when destination directory exists,
 /// metadata should be updated to match source (not skipped).
 #[compio::test]
-#[ignore] // TODO: Fix Args struct usage (paths.source not source)
 async fn test_resync_updates_directory_metadata() {
     let temp_dir = TempDir::new().unwrap();
     let src_dir = temp_dir.path().join("src");
@@ -56,7 +54,7 @@ async fn test_resync_updates_directory_metadata() {
 ///
 /// This verifies rsync-compatible behavior: cannot overwrite file with directory
 #[compio::test]
-#[ignore] // TODO: Fix Args struct usage
+#[ignore] // TODO: Conflict detection needs traversal through destination tree
 async fn test_type_conflict_file_to_directory_fails() {
     let temp_dir = TempDir::new().unwrap();
     let src_dir = temp_dir.path().join("src");
@@ -81,7 +79,7 @@ async fn test_type_conflict_file_to_directory_fails() {
     args.paths.source = src_dir.clone();
     args.paths.destination = dst_base.clone();
 
-    let result = sync_directories(&args).await;
+    let result = arsync::sync::sync_files(&args).await.map(|_| ());
 
     assert!(
         result.is_err(),
@@ -103,7 +101,7 @@ async fn test_type_conflict_file_to_directory_fails() {
 /// When source is file but destination is directory, rsync creates file INSIDE directory.
 /// This test documents expected behavior (not a type conflict, it's nesting).
 #[compio::test]
-#[ignore] // TODO: Fix Args struct usage
+#[ignore] // TODO: Need to implement rsync's nesting behavior (file into directory)
 async fn test_file_into_existing_directory_creates_nested() {
     let temp_dir = TempDir::new().unwrap();
     let src_file = temp_dir.path().join("file.txt");
@@ -138,7 +136,6 @@ async fn test_file_into_existing_directory_creates_nested() {
 
 /// Test: Re-syncing preserves timestamps on existing directories
 #[compio::test]
-#[ignore] // TODO: Fix Args struct usage
 async fn test_resync_preserves_directory_timestamps() {
     let temp_dir = TempDir::new().unwrap();
     let src_dir = temp_dir.path().join("src");
@@ -163,15 +160,9 @@ async fn test_resync_preserves_directory_timestamps() {
     std::thread::sleep(Duration::from_millis(100));
 
     // Sync with --archive (should update timestamps)
-    let args = Args {
-        source: src_dir.clone(),
-        destination: dst_dir.clone(),
-        metadata: arsync::metadata::MetadataConfig {
-            archive: true,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
+    let mut args = common::test_args::create_archive_test_args();
+    args.paths.source = src_dir.clone();
+    args.paths.destination = dst_dir.clone();
 
     arsync::sync::sync_files(&args).await.map(|_| ()).unwrap();
 

@@ -242,7 +242,7 @@ async fn test_xattr_ops_trait_follows_symlinks_bug() {
 /// **Expected behavior**: FAIL because lchown is not implemented yet
 #[compio::test]
 #[cfg(unix)]
-#[ignore] // TODO: Fix Args struct usage and implement lchown
+#[ignore] // TODO: Implement lchown_at_path() in compio-fs-extended
 async fn test_symlink_ownership_preservation() {
     use std::os::unix::fs::MetadataExt;
 
@@ -308,7 +308,7 @@ async fn test_symlink_ownership_preservation() {
 /// **Expected behavior**: FAIL because lutimensat is not implemented yet
 #[compio::test]
 #[cfg(unix)]
-#[ignore] // TODO: Fix Args struct usage and implement lutimensat
+#[ignore] // TODO: Implement lutimensat() in compio-fs-extended
 async fn test_symlink_timestamp_preservation() {
     use std::os::unix::fs::MetadataExt;
     use std::time::Duration;
@@ -399,7 +399,7 @@ async fn test_symlink_timestamp_preservation() {
 /// **Expected behavior**: Should work if lset_xattr_at_path is used
 #[compio::test]
 #[cfg(target_os = "linux")] // xattrs are Linux-specific
-#[ignore] // TODO: Fix Args struct usage
+#[ignore] // TODO: lsetxattr on symlinks requires user_xattr mount option or fails with EPERM
 async fn test_symlink_xattr_preservation() {
     use compio_fs_extended::xattr::{lget_xattr_at_path, lset_xattr_at_path};
 
