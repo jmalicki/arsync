@@ -46,8 +46,8 @@ use compio::dispatcher::Dispatcher;
 use compio::fs::File;
 use compio::io::{AsyncReadAt, AsyncWriteAt};
 use futures::stream::{FuturesUnordered, StreamExt};
-use std::cell::OnceCell;
 use std::path::Path;
+use std::sync::LazyLock;
 
 /// Default I/O buffer size (in bytes) used for chunked read/write operations.
 ///
@@ -57,6 +57,17 @@ const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer
 
 /// 2MB huge page size for alignment in parallel copies
 const HUGE_PAGE_SIZE: u64 = 2 * 1024 * 1024;
+
+/// Global static dispatcher for parallel copy operations.
+///
+/// The dispatcher is shared across all threads and initialized lazily on first use.
+/// It manages a pool of worker threads that handle parallel I/O operations.
+///
+/// Using `LazyLock` gives us true static storage with a natural 'static lifetime,
+/// which is required by `dispatcher.dispatch()` for spawning worker threads.
+#[allow(clippy::expect_used)] // Dispatcher creation failure is unrecoverable
+static DISPATCHER: LazyLock<Dispatcher> =
+    LazyLock::new(|| Dispatcher::new().expect("Failed to create global dispatcher"));
 
 /// Copy a single file (public API)
 ///
@@ -116,30 +127,15 @@ pub async fn copy_file(
         .ok_or_else(|| SyncError::FileSystem("Destination has no filename".to_string()))?
         .to_string_lossy();
 
-    // Get thread-local static dispatcher (reused per thread, no memory leak!)
-    thread_local! {
-        static DISPATCHER: OnceCell<compio::dispatcher::Dispatcher> = const { OnceCell::new() };
-    }
+    // Get reference to global dispatcher (initialized on first use)
+    let dispatcher: &'static Dispatcher = &DISPATCHER;
 
-    let dispatcher_static: &'static Dispatcher = DISPATCHER.with(|cell| {
-        // SAFETY: Getting 'static reference to thread-local storage
-        // Safe because thread_local lives for entire thread lifetime
-        unsafe {
-            let cell_ptr = cell as *const OnceCell<Dispatcher>;
-            let dispatcher = (*cell_ptr).get_or_init(|| {
-                Dispatcher::new().expect("Failed to create thread-local dispatcher")
-            });
-            std::mem::transmute::<&Dispatcher, &'static Dispatcher>(dispatcher)
-        }
-    });
-
-    // Call internal function with DirectoryFd
     copy_file_internal(
         src,
         dst,
         metadata_config,
         parallel_config,
-        dispatcher_static,
+        dispatcher,
         &src_metadata,
         &src_parent_dir,
         &src_filename,
