@@ -550,8 +550,43 @@ impl OwnershipOps for File {
     }
 }
 
-// TODO: Add symlink-aware ownership operations (lchown variants)
-// after writing RED tests that demonstrate current behavior
+/// Change ownership of a symlink (does NOT follow the symlink)
+///
+/// This function uses `lchown` which operates on the symlink itself, not its target.
+/// Essential for preserving symlink metadata during copy operations.
+///
+/// # Parameters
+/// * `path` - Path to the symlink
+/// * `uid` - User ID (None = -1 = leave unchanged)
+/// * `gid` - Group ID (None = -1 = leave unchanged)
+///
+/// # Errors
+/// Returns error if lchown syscall fails
+///
+/// # Platform Support
+/// - Linux/Unix: Supported
+/// - Windows: Not applicable (no symlink ownership)
+pub async fn lchown_at_path(
+    path: &std::path::Path,
+    uid: Option<u32>,
+    gid: Option<u32>,
+) -> std::io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+
+    let uid_val = uid.map_or(-1_i32 as libc::uid_t, |u| u);
+    let gid_val = gid.map_or(-1_i32 as libc::gid_t, |g| g);
+
+    let path_cstr = std::ffi::CString::new(path.as_os_str().as_bytes())
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+
+    let result = unsafe { libc::lchown(path_cstr.as_ptr(), uid_val, gid_val) };
+
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
 
 #[cfg(test)]
 mod tests {

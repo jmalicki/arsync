@@ -1,3 +1,4 @@
+#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Performance and stress tests for metadata preservation
 //!
@@ -5,7 +6,6 @@
 //! various performance scenarios and stress conditions.
 
 use arsync::cli::Args;
-use arsync::copy::copy_file;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
@@ -13,6 +13,7 @@ use std::time::SystemTime;
 use tempfile::TempDir;
 
 mod common;
+use common::copy_helpers::copy_file_test;
 use common::test_args::create_archive_test_args;
 use common::test_timeout_guard;
 use std::time::Duration as StdDuration;
@@ -49,12 +50,11 @@ async fn test_metadata_preservation_many_small_files() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         .unwrap();
@@ -106,12 +106,11 @@ async fn test_metadata_preservation_rapid_sequential() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         .unwrap();
@@ -174,12 +173,11 @@ async fn test_metadata_preservation_mixed_sizes() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         .unwrap();
@@ -247,12 +245,11 @@ async fn test_metadata_preservation_concurrent_operations() {
         // Spawn concurrent copy task
         let handle = compio::runtime::spawn(async move {
             let args = create_test_args_with_archive();
-            copy_file(
+            copy_file_test(
                 &src_path,
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
-                None,
             )
             .await
             .unwrap();
@@ -335,12 +332,11 @@ async fn test_metadata_preservation_specific_timestamps() {
         if result == 0 {
             // Copy the file
             let args = create_test_args_with_archive();
-            copy_file(
+            copy_file_test(
                 &src_path,
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
-                None,
             )
             .await
             .unwrap();
@@ -368,14 +364,27 @@ async fn test_metadata_preservation_specific_timestamps() {
                 modified_duration.subsec_nanos()
             );
 
-            // Check that timestamps are close to the expected values
+            // Check that timestamps are preserved
             // Note: We only check modification time because access time is automatically
             // updated by the filesystem when the file is read during copy operations
-            assert!(
-                modified_duration.as_secs().abs_diff(seconds as u64) < 2,
-                "Modified time should be preserved for {}",
+
+            // Check seconds
+            assert_eq!(
+                modified_duration.as_secs(),
+                seconds as u64,
+                "Modified time seconds should be preserved exactly for {}",
                 description
             );
+
+            // Check nanoseconds (Linux-specific exact match)
+            #[cfg(target_os = "linux")]
+            {
+                assert_eq!(
+                    modified_duration.subsec_nanos(), nanoseconds as u32,
+                    "Modified time nanoseconds should be preserved exactly for {} (expected: {}ns, got: {}ns)",
+                    description, nanoseconds, modified_duration.subsec_nanos()
+                );
+            }
         }
     }
 }
@@ -413,12 +422,11 @@ async fn test_metadata_preservation_alternating_permissions() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         .unwrap();
@@ -487,19 +495,22 @@ async fn test_metadata_preservation_specific_permissions() {
 
         // Copy the file - skip if permission prevents reading
         let args = create_test_args_with_archive();
-        match copy_file(
+        match copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
-            Err(e) if e.to_string().contains("Permission denied") => {
+            Err(e)
+                if e.to_string().contains("Permission denied")
+                    || e.to_string().contains("EACCES")
+                    || e.to_string().contains("EPERM") =>
+            {
                 // Skip this permission mode as it prevents reading the file
                 println!(
                     "Skipping specific permission mode {:o} - prevents reading: {}",

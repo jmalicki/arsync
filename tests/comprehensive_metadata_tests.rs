@@ -1,14 +1,14 @@
+#![cfg(unix)]
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 //! Comprehensive metadata preservation tests
 //!
 //! These tests cover edge cases and scenarios that would significantly increase
 //! confidence in the permission and timestamp preservation functionality.
-
-// Known limitation: Nanosecond timestamp propagation is currently unreliable in CI.
-// See issue: https://github.com/jmalicki/arsync/issues/9
+//!
+//! Note: Nanosecond timestamp tests are Linux-specific and gated with #[cfg(target_os = "linux")]
+//! since nanosecond precision is guaranteed on Linux but may vary on other platforms.
 
 use arsync::cli::Args;
-use arsync::copy::copy_file;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
 
 mod common;
+use common::copy_helpers::copy_file_test;
 use common::test_args::create_archive_test_args;
 
 /// Create a default Args struct for testing with archive mode enabled
@@ -69,12 +70,11 @@ async fn test_permission_preservation_special_bits() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         .unwrap();
@@ -122,12 +122,11 @@ async fn test_timestamp_preservation_old_timestamps() {
     if result == 0 {
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         .unwrap();
@@ -195,12 +194,11 @@ async fn test_timestamp_preservation_future_timestamps() {
     if result == 0 {
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         .unwrap();
@@ -277,19 +275,22 @@ async fn test_permission_preservation_restrictive_permissions() {
 
         // Copy the file - skip if permission prevents reading
         let args = create_test_args_with_archive();
-        match copy_file(
+        match copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
-            Err(e) if e.to_string().contains("Permission denied") => {
+            Err(e)
+                if e.to_string().contains("Permission denied")
+                    || e.to_string().contains("EACCES")
+                    || e.to_string().contains("EPERM") =>
+            {
                 // Skip this permission mode as it prevents reading the file
                 println!(
                     "Skipping permission mode {:o} - prevents reading: {}",
@@ -362,12 +363,11 @@ async fn test_timestamp_preservation_nanosecond_edge_cases() {
         if result == 0 {
             // Copy the file
             let args = create_test_args_with_archive();
-            copy_file(
+            copy_file_test(
                 &src_path,
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
-                None,
             )
             .await
             .unwrap();
@@ -399,19 +399,22 @@ async fn test_timestamp_preservation_nanosecond_edge_cases() {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap_or_default();
             let modified_nanos = modified_duration.subsec_nanos();
-            // Level 1: Modified timestamp check
+            // Level 1: Modified timestamp seconds check
             let expected_seconds = 1609459200; // Jan 1, 2021
             let modified_seconds = modified_duration.as_secs();
             assert_eq!(
                 modified_seconds, expected_seconds,
-                "Basic modified timestamp should be preserved"
+                "Basic modified timestamp seconds should be preserved"
             );
-            // Level 3: Nanosecond precision disabled for now
-            if false {
-                assert!(
-                    modified_nanos.abs_diff(*nanoseconds as u32) < 1000,
-                    "Modified nanosecond precision should be preserved for {}",
-                    description
+
+            // Level 2: Nanosecond precision check (Linux only)
+            #[cfg(target_os = "linux")]
+            {
+                // On Linux filesystems, nanosecond precision should be preserved exactly
+                assert_eq!(
+                    modified_nanos, *nanoseconds as u32,
+                    "Modified nanosecond precision should be preserved exactly for {} (expected: {}, got: {})",
+                    description, nanoseconds, modified_nanos
                 );
             }
         }
@@ -449,12 +452,11 @@ async fn test_permission_preservation_umask_interaction() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
         )
         .await
         .unwrap();
@@ -509,12 +511,11 @@ async fn test_concurrent_metadata_preservation() {
         // Spawn concurrent copy task
         let handle = compio::runtime::spawn(async move {
             let args = create_test_args_with_archive();
-            copy_file(
+            copy_file_test(
                 &src_path,
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
-                None,
             )
             .await
             .unwrap();
@@ -576,12 +577,11 @@ async fn test_metadata_preservation_large_file_stress() {
 
     // Copy the large file
     let args = create_test_args_with_archive();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
     )
     .await
     .unwrap();

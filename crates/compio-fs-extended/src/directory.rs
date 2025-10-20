@@ -134,13 +134,21 @@ impl DirectoryFd {
     /// # }
     /// ```
     #[cfg(unix)]
-    pub async fn create_directory(&self, name: &str, mode: u32) -> Result<()> {
+    pub async fn create_directory(&self, name: &std::ffi::OsStr, mode: u32) -> Result<()> {
+        use std::os::unix::ffi::OsStrExt;
+
         // TODO: Implement using io_uring MkdirAt opcode when available
         // For now, use nix with spawn for security
         let dir_fd = self.as_raw_fd();
-        let name_owned = name.to_string();
+        let name_bytes = name.as_bytes().to_vec();
 
         compio::runtime::spawn(async move {
+            use std::ffi::CString;
+
+            // Convert bytes to CString for mkdirat
+            let c_name = CString::new(name_bytes)
+                .map_err(|e| directory_error(&format!("invalid directory name: {e}")))?;
+
             // SAFETY: The raw fd is valid for the duration of this call because:
             // 1. DirectoryFd holds an Arc<File> keeping the fd open
             // 2. The spawned task completes before DirectoryFd is dropped
@@ -149,10 +157,10 @@ impl DirectoryFd {
             // Note: mode_t is u16 on macOS, u32 on Linux - cast to platform's type
             nix::sys::stat::mkdirat(
                 Some(dir_fd),
-                std::path::Path::new(&name_owned),
+                c_name.as_c_str(),
                 nix::sys::stat::Mode::from_bits_truncate(mode as nix::libc::mode_t),
             )
-            .map_err(|e| directory_error(&format!("mkdirat failed for '{}': {}", name_owned, e)))
+            .map_err(|e| directory_error(&format!("mkdirat failed: {}", e)))
         })
         .await
         .map_err(|e| directory_error(&format!("spawn failed: {:?}", e)))?
@@ -228,8 +236,86 @@ impl DirectoryFd {
     /// # }
     /// ```
     #[cfg(target_os = "linux")]
-    pub async fn statx_full(&self, pathname: &str) -> crate::Result<crate::FileMetadata> {
+    pub async fn statx_full(
+        &self,
+        pathname: &std::ffi::OsStr,
+    ) -> crate::Result<crate::FileMetadata> {
         crate::metadata::statx_impl(self, pathname).await
+    }
+
+    /// Open a subdirectory relative to this DirectoryFd (TOCTOU-safe)
+    ///
+    /// Opens a directory using `openat(2)` with `O_DIRECTORY` flag.
+    /// This verifies the path is actually a directory (fails if it's a file/symlink).
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of subdirectory (relative to this directory)
+    ///
+    /// # Returns
+    ///
+    /// Returns `DirectoryFd` for the subdirectory
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Path doesn't exist
+    /// - Path exists but is not a directory
+    /// - Permission denied
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use compio_fs_extended::DirectoryFd;
+    /// use std::path::Path;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let parent = DirectoryFd::open(Path::new("/tmp")).await?;
+    /// let child = parent.open_directory_at(Path::new("subdir").as_os_str()).await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[cfg(unix)]
+    pub async fn open_directory_at(&self, name: &std::ffi::OsStr) -> Result<Self> {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::io::FromRawFd;
+
+        let dir_fd = self.as_raw_fd();
+        let name_bytes = name.as_bytes().to_vec();
+        let base_path = self.path.clone();
+
+        compio::runtime::spawn_blocking(move || {
+            let name_cstr = CString::new(name_bytes)
+                .map_err(|e| directory_error(&format!("Invalid directory name: {e}")))?;
+
+            // O_DIRECTORY ensures we only open directories (fails if it's a file/symlink)
+            // O_NOFOLLOW prevents following symlinks (TOCTOU hardening)
+            let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+
+            // SAFETY: dir_fd is valid for the duration of this call
+            let fd = unsafe { libc::openat(dir_fd, name_cstr.as_ptr(), flags) };
+
+            if fd < 0 {
+                let err = std::io::Error::last_os_error();
+                return Err(directory_error(&format!(
+                    "openat(O_DIRECTORY) failed: {err}"
+                )));
+            }
+
+            // SAFETY: We just created this fd and have ownership
+            let file = unsafe { compio::fs::File::from_raw_fd(fd) };
+
+            // Build the full path for debugging (append name to base path)
+            let full_path = base_path.join(std::ffi::OsStr::from_bytes(name_cstr.as_bytes()));
+
+            Ok(Self {
+                file: Arc::new(file),
+                path: full_path,
+            })
+        })
+        .await
+        .map_err(crate::error::ExtendedError::SpawnJoin)?
     }
 
     /// Open a file relative to this directory (TOCTOU-safe)
@@ -275,20 +361,21 @@ impl DirectoryFd {
     #[allow(clippy::too_many_arguments)]
     pub async fn open_file_at(
         &self,
-        pathname: &str,
+        pathname: &std::ffi::OsStr,
         read: bool,
         write: bool,
         create: bool,
         truncate: bool,
     ) -> Result<compio::fs::File> {
         use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
         use std::os::unix::io::FromRawFd;
 
         let dir_fd = self.as_raw_fd();
-        let pathname = pathname.to_string();
+        let pathname_bytes = pathname.as_bytes().to_vec();
 
         compio::runtime::spawn_blocking(move || {
-            let path_cstr = CString::new(pathname.as_str())
+            let path_cstr = CString::new(pathname_bytes)
                 .map_err(|e| crate::error::directory_error(&format!("Invalid pathname: {e}")))?;
 
             // Build open flags
@@ -391,7 +478,7 @@ impl DirectoryFd {
     #[cfg(target_os = "linux")]
     pub async fn statx(
         &self,
-        pathname: &str,
+        pathname: &std::ffi::OsStr,
     ) -> Result<(std::time::SystemTime, std::time::SystemTime)> {
         let full = crate::metadata::statx_impl(self, pathname).await?;
         Ok((full.accessed, full.modified))

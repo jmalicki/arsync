@@ -6,7 +6,7 @@
 
 use crate::adaptive_concurrency::{check_fd_limits, AdaptiveConcurrencyController};
 use crate::cli::{Args, CopyMethod};
-use crate::copy::copy_file;
+use crate::copy::copy_file_internal;
 use crate::error::{Result, SyncError};
 use crate::hardlink_tracker::FilesystemTracker;
 use crate::io_uring::FileOperations;
@@ -17,7 +17,7 @@ use compio::dispatcher::Dispatcher;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Extended metadata using `io_uring` statx or compio metadata
 ///
@@ -86,10 +86,14 @@ impl ExtendedMetadata {
     /// Returns error if statx operation fails
     #[cfg(target_os = "linux")]
     #[allow(clippy::future_not_send)]
-    pub async fn from_dirfd(dir: &compio_fs_extended::DirectoryFd, filename: &str) -> Result<Self> {
+    pub async fn from_dirfd(
+        dir: &compio_fs_extended::DirectoryFd,
+        filename: &std::ffi::OsStr,
+    ) -> Result<Self> {
         let metadata = dir.statx_full(filename).await.map_err(|e| {
             SyncError::FileSystem(format!(
-                "Failed to get metadata via dirfd for {filename}: {e}"
+                "Failed to get metadata via dirfd for {}: {e}",
+                filename.to_string_lossy()
             ))
         })?;
         Ok(Self::from_statx(metadata))
@@ -353,7 +357,8 @@ async fn traverse_and_copy_directory_iterative(
     // Note: We clone Arc values here, but this is necessary because we need to
     // unwrap them later to return the final stats. The clone increments ref count,
     // but all child operations complete before we unwrap, so it's just +1/-1.
-    let result = process_directory_entry_with_compio(
+    // Delegate to root wrapper which handles DirectoryFd setup
+    let result = process_root_entry(
         dispatcher,
         initial_src,
         initial_dst,
@@ -364,8 +369,6 @@ async fn traverse_and_copy_directory_iterative(
         concurrency_controller,
         metadata_config_arc,
         parallel_config_arc,
-        None, // Root directory has no parent
-        None, // Root directory has no filename
     )
     .await;
 
@@ -430,6 +433,109 @@ async fn traverse_and_copy_directory_iterative(
 /// - File copying fails
 /// - Symlink copying fails
 /// - Hardlink operations fail
+///
+/// Helper: Open parent directory as `DirectoryFd`
+///
+/// Extracts the common pattern of opening a path's parent as `DirectoryFd`.
+#[allow(clippy::future_not_send)]
+async fn open_parent_dirfd(path: &Path) -> Result<Arc<compio_fs_extended::DirectoryFd>> {
+    let parent = path.parent().unwrap_or(path);
+    let dir_fd = compio_fs_extended::DirectoryFd::open(parent)
+        .await
+        .map_err(|e| {
+            SyncError::FileSystem(format!(
+                "Failed to open parent directory {}: {e}",
+                parent.display()
+            ))
+        })?;
+    Ok(Arc::new(dir_fd))
+}
+
+/// Process root entry (wrapper that sets up `DirectoryFd` for TOCTOU-safe operations)
+#[allow(clippy::too_many_arguments)]
+#[allow(clippy::future_not_send)]
+#[allow(clippy::used_underscore_binding)]
+async fn process_root_entry(
+    dispatcher: &'static Dispatcher,
+    src_path: PathBuf,
+    dst_path: PathBuf,
+    file_ops: Arc<FileOperations>,
+    _copy_method: CopyMethod,
+    stats: Arc<SharedStats>,
+    hardlink_tracker: Arc<FilesystemTracker>,
+    concurrency_controller: Arc<AdaptiveConcurrencyController>,
+    metadata_config: Arc<MetadataConfig>,
+    parallel_config: Arc<crate::cli::ParallelCopyConfig>,
+) -> Result<()> {
+    let src_parent_dir = open_parent_dirfd(&src_path).await?;
+    let src_filename = src_path
+        .file_name()
+        .ok_or_else(|| SyncError::FileSystem("No filename".to_string()))?
+        .to_os_string();
+
+    let dst_parent_dir = open_parent_dirfd(&dst_path).await?;
+    let dst_filename = dst_path
+        .file_name()
+        .ok_or_else(|| SyncError::FileSystem("No filename".to_string()))?
+        .to_os_string();
+
+    process_directory_entry_with_compio(
+        dispatcher,
+        src_path,
+        dst_path,
+        file_ops,
+        _copy_method,
+        stats,
+        hardlink_tracker,
+        concurrency_controller,
+        metadata_config,
+        parallel_config,
+        src_parent_dir,
+        src_filename,
+        dst_parent_dir,
+        dst_filename,
+    )
+    .await
+}
+
+/// Internal: Process directory entry recursively with TOCTOU-safe `DirectoryFd` operations
+///
+/// This is the main recursive function for directory traversal. It processes files, directories,
+/// and symlinks using compio's dispatcher pattern to avoid stack overflow and enable
+/// concurrent processing.
+///
+/// **REQUIRES `DirectoryFd`**: All `DirectoryFd` parameters are required (no Options).
+/// This enforces TOCTOU-safe operations at compile time. Use `process_root_entry` for root.
+///
+/// # Parameters
+///
+/// * `dispatcher` - Static dispatcher for concurrent operations
+/// * `src_path` - Source path (for error messages only)
+/// * `dst_path` - Destination path (for error messages only)
+/// * `file_ops` - File operations handler
+/// * `_copy_method` - Copy method to use
+/// * `stats` - Shared statistics tracker
+/// * `hardlink_tracker` - Shared hardlink tracker for inode-based detection
+/// * `concurrency_controller` - Adaptive concurrency limiter
+/// * `metadata_config` - Metadata preservation configuration
+/// * `parallel_config` - Parallel copy configuration
+/// * `src_parent_dir` - Source parent `DirectoryFd` (REQUIRED for TOCTOU safety)
+/// * `src_filename` - Source basename (REQUIRED)
+/// * `dst_parent_dir` - Destination parent `DirectoryFd` (REQUIRED for TOCTOU safety)
+/// * `dst_filename` - Destination basename (REQUIRED)
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the entry was processed successfully, or `Err(SyncError)` if failed.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Directory creation fails
+/// - Metadata retrieval fails
+/// - File copy operations fail
+/// - Symlink operations fail
+/// - Hardlink operations fail
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::future_not_send)]
 #[allow(clippy::used_underscore_binding)]
@@ -445,8 +551,10 @@ async fn process_directory_entry_with_compio(
     concurrency_controller: Arc<AdaptiveConcurrencyController>,
     metadata_config: Arc<MetadataConfig>,
     parallel_config: Arc<crate::cli::ParallelCopyConfig>,
-    src_parent_dir: Option<Arc<compio_fs_extended::DirectoryFd>>,
-    src_filename: Option<String>,
+    src_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
+    src_filename: std::ffi::OsString,
+    dst_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
+    dst_filename: std::ffi::OsString,
 ) -> Result<()> {
     // Clone controller before acquiring permit to avoid borrow/move conflict
     let controller = Arc::clone(&concurrency_controller);
@@ -456,15 +564,10 @@ async fn process_directory_entry_with_compio(
     // The permit is held for the entire operation (directory, file, or symlink)
     let _permit = controller.acquire().await;
 
-    // Get comprehensive metadata using io_uring statx via DirectoryFd if available
+    // Get comprehensive metadata using io_uring statx via DirectoryFd
+    // ✅ ALWAYS uses DirectoryFd - no fallback, no path-based operations!
     let extended_metadata =
-        if let (Some(dir), Some(name)) = (src_parent_dir.as_ref(), src_filename.as_ref()) {
-            // FAST PATH: Use DirectoryFd::statx_full() - io_uring, TOCTOU-safe, single call
-            ExtendedMetadata::from_dirfd(dir, name).await?
-        } else {
-            // FALLBACK: Path-based for root directory - slower, TOCTOU-vulnerable
-            ExtendedMetadata::new(&src_path).await?
-        };
+        ExtendedMetadata::from_dirfd(&src_parent_dir, src_filename.as_ref()).await?;
 
     if extended_metadata.is_dir() {
         // ========================================================================
@@ -472,21 +575,57 @@ async fn process_directory_entry_with_compio(
         // ========================================================================
         debug!("Processing directory: {}", src_path.display());
 
-        // Create destination directory using compio's dispatcher
-        if !dst_path.exists() {
-            compio::fs::create_dir(&dst_path).await.map_err(|e| {
-                SyncError::FileSystem(format!(
+        // Try to create destination directory using DirectoryFd (TOCTOU-safe mkdirat!)
+        // This uses mkdirat(2) via DirectoryFd, which is atomic and TOCTOU-safe
+        match dst_parent_dir
+            .create_directory(dst_filename.as_ref(), 0o755)
+            .await
+        {
+            Ok(()) => {
+                stats.increment_directories_created();
+            }
+            Err(e)
+                if e.to_string().contains("File exists")
+                    || e.to_string().contains("AlreadyExists") =>
+            {
+                // Directory already exists - we'll verify by trying to open it below
+                debug!("Directory already exists: {}", dst_path.display());
+            }
+            Err(e) => {
+                return Err(SyncError::FileSystem(format!(
                     "Failed to create directory {}: {}",
                     dst_path.display(),
                     e
-                ))
-            })?;
-            stats.increment_directories_created();
-
-            // Preserve directory metadata (permissions, ownership, timestamps) if requested
-            preserve_directory_metadata(&src_path, &dst_path, &extended_metadata, &metadata_config)
-                .await?;
+                )));
+            }
         }
+
+        // Open the destination directory immediately (for metadata and children)
+        // This also serves as our type verification: openat with O_DIRECTORY will fail
+        // if the path exists but is not a directory (e.g., it's a file or symlink).
+        // TOCTOU-safe: opens relative to already-opened parent DirectoryFd, doesn't follow symlinks.
+        let dst_dir_fd = Arc::new(
+            dst_parent_dir.open_directory_at(dst_filename.as_ref())
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to open destination directory {} (path may exist but not be a directory): {}",
+                        dst_path.display(),
+                        e
+                    ))
+                })?,
+        );
+
+        // ALWAYS preserve directory metadata (whether just created or already existed)
+        // This ensures metadata is synchronized even on re-sync operations
+        preserve_directory_metadata_fd(
+            &src_path,
+            &dst_path,
+            &dst_dir_fd,
+            &extended_metadata,
+            &metadata_config,
+        )
+        .await?;
 
         // Open source directory as DirectoryFd for TOCTOU-safe operations
         let src_dir = Arc::new(
@@ -533,7 +672,7 @@ async fn process_directory_entry_with_compio(
                 SyncError::FileSystem(format!("Invalid file name in {}", child_src_path.display()))
             })?;
             let child_dst_path = dst_path.join(file_name);
-            let file_name_string = file_name.to_string_lossy().to_string();
+            let file_name_osstring = file_name.to_os_string();
 
             // Dispatch all entries to the same function regardless of type
             // This creates a unified processing pipeline where each entry
@@ -548,6 +687,19 @@ async fn process_directory_entry_with_compio(
             let metadata_config_clone = Arc::clone(&metadata_config);
             let parallel_config_clone = Arc::clone(&parallel_config);
             let src_dir_clone = Arc::clone(&src_dir);
+            // Also open destination DirectoryFd for TOCTOU-safe file creation
+            let dst_dir = compio_fs_extended::DirectoryFd::open(&dst_path)
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to open destination directory {}: {}",
+                        dst_path.display(),
+                        e
+                    ))
+                })?;
+            let dst_dir_clone = Arc::new(dst_dir);
+            let dst_file_name_osstring = file_name.to_os_string();
+
             let receiver = dispatcher
                 .dispatch(move || {
                     process_directory_entry_with_compio(
@@ -561,8 +713,10 @@ async fn process_directory_entry_with_compio(
                         concurrency_controller, // Move instead of clone - already cloned above
                         metadata_config_clone,
                         parallel_config_clone,
-                        Some(src_dir_clone),    // Pass parent DirectoryFd
-                        Some(file_name_string), // Pass filename
+                        src_dir_clone,          // Pass source parent DirectoryFd
+                        file_name_osstring,     // Pass source filename
+                        dst_dir_clone,          // Pass destination parent DirectoryFd
+                        dst_file_name_osstring, // Pass destination filename
                     )
                 })
                 .map_err(|e| {
@@ -605,6 +759,10 @@ async fn process_directory_entry_with_compio(
             metadata_config,
             parallel_config,
             dispatcher,
+            src_parent_dir,
+            src_filename,
+            dst_parent_dir,
+            dst_filename,
         )
         .await?;
     } else if extended_metadata.is_symlink() {
@@ -613,11 +771,11 @@ async fn process_directory_entry_with_compio(
         // ========================================================================
         if metadata_config.should_preserve_links() {
             // Copy symlink as symlink (preserve target)
-            process_symlink(src_path, dst_path, stats).await?;
+            process_symlink(src_path, dst_path, &metadata_config, stats).await?;
         } else {
             // Dereference symlink: recursively process the target
             // This handles files, directories, and even chains of symlinks correctly
-            warn!(
+            debug!(
                 "Dereferencing symlink (will copy target): {}",
                 src_path.display()
             );
@@ -647,11 +805,10 @@ async fn process_directory_entry_with_compio(
             };
 
             // Recursively process the target (handles files, dirs, and symlink chains)
-            // Note: We lose the parent DirectoryFd context here (target may be elsewhere)
-            // Use dispatcher to avoid recursive async function issues
+            // Use process_root_entry since target path could be anywhere (needs own DirectoryFd setup)
             let receiver = dispatcher
                 .dispatch(move || {
-                    process_directory_entry_with_compio(
+                    process_root_entry(
                         dispatcher,
                         target_path,
                         dst_path,
@@ -662,8 +819,6 @@ async fn process_directory_entry_with_compio(
                         concurrency_controller,
                         metadata_config,
                         parallel_config,
-                        None, // No parent dirfd for dereferenced symlink target
-                        None, // No filename for dereferenced symlink target
                     )
                 })
                 .map_err(|e| {
@@ -714,6 +869,10 @@ async fn process_file(
     metadata_config: Arc<MetadataConfig>,
     parallel_config: Arc<crate::cli::ParallelCopyConfig>,
     dispatcher: &'static Dispatcher,
+    src_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
+    src_filename: std::ffi::OsString,
+    dst_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
+    dst_filename: std::ffi::OsString,
 ) -> Result<()> {
     debug!(
         "Processing file: {} (link_count: {})",
@@ -737,13 +896,18 @@ async fn process_file(
             src_path.display()
         );
 
-        // Copy file with parallel config from Args
-        copy_file(
+        // Copy file with DirectoryFd (TOCTOU-safe, compile-time enforced)
+        copy_file_internal(
             &src_path,
             &dst_path,
             &metadata_config,
             &parallel_config,
-            Some(dispatcher),
+            dispatcher,
+            &metadata,
+            &src_parent_dir,
+            &src_filename,
+            &dst_parent_dir,
+            &dst_filename,
         )
         .await?;
 
@@ -781,13 +945,18 @@ async fn process_file(
             src_path.display()
         );
 
-        // Copy file with parallel config from Args
-        copy_file(
+        // Copy file with DirectoryFd (TOCTOU-safe, compile-time enforced)
+        copy_file_internal(
             &src_path,
             &dst_path,
             &metadata_config,
             &parallel_config,
-            Some(dispatcher),
+            dispatcher,
+            &metadata,
+            &src_parent_dir,
+            &src_filename,
+            &dst_parent_dir,
+            &dst_filename,
         )
         .await?;
 
@@ -903,18 +1072,19 @@ async fn handle_existing_hardlink(
 async fn process_symlink(
     src_path: PathBuf,
     dst_path: PathBuf,
+    metadata_config: &MetadataConfig,
     stats: Arc<SharedStats>,
 ) -> Result<()> {
     debug!("Processing symlink: {}", src_path.display());
 
-    match copy_symlink(&src_path, &dst_path).await {
+    match copy_symlink(&src_path, &dst_path, metadata_config).await {
         Ok(()) => {
             stats.increment_symlinks_processed();
             Ok(())
         }
         Err(e) => {
             stats.increment_errors();
-            warn!("Failed to copy symlink {}: {}", src_path.display(), e);
+            error!("Failed to copy symlink {}: {}", src_path.display(), e);
             Err(e)
         }
     }
@@ -927,7 +1097,9 @@ async fn process_symlink(
 /// This is the lowest-common-denominator for symlinks, but acceptable since
 /// the symlink itself is atomic.
 #[allow(clippy::future_not_send)]
-async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
+#[allow(clippy::too_many_lines)] // Metadata preservation adds lines
+#[allow(clippy::cast_sign_loss)] // Timestamps are i64 but Duration needs u64
+async fn copy_symlink(src: &Path, dst: &Path, metadata_config: &MetadataConfig) -> Result<()> {
     use compio_fs_extended::directory::DirectoryFd;
 
     // Extract parent directory and filename for DirectoryFd operations
@@ -1007,12 +1179,58 @@ async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
 
     debug!("Copied symlink {} -> {}", dst.display(), target.display());
 
-    // TODO: Preserve symlink metadata (permissions, ownership, timestamps)
-    // Symlinks can't be opened as FDs, so we'd need:
-    // - fchmodat(dirfd, filename, mode, AT_SYMLINK_NOFOLLOW) for permissions
-    // - fchownat(dirfd, filename, uid, gid, AT_SYMLINK_NOFOLLOW) for ownership
-    // - utimensat(dirfd, filename, times, AT_SYMLINK_NOFOLLOW) for timestamps
-    // These are path-based but relative to dirfd (acceptable for symlinks)
+    // Preserve symlink metadata using DirectoryFd operations with AT_SYMLINK_NOFOLLOW
+    // These operate on the symlink itself, not its target
+
+    // Get source symlink metadata
+    let src_metadata = std::fs::symlink_metadata(src).map_err(|e| {
+        SyncError::FileSystem(format!(
+            "Failed to get symlink metadata for {}: {}",
+            src.display(),
+            e
+        ))
+    })?;
+
+    // Preserve ownership (if requested and we have permissions)
+    if metadata_config.archive || metadata_config.owner || metadata_config.group {
+        use std::os::unix::fs::MetadataExt;
+        let uid = src_metadata.uid();
+        let gid = src_metadata.gid();
+
+        // Use lfchownat which doesn't follow symlinks
+        if let Err(e) = dst_dir_fd.lfchownat(&dst_name, uid, gid).await {
+            // Don't fail if we can't change ownership (common for non-root)
+            debug!(
+                "Could not preserve symlink ownership (may need root): {}",
+                e
+            );
+        }
+    }
+
+    // Preserve timestamps (if requested)
+    if metadata_config.archive || metadata_config.times {
+        use std::os::unix::fs::MetadataExt;
+
+        // Include nanoseconds for full precision
+        let atime = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(src_metadata.atime() as u64)
+            + std::time::Duration::from_nanos(src_metadata.atime_nsec() as u64);
+        let mtime = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(src_metadata.mtime() as u64)
+            + std::time::Duration::from_nanos(src_metadata.mtime_nsec() as u64);
+
+        // Use lutimensat which doesn't follow symlinks
+        dst_dir_fd
+            .lutimensat(&dst_name, atime, mtime)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to preserve symlink timestamps for {}: {}",
+                    dst.display(),
+                    e
+                ))
+            })?;
+    }
 
     Ok(())
 }
@@ -1162,28 +1380,37 @@ pub async fn preserve_directory_xattr(src_path: &Path, dst_path: &Path) -> Resul
 /// - Ownership preservation fails
 /// - Timestamp preservation fails
 #[allow(clippy::future_not_send, clippy::similar_names)]
-pub async fn preserve_directory_metadata(
-    src_path: &Path,
-    dst_path: &Path,
+///
+/// Preserve directory metadata using pre-opened `DirectoryFd` (TOCTOU-safe, efficient)
+///
+/// This function accepts an already-open `DirectoryFd` and uses it for all metadata operations.
+/// This is more efficient (1 open vs 3) and TOCTOU-safe.
+///
+/// # Parameters
+/// - `src_path`: Source path (for error messages and xattr operations)
+/// - `dst_path`: Destination path (for error messages and xattr operations)  
+/// - `dst_dir_fd`: Pre-opened destination `DirectoryFd`
+/// - `extended_metadata`: Source metadata to copy
+/// - `metadata_config`: What metadata to preserve
+pub async fn preserve_directory_metadata_fd(
+    src_path: &Path, // For error messages and xattrs
+    dst_path: &Path, // For error messages and xattrs
+    dst_dir_fd: &compio_fs_extended::DirectoryFd,
     extended_metadata: &ExtendedMetadata,
     metadata_config: &MetadataConfig,
 ) -> Result<()> {
     use compio_fs_extended::OwnershipOps;
+
+    // Get underlying File from DirectoryFd for metadata operations
+    let dst_file = dst_dir_fd.as_file();
 
     // Preserve directory permissions if requested
     if metadata_config.should_preserve_permissions() {
         let mode = extended_metadata.metadata.permissions();
         let compio_permissions = compio::fs::Permissions::from_mode(mode);
 
-        // Open destination directory for permission operations
-        let dst_dir = compio::fs::File::open(dst_path).await.map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to open destination directory for permissions: {e}"
-            ))
-        })?;
-
-        // Use file descriptor-based set_permissions to avoid umask interference
-        dst_dir
+        // Use FD-based set_permissions (TOCTOU-safe, no umask interference)
+        dst_file
             .set_permissions(compio_permissions)
             .await
             .map_err(|e| {
@@ -1202,15 +1429,8 @@ pub async fn preserve_directory_metadata(
         let source_uid = extended_metadata.metadata.uid;
         let source_gid = extended_metadata.metadata.gid;
 
-        // Open destination directory for ownership operations
-        let dst_dir = compio::fs::File::open(dst_path).await.map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to open destination directory for ownership: {e}"
-            ))
-        })?;
-
-        // Set ownership using fchown
-        dst_dir.fchown(source_uid, source_gid).await.map_err(|e| {
+        // Use FD-based fchown (TOCTOU-safe!)
+        dst_file.fchown(source_uid, source_gid).await.map_err(|e| {
             SyncError::FileSystem(format!("Failed to preserve directory ownership: {e}"))
         })?;
 
@@ -1227,16 +1447,8 @@ pub async fn preserve_directory_metadata(
         let src_accessed = extended_metadata.metadata.accessed;
         let src_modified = extended_metadata.metadata.modified;
 
-        // Use DirectoryFd for TOCTOU-safe timestamp preservation
-        let dst_dir = compio_fs_extended::directory::DirectoryFd::open(dst_path)
-            .await
-            .map_err(|e| {
-                SyncError::FileSystem(format!(
-                    "Failed to open destination directory for timestamps: {e}"
-                ))
-            })?;
-
-        dst_dir
+        // Use DirectoryFd::set_times (TOCTOU-safe!)
+        dst_dir_fd
             .set_times(src_accessed, src_modified)
             .await
             .map_err(|e| {
@@ -1253,6 +1465,35 @@ pub async fn preserve_directory_metadata(
     }
 
     Ok(())
+}
+
+/// Preserve directory metadata (legacy path-based wrapper)
+///
+/// **DEPRECATED**: Use `preserve_directory_metadata_fd` instead
+/// This wrapper exists for compatibility but opens the directory 3 times (inefficient!)
+///
+/// # Errors
+/// Returns error if `DirectoryFd` cannot be opened or metadata preservation fails
+#[allow(clippy::future_not_send)]
+pub async fn preserve_directory_metadata(
+    src_path: &Path,
+    dst_path: &Path,
+    extended_metadata: &ExtendedMetadata,
+    metadata_config: &MetadataConfig,
+) -> Result<()> {
+    // Open DirectoryFd once and use FD-based operations
+    let dst_dir_fd = compio_fs_extended::DirectoryFd::open(dst_path)
+        .await
+        .map_err(|e| SyncError::FileSystem(format!("Failed to open destination directory: {e}")))?;
+
+    preserve_directory_metadata_fd(
+        src_path,
+        dst_path,
+        &dst_dir_fd,
+        extended_metadata,
+        metadata_config,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -1352,6 +1593,24 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
+            &MetadataConfig {
+                archive: false,
+                recursive: false,
+                links: true,
+                perms: false,
+                times: false,
+                group: false,
+                owner: false,
+                devices: false,
+                fsync: false,
+                xattrs: false,
+                acls: false,
+                hard_links: false,
+                atimes: false,
+                crtimes: false,
+                preserve_xattr: false,
+                preserve_acl: false,
+            },
             Arc::new(SharedStats::new(&stats)),
         )
         .await;
@@ -1384,6 +1643,24 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
+            &MetadataConfig {
+                archive: false,
+                recursive: false,
+                links: true,
+                perms: false,
+                times: false,
+                group: false,
+                owner: false,
+                devices: false,
+                fsync: false,
+                xattrs: false,
+                acls: false,
+                hard_links: false,
+                atimes: false,
+                crtimes: false,
+                preserve_xattr: false,
+                preserve_acl: false,
+            },
             Arc::new(SharedStats::new(&stats)),
         )
         .await;

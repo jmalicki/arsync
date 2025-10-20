@@ -286,10 +286,15 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
 ///
 /// Returns an error if the statx operation fails
 #[cfg(target_os = "linux")]
-pub(crate) async fn statx_impl(dir: &DirectoryFd, pathname: &str) -> Result<FileMetadata> {
+pub(crate) async fn statx_impl(
+    dir: &DirectoryFd,
+    pathname: &std::ffi::OsStr,
+) -> Result<FileMetadata> {
+    use std::os::unix::ffi::OsStrExt;
+
     let dir_fd = dir.as_raw_fd();
-    let path_cstr =
-        CString::new(pathname).map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
+    let path_cstr = CString::new(pathname.as_bytes())
+        .map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
 
     // Use directory FD with relative path
     // AT_SYMLINK_NOFOLLOW = don't dereference symlinks (CRITICAL for symlink preservation!)

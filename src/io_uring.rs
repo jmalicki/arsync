@@ -414,7 +414,7 @@ impl FileOperations {
         dst: &Path,
         parallel_config: &crate::cli::ParallelCopyConfig,
     ) -> Result<u64> {
-        // Get file size for stats
+        // Get file size for return value
         let file_size = compio::fs::metadata(src)
             .await
             .map_err(|e| SyncError::FileSystem(format!("Failed to get file metadata: {e}")))?
@@ -440,7 +440,8 @@ impl FileOperations {
             preserve_acl: false,
         };
 
-        crate::copy::copy_file(src, dst, &metadata_config, parallel_config, None).await?;
+        // Call public API - it handles DirectoryFd and Dispatcher setup internally (no leak!)
+        crate::copy::copy_file(src, dst, &metadata_config, parallel_config).await?;
 
         debug!(
             "Copied {} bytes from {} to {} with metadata preservation",

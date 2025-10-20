@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+pub mod copy_helpers;
 pub mod test_args;
 
 /// Helper to create a disabled parallel copy config for tests
