@@ -112,18 +112,29 @@ rsync -av --delete src/ dst/  # dst is a file
 
 ### Type Conflict Detection
 
+**Current implementation** (as of 2025-10-20):
+
 ```rust
 match compio::fs::create_dir(&dst_path).await {
     Ok(()) => {
         // Created successfully
     }
     Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-        // Verify it's actually a directory
-        let metadata = compio::fs::metadata(&dst_path).await?;
-        if !metadata.is_dir() {
+        // Verify it's actually a directory using DirectoryFd (TOCTOU-safe!)
+        let existing_metadata = ExtendedMetadata::from_dirfd(&dst_parent_dir, &dst_filename)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to check existing path {}: {}",
+                    dst_path.display(),
+                    e
+                ))
+            })?;
+
+        if !existing_metadata.is_dir() {
             return Err(SyncError::FileSystem(format!(
                 "Cannot create directory {}: path exists but is not a directory",
-                dst_path.display()
+                dst_path.display(),
             )));
         }
         // It's a directory - continue
@@ -131,6 +142,9 @@ match compio::fs::create_dir(&dst_path).await {
     Err(e) => return Err(...),
 }
 ```
+
+**Key improvement:** Uses `ExtendedMetadata::from_dirfd()` instead of path-based `metadata()`,
+eliminating TOCTOU vulnerability between the `create_dir` failure and the verification check.
 
 ### Metadata Preservation
 

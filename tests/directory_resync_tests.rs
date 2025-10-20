@@ -53,8 +53,12 @@ async fn test_resync_updates_directory_metadata() {
 /// Test: Type conflict (file exists, trying to create directory) should FAIL
 ///
 /// This verifies rsync-compatible behavior: cannot overwrite file with directory
+///
+/// **Current implementation:** Type conflict detection IS implemented via DirectoryFd.
+/// When `create_dir` fails with AlreadyExists, we verify the existing path is a directory.
+/// If it's not (e.g., it's a file), we return an error.
 #[compio::test]
-#[ignore] // TODO: Conflict detection needs traversal through destination tree
+#[ignore] // TODO: Test scenario may not match actual traversal (needs verification)
 async fn test_type_conflict_file_to_directory_fails() {
     let temp_dir = TempDir::new().unwrap();
     let src_dir = temp_dir.path().join("src");
@@ -96,12 +100,15 @@ async fn test_type_conflict_file_to_directory_fails() {
     println!("✅ Correctly rejected type conflict (file → directory)");
 }
 
-/// Test: Type conflict (directory exists, trying to create file) - rsync behavior
+/// Test: File into directory - rsync nesting behavior
 ///
 /// When source is file but destination is directory, rsync creates file INSIDE directory.
-/// This test documents expected behavior (not a type conflict, it's nesting).
+/// This is NOT a type conflict - it's intentional nesting behavior.
+///
+/// **Implementation status:** File copying already uses DirectoryFd-based operations,
+/// but this specific nesting scenario (source=file, dest=dir) needs verification.
 #[compio::test]
-#[ignore] // TODO: Need to implement rsync's nesting behavior (file into directory)
+#[ignore] // TODO: Verify rsync's nesting behavior is correctly implemented
 async fn test_file_into_existing_directory_creates_nested() {
     let temp_dir = TempDir::new().unwrap();
     let src_file = temp_dir.path().join("file.txt");
