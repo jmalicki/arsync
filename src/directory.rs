@@ -495,6 +495,44 @@ async fn process_root_entry(
     .await
 }
 
+/// Internal: Process directory entry recursively with TOCTOU-safe `DirectoryFd` operations
+///
+/// This is the main recursive function for directory traversal. It processes files, directories,
+/// and symlinks using compio's dispatcher pattern to avoid stack overflow and enable
+/// concurrent processing.
+///
+/// **REQUIRES `DirectoryFd`**: All `DirectoryFd` parameters are required (no Options).
+/// This enforces TOCTOU-safe operations at compile time. Use `process_root_entry` for root.
+///
+/// # Parameters
+///
+/// * `dispatcher` - Static dispatcher for concurrent operations
+/// * `src_path` - Source path (for error messages only)
+/// * `dst_path` - Destination path (for error messages only)
+/// * `file_ops` - File operations handler
+/// * `_copy_method` - Copy method to use
+/// * `stats` - Shared statistics tracker
+/// * `hardlink_tracker` - Shared hardlink tracker for inode-based detection
+/// * `concurrency_controller` - Adaptive concurrency limiter
+/// * `metadata_config` - Metadata preservation configuration
+/// * `parallel_config` - Parallel copy configuration
+/// * `src_parent_dir` - Source parent `DirectoryFd` (REQUIRED for TOCTOU safety)
+/// * `src_filename` - Source basename (REQUIRED)
+/// * `dst_parent_dir` - Destination parent `DirectoryFd` (REQUIRED for TOCTOU safety)
+/// * `dst_filename` - Destination basename (REQUIRED)
+///
+/// # Returns
+///
+/// Returns `Ok(())` if the entry was processed successfully, or `Err(SyncError)` if failed.
+///
+/// # Errors
+///
+/// Returns an error if:
+/// - Directory creation fails
+/// - Metadata retrieval fails
+/// - File copy operations fail
+/// - Symlink operations fail
+/// - Hardlink operations fail
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::future_not_send)]
 #[allow(clippy::used_underscore_binding)]

@@ -9,6 +9,7 @@ use std::path::Path;
 /// Helper to copy a file in tests
 ///
 /// This is just a thin wrapper around the public `copy_file()` API for consistency in tests.
+#[allow(dead_code)] // Not all test files use this
 pub async fn copy_file_test(
     src: &Path,
     dst: &Path,
