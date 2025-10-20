@@ -307,7 +307,7 @@ impl DirectoryFd {
             let file = unsafe { compio::fs::File::from_raw_fd(fd) };
 
             // Build the full path for debugging (append name to base path)
-            let full_path = base_path.join(std::ffi::OsStr::from_bytes(&name_cstr.as_bytes()));
+            let full_path = base_path.join(std::ffi::OsStr::from_bytes(name_cstr.as_bytes()));
 
             Ok(Self {
                 file: Arc::new(file),
