@@ -23,6 +23,8 @@
 
 use tempfile::TempDir;
 
+mod common;
+
 /// Test: Documents that FD-based ownership operations follow symlinks (design constraint)
 ///
 /// **Design Constraint**: Uses fchown which operates on the file the FD points to
@@ -230,4 +232,231 @@ async fn test_xattr_ops_trait_follows_symlinks_bug() {
     println!("✅ Test proves: XattrOps on File opened from symlink path reads TARGET's xattrs");
     println!("   Can't use trait-based (fd-based) xattr operations on symlinks!");
     println!("   Must use path-based l* functions (lget_xattr_at_path, etc.)");
+}
+
+/// Test: Symlink ownership should be preserved during directory copy (RED - will FAIL)
+///
+/// This test verifies that when copying symlinks with --archive or --owner/--group flags,
+/// the symlink's OWN ownership is preserved, not just the target's.
+///
+/// **Expected behavior**: FAIL because lchown is not implemented yet
+#[compio::test]
+#[cfg(unix)]
+#[ignore] // TODO: Fix Args struct usage and implement lchown
+async fn test_symlink_ownership_preservation() {
+    use std::os::unix::fs::MetadataExt;
+
+    let temp_dir = TempDir::new().unwrap();
+    let src_dir = temp_dir.path().join("src");
+    let dst_dir = temp_dir.path().join("dst");
+
+    std::fs::create_dir(&src_dir).unwrap();
+    std::fs::create_dir(&dst_dir).unwrap();
+
+    let target = src_dir.join("target.txt");
+    let link = src_dir.join("link");
+
+    // Create target
+    std::fs::write(&target, "content").unwrap();
+
+    // Create symlink
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    // Get symlink's original ownership (not target's)
+    let link_metadata_before = std::fs::symlink_metadata(&link).unwrap();
+    let link_uid_before = link_metadata_before.uid();
+    let link_gid_before = link_metadata_before.gid();
+
+    println!(
+        "Source symlink ownership: uid={}, gid={}",
+        link_uid_before, link_gid_before
+    );
+
+    // Copy directory with --archive (should preserve symlink metadata)
+    let mut args = common::test_args::create_archive_test_args();
+    args.paths.source = src_dir.clone();
+    args.paths.destination = dst_dir.clone();
+
+    arsync::sync::sync_files(&args).await.unwrap();
+
+    // Check that the SYMLINK's ownership was preserved (not just the target)
+    let dst_link = dst_dir.join("link");
+    let dst_link_metadata = std::fs::symlink_metadata(&dst_link).unwrap();
+    let dst_link_uid = dst_link_metadata.uid();
+    let dst_link_gid = dst_link_metadata.gid();
+
+    println!(
+        "Destination symlink ownership: uid={}, gid={}",
+        dst_link_uid, dst_link_gid
+    );
+
+    assert_eq!(
+        dst_link_uid, link_uid_before,
+        "Symlink UID should be preserved (not target's UID)"
+    );
+    assert_eq!(
+        dst_link_gid, link_gid_before,
+        "Symlink GID should be preserved (not target's GID)"
+    );
+}
+
+/// Test: Symlink timestamps should be preserved during directory copy (RED - will FAIL)
+///
+/// This test verifies that when copying symlinks with --archive or --times flags,
+/// the symlink's OWN timestamps are preserved, not just the target's.
+///
+/// **Expected behavior**: FAIL because lutimensat is not implemented yet
+#[compio::test]
+#[cfg(unix)]
+#[ignore] // TODO: Fix Args struct usage and implement lutimensat
+async fn test_symlink_timestamp_preservation() {
+    use std::os::unix::fs::MetadataExt;
+    use std::time::Duration;
+
+    let temp_dir = TempDir::new().unwrap();
+    let src_dir = temp_dir.path().join("src");
+    let dst_dir = temp_dir.path().join("dst");
+
+    std::fs::create_dir(&src_dir).unwrap();
+    std::fs::create_dir(&dst_dir).unwrap();
+
+    let target = src_dir.join("target.txt");
+    let link = src_dir.join("link");
+
+    // Create target
+    std::fs::write(&target, "content").unwrap();
+
+    // Create symlink
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    // Set specific timestamps on the SYMLINK (not the target)
+    // Using libc::lutimes or utimensat with AT_SYMLINK_NOFOLLOW
+    use std::os::unix::ffi::OsStrExt;
+    let link_cstr = std::ffi::CString::new(link.as_os_str().as_bytes()).unwrap();
+    let specific_time = libc::timespec {
+        tv_sec: 1609459200, // Jan 1, 2021
+        tv_nsec: 123456789,
+    };
+    let times = [specific_time, specific_time];
+
+    unsafe {
+        libc::utimensat(
+            libc::AT_FDCWD,
+            link_cstr.as_ptr(),
+            times.as_ptr(),
+            libc::AT_SYMLINK_NOFOLLOW, // Don't follow!
+        )
+    };
+
+    // Get symlink's timestamps (not target's)
+    let link_metadata_before = std::fs::symlink_metadata(&link).unwrap();
+    let link_mtime_before = link_metadata_before.mtime();
+    let link_mtime_nsec_before = link_metadata_before.mtime_nsec();
+
+    println!(
+        "Source symlink mtime: {}.{:09}s",
+        link_mtime_before, link_mtime_nsec_before
+    );
+
+    // Wait to ensure different timestamps if metadata isn't preserved
+    std::thread::sleep(Duration::from_millis(100));
+
+    // Copy directory with --archive (should preserve symlink timestamps)
+    let mut args = common::test_args::create_archive_test_args();
+    args.paths.source = src_dir.clone();
+    args.paths.destination = dst_dir.clone();
+
+    arsync::sync::sync_files(&args).await.unwrap();
+
+    // Check that the SYMLINK's timestamps were preserved (not just the target)
+    let dst_link = dst_dir.join("link");
+    let dst_link_metadata = std::fs::symlink_metadata(&dst_link).unwrap();
+    let dst_link_mtime = dst_link_metadata.mtime();
+    let dst_link_mtime_nsec = dst_link_metadata.mtime_nsec();
+
+    println!(
+        "Destination symlink mtime: {}.{:09}s",
+        dst_link_mtime, dst_link_mtime_nsec
+    );
+
+    assert_eq!(
+        dst_link_mtime, link_mtime_before,
+        "Symlink mtime seconds should be preserved"
+    );
+
+    #[cfg(target_os = "linux")]
+    assert_eq!(
+        dst_link_mtime_nsec, link_mtime_nsec_before,
+        "Symlink mtime nanoseconds should be preserved on Linux"
+    );
+}
+
+/// Test: Symlink xattrs should be preserved during directory copy (RED - will FAIL?)
+///
+/// This test verifies that when copying symlinks with --xattrs flag,
+/// the symlink's OWN xattrs are preserved, not just the target's.
+///
+/// **Expected behavior**: Should work if lset_xattr_at_path is used
+#[compio::test]
+#[cfg(target_os = "linux")] // xattrs are Linux-specific
+#[ignore] // TODO: Fix Args struct usage
+async fn test_symlink_xattr_preservation() {
+    use compio_fs_extended::xattr::{lget_xattr_at_path, lset_xattr_at_path};
+
+    let temp_dir = TempDir::new().unwrap();
+    let src_dir = temp_dir.path().join("src");
+    let dst_dir = temp_dir.path().join("dst");
+
+    std::fs::create_dir(&src_dir).unwrap();
+    std::fs::create_dir(&dst_dir).unwrap();
+
+    let target = src_dir.join("target.txt");
+    let link = src_dir.join("link");
+
+    // Create target
+    std::fs::write(&target, "content").unwrap();
+
+    // Create symlink
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+
+    // Set xattr on the SYMLINK (not the target)
+    lset_xattr_at_path(&link, "user.symlink_attr", b"symlink_value")
+        .await
+        .unwrap();
+
+    // Verify symlink has the xattr
+    let link_xattr_before = lget_xattr_at_path(&link, "user.symlink_attr")
+        .await
+        .unwrap();
+    assert_eq!(link_xattr_before, b"symlink_value");
+
+    println!(
+        "Source symlink xattr: user.symlink_attr = {:?}",
+        String::from_utf8_lossy(&link_xattr_before)
+    );
+
+    // Copy directory with --xattrs (should preserve symlink xattrs)
+    let mut args = common::test_args::create_archive_test_args();
+    args.paths.source = src_dir.clone();
+    args.paths.destination = dst_dir.clone();
+    args.metadata.xattrs = true;
+    args.metadata.links = true;
+
+    arsync::sync::sync_files(&args).await.unwrap();
+
+    // Check that the SYMLINK's xattr was preserved (not just the target)
+    let dst_link = dst_dir.join("link");
+    let dst_link_xattr = lget_xattr_at_path(&dst_link, "user.symlink_attr")
+        .await
+        .unwrap();
+
+    println!(
+        "Destination symlink xattr: user.symlink_attr = {:?}",
+        String::from_utf8_lossy(&dst_link_xattr)
+    );
+
+    assert_eq!(
+        dst_link_xattr, b"symlink_value",
+        "Symlink xattr should be preserved"
+    );
 }

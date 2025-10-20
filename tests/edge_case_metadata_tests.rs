@@ -5,7 +5,6 @@
 //! subtle bugs in the permission and timestamp preservation logic.
 
 use arsync::cli::Args;
-use arsync::copy::copy_file;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
@@ -13,6 +12,7 @@ use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
 
 mod common;
+use common::copy_helpers::copy_file_test;
 use common::test_args::create_archive_test_args;
 use common::test_timeout_guard;
 use std::time::Duration as StdDuration;
@@ -43,15 +43,11 @@ async fn test_permission_preservation_no_read_permission() {
 
     // Copy the file (this should still work as we're the owner)
     let args = create_test_args_with_archive();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();
@@ -100,15 +96,11 @@ async fn test_timestamp_preservation_very_recent() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -172,15 +164,11 @@ async fn test_permission_preservation_execute_only() {
 
         // Copy the file - skip if permission prevents reading
         let args = create_test_args_with_archive();
-        match copy_file(
+        match copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         {
@@ -248,15 +236,11 @@ async fn test_timestamp_preservation_identical_times() {
     if result == 0 {
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -332,15 +316,11 @@ async fn test_permission_preservation_all_bits() {
 
         // Copy the file - skip if permission prevents reading or writing
         let args = create_test_args_with_archive();
-        match copy_file(
+        match copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         {
@@ -403,15 +383,11 @@ async fn test_metadata_preservation_long_filename() {
 
     // Copy the file
     let args = create_test_args_with_archive();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();
@@ -481,15 +457,11 @@ async fn test_metadata_preservation_special_characters() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -540,15 +512,11 @@ async fn test_metadata_preservation_unicode_filenames() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();

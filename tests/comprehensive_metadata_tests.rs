@@ -8,7 +8,6 @@
 //! since nanosecond precision is guaranteed on Linux but may vary on other platforms.
 
 use arsync::cli::Args;
-use arsync::copy::copy_file;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
@@ -16,6 +15,7 @@ use std::time::{Duration, SystemTime};
 use tempfile::TempDir;
 
 mod common;
+use common::copy_helpers::copy_file_test;
 use common::test_args::create_archive_test_args;
 
 /// Create a default Args struct for testing with archive mode enabled
@@ -69,15 +69,11 @@ async fn test_permission_preservation_special_bits() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -125,15 +121,11 @@ async fn test_timestamp_preservation_old_timestamps() {
     if result == 0 {
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -201,15 +193,11 @@ async fn test_timestamp_preservation_future_timestamps() {
     if result == 0 {
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -286,15 +274,11 @@ async fn test_permission_preservation_restrictive_permissions() {
 
         // Copy the file - skip if permission prevents reading
         let args = create_test_args_with_archive();
-        match copy_file(
+        match copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         {
@@ -374,15 +358,11 @@ async fn test_timestamp_preservation_nanosecond_edge_cases() {
         if result == 0 {
             // Copy the file
             let args = create_test_args_with_archive();
-            copy_file(
+            copy_file_test(
                 &src_path,
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
-                None,
-                None,
-                None,
-                None,
             )
             .await
             .unwrap();
@@ -467,15 +447,11 @@ async fn test_permission_preservation_umask_interaction() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -530,15 +506,11 @@ async fn test_concurrent_metadata_preservation() {
         // Spawn concurrent copy task
         let handle = compio::runtime::spawn(async move {
             let args = create_test_args_with_archive();
-            copy_file(
+            copy_file_test(
                 &src_path,
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
-                None,
-                None,
-                None,
-                None,
             )
             .await
             .unwrap();
@@ -600,15 +572,11 @@ async fn test_metadata_preservation_large_file_stress() {
 
     // Copy the large file
     let args = create_test_args_with_archive();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();

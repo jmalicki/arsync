@@ -1,12 +1,12 @@
 //! Test permission preservation in file copying
 
 use arsync::cli::Args;
-use arsync::copy::copy_file;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 mod common;
+use common::copy_helpers::copy_file_test;
 use common::test_args::create_archive_test_args;
 
 /// Create a default Args struct for testing with archive mode enabled
@@ -29,15 +29,11 @@ async fn test_permission_preservation() {
 
     // Copy the file with archive mode (full metadata preservation)
     let args = create_test_args_with_archive();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();
@@ -77,15 +73,11 @@ async fn test_timestamp_preservation() {
 
     // Copy the file with archive mode (full metadata preservation)
     let args = create_test_args_with_archive();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();

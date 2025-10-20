@@ -7,13 +7,13 @@
 //! 2. With flag disabled: metadata IS NOT preserved (uses default/umask)
 
 use arsync::cli::Args;
-use arsync::copy::copy_file;
 use arsync::directory::{preserve_directory_metadata, ExtendedMetadata};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 mod common;
+use common::copy_helpers::copy_file_test;
 use common::test_args::{create_minimal_test_args, ArgsBuilder};
 
 /// Create Args with NO metadata preservation (default rsync behavior)
@@ -57,15 +57,11 @@ async fn test_permissions_not_preserved_when_flag_off() {
 
     // Copy WITHOUT --perms flag
     let args = create_args_no_metadata();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();
@@ -106,15 +102,11 @@ async fn test_permissions_preserved_when_flag_on() {
 
     // Copy WITH --perms flag
     let args = create_args_perms_only();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();
@@ -156,15 +148,11 @@ async fn test_timestamps_not_preserved_when_flag_off() {
 
     // Copy WITHOUT --times flag
     let args = create_args_no_metadata();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();
@@ -206,15 +194,11 @@ async fn test_timestamps_preserved_when_flag_on() {
 
     // Copy WITH --times flag
     let args = create_args_times_only();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();
@@ -265,15 +249,11 @@ async fn test_archive_mode_preserves_all_metadata() {
 
     // Copy WITH --archive flag
     let args = create_args_archive();
-    copy_file(
+    copy_file_test(
         &src_path,
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();
@@ -410,30 +390,22 @@ async fn test_individual_flags_match_archive_components() {
 
     // Copy with --perms only
     let args_perms = create_args_perms_only();
-    copy_file(
+    copy_file_test(
         &src_path1,
         &dst_path1_perms,
         &args_perms.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();
 
     // Copy with --archive
     let args_archive = create_args_archive();
-    copy_file(
+    copy_file_test(
         &src_path1,
         &dst_path1_archive,
         &args_archive.metadata,
         &common::disabled_parallel_config(),
-        None,
-        None,
-        None,
-        None,
     )
     .await
     .unwrap();

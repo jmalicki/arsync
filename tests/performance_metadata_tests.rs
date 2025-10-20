@@ -5,7 +5,6 @@
 //! various performance scenarios and stress conditions.
 
 use arsync::cli::Args;
-use arsync::copy::copy_file;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
@@ -13,6 +12,7 @@ use std::time::SystemTime;
 use tempfile::TempDir;
 
 mod common;
+use common::copy_helpers::copy_file_test;
 use common::test_args::create_archive_test_args;
 use common::test_timeout_guard;
 use std::time::Duration as StdDuration;
@@ -49,15 +49,11 @@ async fn test_metadata_preservation_many_small_files() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -109,15 +105,11 @@ async fn test_metadata_preservation_rapid_sequential() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -180,15 +172,11 @@ async fn test_metadata_preservation_mixed_sizes() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -256,15 +244,11 @@ async fn test_metadata_preservation_concurrent_operations() {
         // Spawn concurrent copy task
         let handle = compio::runtime::spawn(async move {
             let args = create_test_args_with_archive();
-            copy_file(
+            copy_file_test(
                 &src_path,
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
-                None,
-                None,
-                None,
-                None,
             )
             .await
             .unwrap();
@@ -347,15 +331,11 @@ async fn test_metadata_preservation_specific_timestamps() {
         if result == 0 {
             // Copy the file
             let args = create_test_args_with_archive();
-            copy_file(
+            copy_file_test(
                 &src_path,
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
-                None,
-                None,
-                None,
-                None,
             )
             .await
             .unwrap();
@@ -441,15 +421,11 @@ async fn test_metadata_preservation_alternating_permissions() {
 
         // Copy the file
         let args = create_test_args_with_archive();
-        copy_file(
+        copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         .unwrap();
@@ -518,15 +494,11 @@ async fn test_metadata_preservation_specific_permissions() {
 
         // Copy the file - skip if permission prevents reading
         let args = create_test_args_with_archive();
-        match copy_file(
+        match copy_file_test(
             &src_path,
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
-            None,
-            None,
-            None,
-            None,
         )
         .await
         {

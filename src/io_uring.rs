@@ -414,11 +414,41 @@ impl FileOperations {
         dst: &Path,
         parallel_config: &crate::cli::ParallelCopyConfig,
     ) -> Result<u64> {
-        // Get file size for stats
-        let file_size = compio::fs::metadata(src)
-            .await
-            .map_err(|e| SyncError::FileSystem(format!("Failed to get file metadata: {e}")))?
-            .len();
+        // For standalone file copy, we need to set up DirectoryFd context
+        // Open parent directories and get metadata
+        let src_parent_dir = compio_fs_extended::DirectoryFd::open(
+            src.parent().unwrap_or_else(|| std::path::Path::new(".")),
+        )
+        .await
+        .map_err(|e| SyncError::FileSystem(format!("Failed to open source parent: {e}")))?;
+
+        let src_filename = src
+            .file_name()
+            .ok_or_else(|| SyncError::FileSystem("Source has no filename".to_string()))?
+            .to_string_lossy();
+
+        // Get metadata via DirectoryFd (TOCTOU-safe!)
+        let src_metadata =
+            crate::directory::ExtendedMetadata::from_dirfd(&src_parent_dir, &src_filename).await?;
+
+        let file_size = src_metadata.metadata.size;
+
+        let dst_parent_dir = compio_fs_extended::DirectoryFd::open(
+            dst.parent().unwrap_or_else(|| std::path::Path::new(".")),
+        )
+        .await
+        .map_err(|e| SyncError::FileSystem(format!("Failed to open dest parent: {e}")))?;
+
+        let dst_filename = dst
+            .file_name()
+            .ok_or_else(|| SyncError::FileSystem("Destination has no filename".to_string()))?
+            .to_string_lossy();
+
+        // Get static dispatcher for parallel operations
+        let dispatcher = compio::dispatcher::Dispatcher::new()
+            .map_err(|e| SyncError::FileSystem(format!("Failed to create dispatcher: {e}")))?;
+        let dispatcher_static: &'static compio::dispatcher::Dispatcher =
+            Box::leak(Box::new(dispatcher));
 
         // Use the full copy_file implementation with parallel support
         let metadata_config = crate::metadata::MetadataConfig {
@@ -440,15 +470,17 @@ impl FileOperations {
             preserve_acl: false,
         };
 
-        crate::copy::copy_file(
+        crate::copy::copy_file_internal(
             src,
             dst,
             &metadata_config,
             parallel_config,
-            None,
-            None,
-            None,
-            None,
+            dispatcher_static,
+            &src_metadata,
+            &src_parent_dir,
+            &src_filename,
+            &dst_parent_dir,
+            &dst_filename,
         )
         .await?;
 
