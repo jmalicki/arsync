@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! Tests for re-syncing to existing directories
 //!
 //! These tests verify that arsync correctly updates metadata when syncing
@@ -151,9 +152,13 @@ async fn test_resync_preserves_directory_timestamps() {
     };
     let src_cstr = std::ffi::CString::new(src_dir.as_os_str().as_bytes()).unwrap();
     let times = [old_time, old_time];
-    unsafe {
-        libc::utimensat(libc::AT_FDCWD, src_cstr.as_ptr(), times.as_ptr(), 0);
-    }
+    let rc = unsafe { libc::utimensat(libc::AT_FDCWD, src_cstr.as_ptr(), times.as_ptr(), 0) };
+    assert_eq!(
+        rc,
+        0,
+        "utimensat failed: {}",
+        std::io::Error::last_os_error()
+    );
 
     // Create destination directory with current timestamp
     fs::create_dir(&dst_dir).unwrap();
