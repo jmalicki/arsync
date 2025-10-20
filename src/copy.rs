@@ -70,18 +70,27 @@ const HUGE_PAGE_SIZE: u64 = 2 * 1024 * 1024;
 /// - Metadata preservation fails
 /// - The specified copy method is not supported or fails
 #[allow(clippy::future_not_send)]
+#[allow(clippy::too_many_arguments)]
 pub async fn copy_file(
     src: &Path,
     dst: &Path,
     metadata_config: &MetadataConfig,
     parallel_config: &ParallelCopyConfig,
     dispatcher: Option<&'static Dispatcher>,
+    dst_parent_dir: Option<&compio_fs_extended::DirectoryFd>,
+    dst_filename: Option<&str>,
+    src_metadata: Option<&crate::directory::ExtendedMetadata>,
 ) -> Result<()> {
     // Get file size to decide whether to use parallel copy
-    let file_size = compio::fs::metadata(src)
-        .await
-        .map_err(|e| SyncError::FileSystem(format!("Failed to get file metadata: {e}")))?
-        .len();
+    // Use pre-fetched metadata if available (avoids redundant statx call)
+    let file_size = if let Some(metadata) = src_metadata {
+        metadata.metadata.size
+    } else {
+        compio::fs::metadata(src)
+            .await
+            .map_err(|e| SyncError::FileSystem(format!("Failed to get file metadata: {e}")))?
+            .len()
+    };
 
     // Decide whether to use parallel copy
     if parallel_config.should_use_parallel(file_size) {
@@ -92,10 +101,23 @@ pub async fn copy_file(
             parallel_config,
             file_size,
             dispatcher,
+            dst_parent_dir,
+            dst_filename,
+            src_metadata,
         )
         .await
     } else {
-        copy_read_write(src, dst, metadata_config, parallel_config, file_size).await
+        copy_read_write(
+            src,
+            dst,
+            metadata_config,
+            parallel_config,
+            file_size,
+            dst_parent_dir,
+            dst_filename,
+            src_metadata,
+        )
+        .await
     }
 }
 
@@ -135,42 +157,65 @@ pub async fn copy_file(
 ///     Ok(())
 /// }
 /// ```
-#[allow(clippy::future_not_send, clippy::too_many_lines)]
+#[allow(
+    clippy::future_not_send,
+    clippy::too_many_lines,
+    clippy::too_many_arguments
+)]
 async fn copy_read_write(
     src: &Path,
     dst: &Path,
     metadata_config: &MetadataConfig,
     _parallel_config: &ParallelCopyConfig,
-    _file_size: u64,
+    file_size: u64,
+    dst_parent_dir: Option<&compio_fs_extended::DirectoryFd>,
+    dst_filename: Option<&str>,
+    src_metadata: Option<&crate::directory::ExtendedMetadata>,
 ) -> Result<()> {
     // Capture source timestamps BEFORE any reads to avoid atime/mtime drift
-    let (src_accessed, src_modified) = get_precise_timestamps(src).await?;
+    // Use pre-fetched metadata if available (avoids redundant statx call ✅)
+    let (src_accessed, src_modified) = if let Some(metadata) = src_metadata {
+        // ✅ Use metadata from directory traversal - NO redundant statx!
+        (metadata.metadata.accessed, metadata.metadata.modified)
+    } else {
+        // Fallback for standalone copy_file calls
+        get_precise_timestamps(src).await?
+    };
 
     // Open source file
     let src_file = OpenOptions::new().read(true).open(src).await.map_err(|e| {
         SyncError::FileSystem(format!("Failed to open source file {}: {e}", src.display(),))
     })?;
 
-    // Open destination file
-    let mut dst_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(dst)
-        .await
-        .map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to open destination file {}: {e}",
-                dst.display(),
-            ))
-        })?;
+    // Open destination file (TOCTOU-safe when DirectoryFd available)
+    let mut dst_file = if let (Some(dir), Some(name)) = (dst_parent_dir, dst_filename) {
+        // FAST PATH: Use DirectoryFd::open_file_at() - TOCTOU-safe, io_uring-ready
+        dir.open_file_at(name, false, true, true, true)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to create destination file {} via dirfd: {e}",
+                    dst.display()
+                ))
+            })?
+    } else {
+        // FALLBACK: Path-based for root or when no dirfd available
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(dst)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to open destination file {}: {e}",
+                    dst.display(),
+                ))
+            })?
+    };
 
-    // Get file size for progress tracking
-    let metadata = src_file
-        .metadata()
-        .await
-        .map_err(|e| SyncError::FileSystem(format!("Failed to get source file metadata: {e}")))?;
-    let file_size = metadata.len();
+    // file_size already passed as parameter (from pre-fetched metadata or initial check)
+    // ✅ NO redundant src_file.metadata() call!
 
     // Preallocate destination file space to the final size to reduce fragmentation
     // and improve write performance using io_uring fallocate.
@@ -327,6 +372,7 @@ async fn copy_read_write(
 #[allow(clippy::future_not_send)]
 #[allow(clippy::too_many_lines)]
 #[allow(clippy::too_many_arguments)]
+#[allow(clippy::cognitive_complexity)]
 async fn copy_read_write_parallel(
     src: &Path,
     dst: &Path,
@@ -334,6 +380,9 @@ async fn copy_read_write_parallel(
     parallel_config: &ParallelCopyConfig,
     file_size: u64,
     dispatcher: Option<&'static Dispatcher>,
+    dst_parent_dir: Option<&compio_fs_extended::DirectoryFd>,
+    dst_filename: Option<&str>,
+    src_metadata: Option<&crate::directory::ExtendedMetadata>,
 ) -> Result<()> {
     let max_depth = parallel_config.max_depth;
     let max_tasks = 1 << max_depth; // 2^max_depth
@@ -347,26 +396,46 @@ async fn copy_read_write_parallel(
     );
 
     // 1. Capture source timestamps BEFORE any reads to avoid atime/mtime drift
-    let (src_accessed, src_modified) = get_precise_timestamps(src).await?;
+    // Use pre-fetched metadata if available (avoids redundant statx call ✅)
+    let (src_accessed, src_modified) = if let Some(metadata) = src_metadata {
+        // ✅ Use metadata from directory traversal - NO redundant statx!
+        (metadata.metadata.accessed, metadata.metadata.modified)
+    } else {
+        // Fallback for standalone copy_file calls
+        get_precise_timestamps(src).await?
+    };
 
     // 2. Open source file
     let src_file = OpenOptions::new().read(true).open(src).await.map_err(|e| {
         SyncError::FileSystem(format!("Failed to open source file {}: {e}", src.display()))
     })?;
 
-    // 3. Open destination file
-    let dst_file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(dst)
-        .await
-        .map_err(|e| {
-            SyncError::FileSystem(format!(
-                "Failed to open destination file {}: {e}",
-                dst.display(),
-            ))
-        })?;
+    // 3. Open destination file (TOCTOU-safe when DirectoryFd available)
+    let dst_file = if let (Some(dir), Some(name)) = (dst_parent_dir, dst_filename) {
+        // FAST PATH: Use DirectoryFd::open_file_at() - TOCTOU-safe, io_uring-ready
+        dir.open_file_at(name, false, true, true, true)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to create destination file {} via dirfd: {e}",
+                    dst.display()
+                ))
+            })?
+    } else {
+        // FALLBACK: Path-based for root or when no dirfd available
+        OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(dst)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to open destination file {}: {e}",
+                    dst.display(),
+                ))
+            })?
+    };
 
     // 4. CRITICAL: fallocate the entire file first to prevent fragmentation
     // and allow parallel writes without conflicts
@@ -734,6 +803,9 @@ mod tests {
             &args.metadata,
             &disabled_parallel_config(),
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -785,6 +857,9 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -851,6 +926,9 @@ mod tests {
                 &args.metadata,
                 &disabled_parallel_config(),
                 None,
+                None,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -888,6 +966,9 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -944,6 +1025,9 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -1010,6 +1094,9 @@ mod tests {
             &args.metadata,
             &disabled_parallel_config(),
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -1044,6 +1131,9 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -1080,6 +1170,9 @@ mod tests {
             &dst_path,
             &args.metadata,
             &disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await

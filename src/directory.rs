@@ -17,7 +17,7 @@ use compio::dispatcher::Dispatcher;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Extended metadata using `io_uring` statx or compio metadata
 ///
@@ -366,6 +366,8 @@ async fn traverse_and_copy_directory_iterative(
         parallel_config_arc,
         None, // Root directory has no parent
         None, // Root directory has no filename
+        None, // Root destination has no parent dirfd
+        None, // Root destination has no filename
     )
     .await;
 
@@ -447,6 +449,8 @@ async fn process_directory_entry_with_compio(
     parallel_config: Arc<crate::cli::ParallelCopyConfig>,
     src_parent_dir: Option<Arc<compio_fs_extended::DirectoryFd>>,
     src_filename: Option<String>,
+    dst_parent_dir: Option<Arc<compio_fs_extended::DirectoryFd>>,
+    dst_filename: Option<String>,
 ) -> Result<()> {
     // Clone controller before acquiring permit to avoid borrow/move conflict
     let controller = Arc::clone(&concurrency_controller);
@@ -548,6 +552,19 @@ async fn process_directory_entry_with_compio(
             let metadata_config_clone = Arc::clone(&metadata_config);
             let parallel_config_clone = Arc::clone(&parallel_config);
             let src_dir_clone = Arc::clone(&src_dir);
+            // Also open destination DirectoryFd for TOCTOU-safe file creation
+            let dst_dir = compio_fs_extended::DirectoryFd::open(&dst_path)
+                .await
+                .map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to open destination directory {}: {}",
+                        dst_path.display(),
+                        e
+                    ))
+                })?;
+            let dst_dir_clone = Arc::new(dst_dir);
+            let dst_file_name_string = file_name.to_string_lossy().to_string();
+
             let receiver = dispatcher
                 .dispatch(move || {
                     process_directory_entry_with_compio(
@@ -561,8 +578,10 @@ async fn process_directory_entry_with_compio(
                         concurrency_controller, // Move instead of clone - already cloned above
                         metadata_config_clone,
                         parallel_config_clone,
-                        Some(src_dir_clone),    // Pass parent DirectoryFd
-                        Some(file_name_string), // Pass filename
+                        Some(src_dir_clone),    // Pass source parent DirectoryFd
+                        Some(file_name_string), // Pass source filename
+                        Some(dst_dir_clone),    // Pass destination parent DirectoryFd
+                        Some(dst_file_name_string), // Pass destination filename
                     )
                 })
                 .map_err(|e| {
@@ -605,6 +624,8 @@ async fn process_directory_entry_with_compio(
             metadata_config,
             parallel_config,
             dispatcher,
+            dst_parent_dir,
+            dst_filename,
         )
         .await?;
     } else if extended_metadata.is_symlink() {
@@ -617,7 +638,7 @@ async fn process_directory_entry_with_compio(
         } else {
             // Dereference symlink: recursively process the target
             // This handles files, directories, and even chains of symlinks correctly
-            warn!(
+            debug!(
                 "Dereferencing symlink (will copy target): {}",
                 src_path.display()
             );
@@ -647,7 +668,29 @@ async fn process_directory_entry_with_compio(
             };
 
             // Recursively process the target (handles files, dirs, and symlink chains)
-            // Note: We lose the parent DirectoryFd context here (target may be elsewhere)
+            // Note: Source target may be elsewhere, so no src DirectoryFd
+            // BUT: Destination parent can use DirectoryFd for TOCTOU-safe operations!
+
+            // Open destination parent DirectoryFd for TOCTOU-safe file creation
+            let dst_parent_dirfd =
+                if let (Some(parent), Some(filename)) = (dst_path.parent(), dst_path.file_name()) {
+                    let dst_dir = compio_fs_extended::DirectoryFd::open(parent)
+                        .await
+                        .map_err(|e| {
+                            SyncError::FileSystem(format!(
+                                "Failed to open destination parent directory {}: {}",
+                                parent.display(),
+                                e
+                            ))
+                        })?;
+                    (
+                        Some(Arc::new(dst_dir)),
+                        Some(filename.to_string_lossy().to_string()),
+                    )
+                } else {
+                    (None, None)
+                };
+
             // Use dispatcher to avoid recursive async function issues
             let receiver = dispatcher
                 .dispatch(move || {
@@ -662,8 +705,10 @@ async fn process_directory_entry_with_compio(
                         concurrency_controller,
                         metadata_config,
                         parallel_config,
-                        None, // No parent dirfd for dereferenced symlink target
-                        None, // No filename for dereferenced symlink target
+                        None,               // No src parent dirfd (target could be anywhere)
+                        None,               // No src filename (target could be anywhere)
+                        dst_parent_dirfd.0, // ✅ Destination parent DirectoryFd (TOCTOU-safe!)
+                        dst_parent_dirfd.1, // ✅ Destination filename
                     )
                 })
                 .map_err(|e| {
@@ -714,6 +759,8 @@ async fn process_file(
     metadata_config: Arc<MetadataConfig>,
     parallel_config: Arc<crate::cli::ParallelCopyConfig>,
     dispatcher: &'static Dispatcher,
+    dst_parent_dir: Option<Arc<compio_fs_extended::DirectoryFd>>,
+    dst_filename: Option<String>,
 ) -> Result<()> {
     debug!(
         "Processing file: {} (link_count: {})",
@@ -737,13 +784,17 @@ async fn process_file(
             src_path.display()
         );
 
-        // Copy file with parallel config from Args
+        // Copy file with parallel config from Args (TOCTOU-safe when dirfd available)
+        // ✅ Pass pre-fetched metadata to avoid redundant statx calls!
         copy_file(
             &src_path,
             &dst_path,
             &metadata_config,
             &parallel_config,
             Some(dispatcher),
+            dst_parent_dir.as_ref().map(std::convert::AsRef::as_ref),
+            dst_filename.as_deref(),
+            Some(&metadata),
         )
         .await?;
 
@@ -781,13 +832,17 @@ async fn process_file(
             src_path.display()
         );
 
-        // Copy file with parallel config from Args
+        // Copy file with parallel config from Args (TOCTOU-safe when dirfd available)
+        // ✅ Pass pre-fetched metadata to avoid redundant statx calls!
         copy_file(
             &src_path,
             &dst_path,
             &metadata_config,
             &parallel_config,
             Some(dispatcher),
+            dst_parent_dir.as_ref().map(std::convert::AsRef::as_ref),
+            dst_filename.as_deref(),
+            Some(&metadata),
         )
         .await?;
 
@@ -914,7 +969,7 @@ async fn process_symlink(
         }
         Err(e) => {
             stats.increment_errors();
-            warn!("Failed to copy symlink {}: {}", src_path.display(), e);
+            error!("Failed to copy symlink {}: {}", src_path.display(), e);
             Err(e)
         }
     }

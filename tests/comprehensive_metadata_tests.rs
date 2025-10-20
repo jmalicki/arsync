@@ -75,6 +75,9 @@ async fn test_permission_preservation_special_bits() {
             &args.metadata,
             &common::disabled_parallel_config(),
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -127,6 +130,9 @@ async fn test_timestamp_preservation_old_timestamps() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -200,6 +206,9 @@ async fn test_timestamp_preservation_future_timestamps() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -282,6 +291,8 @@ async fn test_permission_preservation_restrictive_permissions() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
             None,
         )
         .await
@@ -367,6 +378,8 @@ async fn test_timestamp_preservation_nanosecond_edge_cases() {
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
+                None,
+                None,
                 None,
             )
             .await
@@ -455,6 +468,9 @@ async fn test_permission_preservation_umask_interaction() {
             &args.metadata,
             &common::disabled_parallel_config(),
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -514,6 +530,8 @@ async fn test_concurrent_metadata_preservation() {
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
+                None,
+                None,
                 None,
             )
             .await
@@ -581,6 +599,8 @@ async fn test_metadata_preservation_large_file_stress() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
+        None,
         None,
     )
     .await

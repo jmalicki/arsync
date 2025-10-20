@@ -55,6 +55,9 @@ async fn test_metadata_preservation_many_small_files() {
             &args.metadata,
             &common::disabled_parallel_config(),
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -111,6 +114,9 @@ async fn test_metadata_preservation_rapid_sequential() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -179,6 +185,9 @@ async fn test_metadata_preservation_mixed_sizes() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -252,6 +261,8 @@ async fn test_metadata_preservation_concurrent_operations() {
                 &dst_path,
                 &args.metadata,
                 &common::disabled_parallel_config(),
+                None,
+                None,
                 None,
             )
             .await
@@ -341,6 +352,8 @@ async fn test_metadata_preservation_specific_timestamps() {
                 &args.metadata,
                 &common::disabled_parallel_config(),
                 None,
+                None,
+                None,
             )
             .await
             .unwrap();
@@ -419,6 +432,9 @@ async fn test_metadata_preservation_alternating_permissions() {
             &args.metadata,
             &common::disabled_parallel_config(),
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -492,6 +508,8 @@ async fn test_metadata_preservation_specific_permissions() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
             None,
         )
         .await

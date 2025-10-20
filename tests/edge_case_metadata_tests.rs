@@ -49,6 +49,8 @@ async fn test_permission_preservation_no_read_permission() {
         &args.metadata,
         &common::disabled_parallel_config(),
         None,
+        None,
+        None,
     )
     .await
     .unwrap();
@@ -102,6 +104,9 @@ async fn test_timestamp_preservation_very_recent() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -171,6 +176,8 @@ async fn test_permission_preservation_execute_only() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
             None,
         )
         .await
@@ -244,6 +251,9 @@ async fn test_timestamp_preservation_identical_times() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await
@@ -326,6 +336,8 @@ async fn test_permission_preservation_all_bits() {
             &args.metadata,
             &common::disabled_parallel_config(),
             None,
+            None,
+            None,
         )
         .await
         {
@@ -393,6 +405,8 @@ async fn test_metadata_preservation_long_filename() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
+        None,
         None,
     )
     .await
@@ -469,6 +483,9 @@ async fn test_metadata_preservation_special_characters() {
             &args.metadata,
             &common::disabled_parallel_config(),
             None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -524,6 +541,9 @@ async fn test_metadata_preservation_unicode_filenames() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
+            None,
+            None,
             None,
         )
         .await

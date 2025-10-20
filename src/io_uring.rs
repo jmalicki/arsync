@@ -440,7 +440,17 @@ impl FileOperations {
             preserve_acl: false,
         };
 
-        crate::copy::copy_file(src, dst, &metadata_config, parallel_config, None).await?;
+        crate::copy::copy_file(
+            src,
+            dst,
+            &metadata_config,
+            parallel_config,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?;
 
         debug!(
             "Copied {} bytes from {} to {} with metadata preservation",
