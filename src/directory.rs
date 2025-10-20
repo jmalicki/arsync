@@ -775,7 +775,7 @@ async fn process_directory_entry_with_compio(
         // ========================================================================
         if metadata_config.should_preserve_links() {
             // Copy symlink as symlink (preserve target)
-            process_symlink(src_path, dst_path, stats).await?;
+            process_symlink(src_path, dst_path, &metadata_config, stats).await?;
         } else {
             // Dereference symlink: recursively process the target
             // This handles files, directories, and even chains of symlinks correctly
@@ -1076,11 +1076,12 @@ async fn handle_existing_hardlink(
 async fn process_symlink(
     src_path: PathBuf,
     dst_path: PathBuf,
+    metadata_config: &MetadataConfig,
     stats: Arc<SharedStats>,
 ) -> Result<()> {
     debug!("Processing symlink: {}", src_path.display());
 
-    match copy_symlink(&src_path, &dst_path).await {
+    match copy_symlink(&src_path, &dst_path, metadata_config).await {
         Ok(()) => {
             stats.increment_symlinks_processed();
             Ok(())
@@ -1100,7 +1101,9 @@ async fn process_symlink(
 /// This is the lowest-common-denominator for symlinks, but acceptable since
 /// the symlink itself is atomic.
 #[allow(clippy::future_not_send)]
-async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
+#[allow(clippy::too_many_lines)] // Metadata preservation adds lines
+#[allow(clippy::cast_sign_loss)] // Timestamps are i64 but Duration needs u64
+async fn copy_symlink(src: &Path, dst: &Path, metadata_config: &MetadataConfig) -> Result<()> {
     use compio_fs_extended::directory::DirectoryFd;
 
     // Extract parent directory and filename for DirectoryFd operations
@@ -1180,12 +1183,58 @@ async fn copy_symlink(src: &Path, dst: &Path) -> Result<()> {
 
     debug!("Copied symlink {} -> {}", dst.display(), target.display());
 
-    // TODO: Preserve symlink metadata (permissions, ownership, timestamps)
-    // Symlinks can't be opened as FDs, so we'd need:
-    // - fchmodat(dirfd, filename, mode, AT_SYMLINK_NOFOLLOW) for permissions
-    // - fchownat(dirfd, filename, uid, gid, AT_SYMLINK_NOFOLLOW) for ownership
-    // - utimensat(dirfd, filename, times, AT_SYMLINK_NOFOLLOW) for timestamps
-    // These are path-based but relative to dirfd (acceptable for symlinks)
+    // Preserve symlink metadata using DirectoryFd operations with AT_SYMLINK_NOFOLLOW
+    // These operate on the symlink itself, not its target
+
+    // Get source symlink metadata
+    let src_metadata = std::fs::symlink_metadata(src).map_err(|e| {
+        SyncError::FileSystem(format!(
+            "Failed to get symlink metadata for {}: {}",
+            src.display(),
+            e
+        ))
+    })?;
+
+    // Preserve ownership (if requested and we have permissions)
+    if metadata_config.archive || metadata_config.owner || metadata_config.group {
+        use std::os::unix::fs::MetadataExt;
+        let uid = src_metadata.uid();
+        let gid = src_metadata.gid();
+
+        // Use lfchownat which doesn't follow symlinks
+        if let Err(e) = dst_dir_fd.lfchownat(&dst_name, uid, gid).await {
+            // Don't fail if we can't change ownership (common for non-root)
+            debug!(
+                "Could not preserve symlink ownership (may need root): {}",
+                e
+            );
+        }
+    }
+
+    // Preserve timestamps (if requested)
+    if metadata_config.archive || metadata_config.times {
+        use std::os::unix::fs::MetadataExt;
+
+        // Include nanoseconds for full precision
+        let atime = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(src_metadata.atime() as u64)
+            + std::time::Duration::from_nanos(src_metadata.atime_nsec() as u64);
+        let mtime = std::time::UNIX_EPOCH
+            + std::time::Duration::from_secs(src_metadata.mtime() as u64)
+            + std::time::Duration::from_nanos(src_metadata.mtime_nsec() as u64);
+
+        // Use lutimensat which doesn't follow symlinks
+        dst_dir_fd
+            .lutimensat(&dst_name, atime, mtime)
+            .await
+            .map_err(|e| {
+                SyncError::FileSystem(format!(
+                    "Failed to preserve symlink timestamps for {}: {}",
+                    dst.display(),
+                    e
+                ))
+            })?;
+    }
 
     Ok(())
 }
@@ -1548,6 +1597,24 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
+            &MetadataConfig {
+                archive: false,
+                recursive: false,
+                links: true,
+                perms: false,
+                times: false,
+                group: false,
+                owner: false,
+                devices: false,
+                fsync: false,
+                xattrs: false,
+                acls: false,
+                hard_links: false,
+                atimes: false,
+                crtimes: false,
+                preserve_xattr: false,
+                preserve_acl: false,
+            },
             Arc::new(SharedStats::new(&stats)),
         )
         .await;
@@ -1580,6 +1647,24 @@ mod tests {
         let result = process_symlink(
             src_symlink.clone(),
             dst_symlink.clone(),
+            &MetadataConfig {
+                archive: false,
+                recursive: false,
+                links: true,
+                perms: false,
+                times: false,
+                group: false,
+                owner: false,
+                devices: false,
+                fsync: false,
+                xattrs: false,
+                acls: false,
+                hard_links: false,
+                atimes: false,
+                crtimes: false,
+                preserve_xattr: false,
+                preserve_acl: false,
+            },
             Arc::new(SharedStats::new(&stats)),
         )
         .await;

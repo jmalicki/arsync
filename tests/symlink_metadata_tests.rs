@@ -242,7 +242,7 @@ async fn test_xattr_ops_trait_follows_symlinks_bug() {
 /// **Expected behavior**: FAIL because lchown is not implemented yet
 #[compio::test]
 #[cfg(unix)]
-#[ignore] // TODO: Implement lchown_at_path() in compio-fs-extended
+#[ignore] // Requires root to change ownership - test validates implementation exists
 async fn test_symlink_ownership_preservation() {
     use std::os::unix::fs::MetadataExt;
 
@@ -308,7 +308,6 @@ async fn test_symlink_ownership_preservation() {
 /// **Expected behavior**: FAIL because lutimensat is not implemented yet
 #[compio::test]
 #[cfg(unix)]
-#[ignore] // TODO: Implement lutimensat() in compio-fs-extended
 async fn test_symlink_timestamp_preservation() {
     use std::os::unix::fs::MetadataExt;
     use std::time::Duration;
