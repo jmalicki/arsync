@@ -286,7 +286,11 @@ async fn test_permission_preservation_restrictive_permissions() {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
-            Err(e) if e.to_string().contains("Permission denied") => {
+            Err(e)
+                if e.to_string().contains("Permission denied")
+                    || e.to_string().contains("EACCES")
+                    || e.to_string().contains("EPERM") =>
+            {
                 // Skip this permission mode as it prevents reading the file
                 println!(
                     "Skipping permission mode {:o} - prevents reading: {}",

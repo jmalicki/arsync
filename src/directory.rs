@@ -430,6 +430,23 @@ async fn traverse_and_copy_directory_iterative(
 /// - Symlink copying fails
 /// - Hardlink operations fail
 ///
+/// Helper: Open parent directory as `DirectoryFd`
+///
+/// Extracts the common pattern of opening a path's parent as `DirectoryFd`.
+#[allow(clippy::future_not_send)]
+async fn open_parent_dirfd(path: &Path) -> Result<Arc<compio_fs_extended::DirectoryFd>> {
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let dir_fd = compio_fs_extended::DirectoryFd::open(parent)
+        .await
+        .map_err(|e| {
+            SyncError::FileSystem(format!(
+                "Failed to open parent directory {}: {e}",
+                parent.display()
+            ))
+        })?;
+    Ok(Arc::new(dir_fd))
+}
+
 /// Process root entry (wrapper that sets up `DirectoryFd` for TOCTOU-safe operations)
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::future_not_send)]
@@ -446,30 +463,14 @@ async fn process_root_entry(
     metadata_config: Arc<MetadataConfig>,
     parallel_config: Arc<crate::cli::ParallelCopyConfig>,
 ) -> Result<()> {
-    let src_parent_dir = Arc::new(
-        compio_fs_extended::DirectoryFd::open(
-            src_path
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new(".")),
-        )
-        .await
-        .map_err(|e| SyncError::FileSystem(format!("Failed to open source parent: {e}")))?,
-    );
+    let src_parent_dir = open_parent_dirfd(&src_path).await?;
     let src_filename = src_path
         .file_name()
         .ok_or_else(|| SyncError::FileSystem("No filename".to_string()))?
         .to_string_lossy()
         .to_string();
 
-    let dst_parent_dir = Arc::new(
-        compio_fs_extended::DirectoryFd::open(
-            dst_path
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new(".")),
-        )
-        .await
-        .map_err(|e| SyncError::FileSystem(format!("Failed to open dest parent: {e}")))?,
-    );
+    let dst_parent_dir = open_parent_dirfd(&dst_path).await?;
     let dst_filename = dst_path
         .file_name()
         .ok_or_else(|| SyncError::FileSystem("No filename".to_string()))?

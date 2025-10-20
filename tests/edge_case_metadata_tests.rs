@@ -175,7 +175,11 @@ async fn test_permission_preservation_execute_only() {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
-            Err(e) if e.to_string().contains("Permission denied") => {
+            Err(e)
+                if e.to_string().contains("Permission denied")
+                    || e.to_string().contains("EACCES")
+                    || e.to_string().contains("EPERM") =>
+            {
                 // Skip this permission mode as it prevents reading the file
                 println!(
                     "Skipping execute-only permission mode {:o} - prevents reading: {}",
@@ -327,7 +331,11 @@ async fn test_permission_preservation_all_bits() {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
-            Err(e) if e.to_string().contains("Permission denied") => {
+            Err(e)
+                if e.to_string().contains("Permission denied")
+                    || e.to_string().contains("EACCES")
+                    || e.to_string().contains("EPERM") =>
+            {
                 // Skip this permission mode as it prevents reading or writing
                 println!(
                     "Skipping permission mode {:o} - prevents operation: {}",

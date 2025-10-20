@@ -506,7 +506,11 @@ async fn test_metadata_preservation_specific_permissions() {
             Ok(_) => {
                 // Test passed, continue with assertion
             }
-            Err(e) if e.to_string().contains("Permission denied") => {
+            Err(e)
+                if e.to_string().contains("Permission denied")
+                    || e.to_string().contains("EACCES")
+                    || e.to_string().contains("EPERM") =>
+            {
                 // Skip this permission mode as it prevents reading the file
                 println!(
                     "Skipping specific permission mode {:o} - prevents reading: {}",

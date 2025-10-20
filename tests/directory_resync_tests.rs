@@ -162,7 +162,7 @@ async fn test_resync_preserves_directory_timestamps() {
 
     // Create destination directory with current timestamp
     fs::create_dir(&dst_dir).unwrap();
-    std::thread::sleep(Duration::from_millis(100));
+    compio::time::sleep(Duration::from_millis(100)).await;
 
     // Sync with --archive (should update timestamps)
     let mut args = common::test_args::create_archive_test_args();
