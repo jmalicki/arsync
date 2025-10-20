@@ -51,6 +51,7 @@ async fn test_permission_preservation_no_read_permission() {
         None,
         None,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -176,6 +177,7 @@ async fn test_permission_preservation_execute_only() {
             &dst_path,
             &args.metadata,
             &common::disabled_parallel_config(),
+            None,
             None,
             None,
             None,
@@ -338,6 +340,7 @@ async fn test_permission_preservation_all_bits() {
             None,
             None,
             None,
+            None,
         )
         .await
         {
@@ -405,6 +408,7 @@ async fn test_metadata_preservation_long_filename() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
         None,
         None,
         None,

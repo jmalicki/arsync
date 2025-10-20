@@ -121,6 +121,7 @@ async fn test_parallel_copy_various_depths() {
             None,
             None,
             None,
+            None,
         )
         .await
         .unwrap_or_else(|e| panic!("Parallel copy failed at depth {}: {}", depth, e));
@@ -159,6 +160,7 @@ async fn test_below_threshold_uses_sequential() {
         None,
         None,
         None,
+        None,
     )
     .await
     .expect("Copy failed");
@@ -188,6 +190,7 @@ async fn test_uneven_file_split() {
         &dst_path,
         &metadata_config,
         &parallel_config,
+        None,
         None,
         None,
         None,
@@ -225,6 +228,7 @@ async fn test_no_region_overlap() {
         &dst_path,
         &metadata_config,
         &parallel_config,
+        None,
         None,
         None,
         None,

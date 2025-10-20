@@ -3,9 +3,9 @@
 //!
 //! These tests cover edge cases and scenarios that would significantly increase
 //! confidence in the permission and timestamp preservation functionality.
-
-// Known limitation: Nanosecond timestamp propagation is currently unreliable in CI.
-// See issue: https://github.com/jmalicki/arsync/issues/9
+//!
+//! Note: Nanosecond timestamp tests are Linux-specific and gated with #[cfg(target_os = "linux")]
+//! since nanosecond precision is guaranteed on Linux but may vary on other platforms.
 
 use arsync::cli::Args;
 use arsync::copy::copy_file;
@@ -294,6 +294,7 @@ async fn test_permission_preservation_restrictive_permissions() {
             None,
             None,
             None,
+            None,
         )
         .await
         {
@@ -381,6 +382,7 @@ async fn test_timestamp_preservation_nanosecond_edge_cases() {
                 None,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -412,19 +414,22 @@ async fn test_timestamp_preservation_nanosecond_edge_cases() {
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap_or_default();
             let modified_nanos = modified_duration.subsec_nanos();
-            // Level 1: Modified timestamp check
+            // Level 1: Modified timestamp seconds check
             let expected_seconds = 1609459200; // Jan 1, 2021
             let modified_seconds = modified_duration.as_secs();
             assert_eq!(
                 modified_seconds, expected_seconds,
-                "Basic modified timestamp should be preserved"
+                "Basic modified timestamp seconds should be preserved"
             );
-            // Level 3: Nanosecond precision disabled for now
-            if false {
-                assert!(
-                    modified_nanos.abs_diff(*nanoseconds as u32) < 1000,
-                    "Modified nanosecond precision should be preserved for {}",
-                    description
+
+            // Level 2: Nanosecond precision check (Linux only)
+            #[cfg(target_os = "linux")]
+            {
+                // On Linux filesystems, nanosecond precision should be preserved exactly
+                assert_eq!(
+                    modified_nanos, *nanoseconds as u32,
+                    "Modified nanosecond precision should be preserved exactly for {} (expected: {}, got: {})",
+                    description, nanoseconds, modified_nanos
                 );
             }
         }
@@ -533,6 +538,7 @@ async fn test_concurrent_metadata_preservation() {
                 None,
                 None,
                 None,
+                None,
             )
             .await
             .unwrap();
@@ -599,6 +605,7 @@ async fn test_metadata_preservation_large_file_stress() {
         &dst_path,
         &args.metadata,
         &common::disabled_parallel_config(),
+        None,
         None,
         None,
         None,
