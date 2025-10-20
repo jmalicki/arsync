@@ -575,12 +575,19 @@ async fn process_directory_entry_with_compio(
         // ========================================================================
         debug!("Processing directory: {}", src_path.display());
 
-        // Try to create destination directory (TOCTOU-safe: no exists() check!)
-        match compio::fs::create_dir(&dst_path).await {
+        // Try to create destination directory using DirectoryFd (TOCTOU-safe mkdirat!)
+        // This uses mkdirat(2) via DirectoryFd, which is atomic and TOCTOU-safe
+        match dst_parent_dir
+            .create_directory(dst_filename.as_ref(), 0o755)
+            .await
+        {
             Ok(()) => {
                 stats.increment_directories_created();
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            Err(e)
+                if e.to_string().contains("File exists")
+                    || e.to_string().contains("AlreadyExists") =>
+            {
                 // Something exists - verify it's actually a directory using DirectoryFd
                 // This is TOCTOU-safe: operates on already-opened parent directory
                 let existing_metadata =

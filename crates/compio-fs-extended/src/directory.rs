@@ -134,13 +134,21 @@ impl DirectoryFd {
     /// # }
     /// ```
     #[cfg(unix)]
-    pub async fn create_directory(&self, name: &str, mode: u32) -> Result<()> {
+    pub async fn create_directory(&self, name: &std::ffi::OsStr, mode: u32) -> Result<()> {
+        use std::os::unix::ffi::OsStrExt;
+
         // TODO: Implement using io_uring MkdirAt opcode when available
         // For now, use nix with spawn for security
         let dir_fd = self.as_raw_fd();
-        let name_owned = name.to_string();
+        let name_bytes = name.as_bytes().to_vec();
 
         compio::runtime::spawn(async move {
+            use std::ffi::CString;
+
+            // Convert bytes to CString for mkdirat
+            let c_name = CString::new(name_bytes)
+                .map_err(|e| directory_error(&format!("invalid directory name: {e}")))?;
+
             // SAFETY: The raw fd is valid for the duration of this call because:
             // 1. DirectoryFd holds an Arc<File> keeping the fd open
             // 2. The spawned task completes before DirectoryFd is dropped
@@ -149,10 +157,10 @@ impl DirectoryFd {
             // Note: mode_t is u16 on macOS, u32 on Linux - cast to platform's type
             nix::sys::stat::mkdirat(
                 Some(dir_fd),
-                std::path::Path::new(&name_owned),
+                c_name.as_c_str(),
                 nix::sys::stat::Mode::from_bits_truncate(mode as nix::libc::mode_t),
             )
-            .map_err(|e| directory_error(&format!("mkdirat failed for '{}': {}", name_owned, e)))
+            .map_err(|e| directory_error(&format!("mkdirat failed: {}", e)))
         })
         .await
         .map_err(|e| directory_error(&format!("spawn failed: {:?}", e)))?
