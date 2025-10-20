@@ -3,23 +3,28 @@
 //! This module provides utilities for running tests that require elevated privileges
 //! (e.g., chown, mknod) inside Docker containers with root access.
 
-use std::path::PathBuf;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 
-/// Create a Ubuntu container with Rust and arsync for privileged testing
+/// Create a Ubuntu container with Rust for privileged testing
 ///
 /// The container runs with --privileged flag to allow operations that need root.
-pub async fn create_privileged_container() -> testcontainers::ContainerAsync<GenericImage> {
-    let image = GenericImage::new("rust", "latest")
-        .with_wait_for(WaitFor::message_on_stdout("rustc"))
-        .with_privileged(true);
+/// It keeps running with a sleep command so we can execute tests inside it.
+pub async fn create_privileged_rust_container() -> testcontainers::ContainerAsync<GenericImage> {
+    let image = GenericImage::new("rust", "1.83-slim")
+        .with_wait_for(WaitFor::Nothing)
+        .with_privileged(true)
+        .with_cmd(vec!["sleep", "3600"]); // Keep container alive
 
-    image.start().await.expect("Failed to start container")
+    let container = image.start().await.expect("Failed to start container");
+
+    // Give container a moment to fully start
+    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+
+    container
 }
 
-/// Helper to check if we're running in CI or can use Docker
+/// Helper to check if Docker is available
 pub fn can_use_containers() -> bool {
-    // Check if Docker is available
     std::process::Command::new("docker")
         .arg("version")
         .output()
@@ -27,13 +32,29 @@ pub fn can_use_containers() -> bool {
         .unwrap_or(false)
 }
 
-/// Skip test if containers aren't available
-#[macro_export]
-macro_rules! skip_if_no_containers {
-    () => {
-        if !$crate::common::container_helpers::can_use_containers() {
-            eprintln!("SKIPPED: Docker not available for container tests");
-            return;
-        }
-    };
+/// Execute shell commands inside a privileged container as root
+///
+/// This runs shell commands inside a container with root privileges,
+/// useful for testing operations that require elevated permissions.
+pub async fn run_shell_in_container(commands: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let container = create_privileged_rust_container().await;
+    let container_id = container.id();
+
+    // Execute shell commands as root
+    let exec_output = std::process::Command::new("docker")
+        .args(["exec", container_id, "sh", "-c", commands])
+        .output()?;
+
+    let stdout = String::from_utf8_lossy(&exec_output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&exec_output.stderr).to_string();
+
+    if !exec_output.status.success() {
+        return Err(format!(
+            "Container execution failed:\nstdout: {}\nstderr: {}",
+            stdout, stderr
+        )
+        .into());
+    }
+
+    Ok(stdout)
 }
