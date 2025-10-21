@@ -37,14 +37,13 @@
 //! For now, keeping Unix-only to maintain clean semantics and avoid
 //! surprising cross-platform behavior differences.
 
+use crate::error::Result;
+use compio::fs::File;
+
 #[cfg(target_os = "linux")]
 use crate::error::fadvise_error;
 #[cfg(target_os = "linux")]
-use crate::error::Result;
-#[cfg(target_os = "linux")]
 use compio::driver::OpCode;
-#[cfg(target_os = "linux")]
-use compio::fs::File;
 #[cfg(target_os = "linux")]
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
@@ -54,15 +53,22 @@ use std::os::unix::io::AsRawFd;
 #[cfg(target_os = "linux")]
 use std::pin::Pin;
 
-/// Trait for fadvise operations using io_uring (Linux-only)
+/// Trait for fadvise operations
+///
+/// - **Linux**: Uses io_uring IORING_OP_FADVISE for optimal performance
+/// - **macOS**: No-op (gracefully ignored, returns Ok)
+/// - **Other platforms**: No-op (gracefully ignored, returns Ok)
 #[allow(async_fn_in_trait)]
-#[cfg(target_os = "linux")]
 pub trait Fadvise {
-    /// Provide advice about file access patterns to the kernel using io_uring
+    /// Provide advice about file access patterns to the kernel
     ///
     /// This allows the kernel to optimize caching and I/O behavior based on
-    /// the expected access pattern. Uses io_uring IORING_OP_FADVISE operation
-    /// for optimal performance.
+    /// the expected access pattern.
+    ///
+    /// **Platform Behavior:**
+    /// - **Linux**: Uses io_uring IORING_OP_FADVISE operation
+    /// - **macOS**: No-op, returns Ok (posix_fadvise removed in macOS)
+    /// - **Others**: No-op, returns Ok
     ///
     /// # Arguments
     ///
@@ -72,15 +78,17 @@ pub trait Fadvise {
     ///
     /// # Returns
     ///
-    /// `Ok(())` if the advice was successfully applied
+    /// `Ok(())` if the advice was successfully applied (or no-op on macOS)
     ///
     /// # Errors
     ///
-    /// This function will return an error if:
+    /// **Linux only:** Returns error if:
     /// - The file descriptor is invalid
     /// - The advice is not supported
     /// - The io_uring operation fails
     /// - The kernel doesn't support fadvise io_uring operations
+    ///
+    /// **macOS/Others:** Never returns error (always returns Ok)
     ///
     /// # Example
     ///
@@ -103,8 +111,10 @@ pub trait Fadvise {
 
 /// fadvise advice types for file access pattern optimization
 ///
-/// Unix: Maps to POSIX fadvise constants
-/// Windows: Accepted but fadvise returns NotSupported error
+/// **Platform support:**
+/// - **Linux**: Maps to POSIX fadvise constants, uses io_uring
+/// - **macOS**: Accepted but no-op (returns Ok)
+/// - **Others**: Accepted but no-op (returns Ok)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FadviseAdvice {
     /// Data will be accessed sequentially
@@ -231,9 +241,15 @@ pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) 
     }
 }
 
-// macOS/Windows: fadvise not defined
-// macOS removed posix_fadvise, Windows has different file hint mechanisms
-// Compile-time error if you try to use fadvise on these platforms
+// macOS/Other platforms: fadvise is a no-op
+// macOS removed posix_fadvise, so we gracefully degrade to no-op
+#[cfg(not(target_os = "linux"))]
+pub async fn fadvise(_file: &File, _advice: FadviseAdvice, _offset: i64, _len: i64) -> Result<()> {
+    // No-op on non-Linux platforms
+    // macOS removed posix_fadvise, so we can't provide hints
+    // This is fine - fadvise is an optimization, not required for correctness
+    Ok(())
+}
 
 #[cfg(test)]
 #[cfg(target_os = "linux")] // fadvise is Linux-only

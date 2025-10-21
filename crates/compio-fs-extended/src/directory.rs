@@ -235,7 +235,7 @@ impl DirectoryFd {
     /// # Ok(())
     /// # }
     /// ```
-    #[cfg(target_os = "linux")]
+    #[cfg(unix)]
     pub async fn statx_full(
         &self,
         pathname: &std::ffi::OsStr,

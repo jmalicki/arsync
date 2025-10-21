@@ -98,19 +98,8 @@ impl ExtendedMetadata {
             ))
         })?;
 
-        use std::os::unix::fs::MetadataExt;
-        let metadata = compio_fs_extended::FileMetadata {
-            size: compio_metadata.len(),
-            mode: compio_metadata.mode(),
-            uid: compio_metadata.uid(),
-            gid: compio_metadata.gid(),
-            nlink: compio_metadata.nlink(),
-            ino: compio_metadata.ino(),
-            dev: compio_metadata.dev(),
-            accessed: compio_metadata.accessed().unwrap_or(std::time::UNIX_EPOCH),
-            modified: compio_metadata.modified().unwrap_or(std::time::UNIX_EPOCH),
-            created: compio_metadata.created().ok(),
-        };
+        // Use compio-fs-extended abstraction - it handles platform-specific fields
+        let metadata = compio_fs_extended::FileMetadata::from_compio_metadata(&compio_metadata);
         Ok(Self { metadata })
     }
 
@@ -122,14 +111,13 @@ impl ExtendedMetadata {
         Self { metadata }
     }
 
-    /// Create using `DirectoryFd` (TOCTOU-safe, `io_uring`)
+    /// Create using `DirectoryFd` (TOCTOU-safe, async)
     ///
-    /// This is the most efficient constructor - uses dirfd + `io_uring` statx.
+    /// This is the most efficient constructor - uses dirfd + async metadata.
     ///
     /// # Errors
     ///
-    /// Returns error if statx operation fails
-    #[cfg(target_os = "linux")]
+    /// Returns error if metadata operation fails
     #[allow(clippy::future_not_send)]
     pub async fn from_dirfd(
         dir: &compio_fs_extended::DirectoryFd,
