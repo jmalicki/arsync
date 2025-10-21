@@ -46,6 +46,7 @@
 //! ```
 
 pub mod adaptive_concurrency;
+pub mod backends;
 pub mod cli;
 pub mod copy;
 pub mod directory;
@@ -58,6 +59,7 @@ pub mod progress;
 pub mod protocol;
 pub mod stats;
 pub mod sync;
+pub mod traits;
 
 // Re-export commonly used types
 pub use error::{Result, SyncError};

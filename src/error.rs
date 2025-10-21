@@ -49,6 +49,10 @@ pub enum SyncError {
     #[error("Internal error: {0}")]
     #[allow(dead_code)]
     Internal(String),
+
+    /// Protocol operation failed
+    #[error("Protocol error: {0}")]
+    Protocol(String),
 }
 
 pub type Result<T> = std::result::Result<T, SyncError>;
