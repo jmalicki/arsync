@@ -2,740 +2,423 @@
 
 ## Overview
 
-This plan breaks down the trait-based filesystem abstraction into incremental, reviewable PRs. Each PR builds on the previous one and can be tested independently.
+Incremental plan to add trait-based filesystem abstractions to arsync. Each phase is a single PR that compiles and passes tests.
+
+**See [design.md](./design.md)** for architecture, rationale, and design decisions.
 
 ## Principles
 
 1. **One trait per PR** (mostly)
 2. **Each PR must compile and pass tests**
-3. **Stacked PRs** for easier review
-4. **Bottom-up approach** (simple to complex)
-5. **Minimal changes** per PR to reduce risk
+3. **Stacked PRs** - each builds on the previous
+4. **Design first** - PR #0 (docs) merged before implementation
+5. **Reference design docs** - don't deviate from approved design
 
-## Phase 0: Design Documentation (Foundation)
+## Phase 0: Design Documentation ✅
 
-### PR #0: Add trait-based filesystem abstraction design
+**Status**: COMPLETE (current branch)
 
-**Branch**: `design/trait-based-filesystem-abstraction` (current branch!)
+**Goal**: Get design reviewed and approved before any implementation
 
-**Files Changed**:
-- `docs/projects/trait-filesystem-abstraction/README.md` (new)
-- `docs/projects/trait-filesystem-abstraction/design.md` (new)
-- `docs/projects/trait-filesystem-abstraction/plan.md` (new)
-- `docs/projects/trait-filesystem-abstraction/rsync-protocol-analysis.md` (new)
-- `docs/projects/trait-filesystem-abstraction/streaming-vs-batch.md` (new)
-- `docs/projects/trait-filesystem-abstraction/layer-integration.md` (new)
+**Branch**: `design/trait-based-filesystem-abstraction`
 
-**Changes**:
-- Complete design documentation for the project
-- Architecture diagrams and rationale
-- Incremental implementation plan (this document)
-- Analysis of rsync protocol compatibility
-- Streaming vs batch execution strategies
-- How layers integrate (DirectoryFd, shared components)
+**PR Description**:
+- Complete design for trait-based filesystem abstraction
+- Three-layer architecture (see [design.md](./design.md))
+- Analysis of rsync protocol compatibility (see [rsync-protocol-analysis.md](./rsync-protocol-analysis.md))
+- Streaming vs batch strategies (see [streaming-vs-batch.md](./streaming-vs-batch.md))
+- Layer integration with DirectoryFd (see [layer-integration.md](./layer-integration.md))
 
-**No code changes** - documentation only!
-
-**Tests**:
-- No tests needed (documentation only)
-- Links in README.md should work
-- Markdown formatting should be clean
+**Files**:
+- `docs/projects/trait-filesystem-abstraction/*.md` (6 files)
 
 **Success Criteria**:
-- ✅ Design is clear and comprehensive
-- ✅ Team understands the approach
-- ✅ Questions are answered
-- ✅ Buy-in from reviewers
-- ✅ Foundation for all subsequent PRs
+- [ ] Design reviewed
+- [ ] Architecture approved
+- [ ] Team buy-in
+- [ ] Merged to main
 
-**Review Focus**:
-- Is the three-layer architecture sound?
-- Do we agree on streaming vs batching approach?
-- Is the layer integration (DirectoryFd reuse) correct?
-- Are there missing considerations?
-- Is the incremental plan reasonable?
-
-**Estimated Time**: Already complete! Ready for review.
-
-**Next Step**: Get this design PR merged, then start Phase 1.
+**Next**: Start Phase 1 after merge
 
 ---
 
 ## Phase 1: AsyncMetadata Trait
 
-### PR #1: Add AsyncMetadata trait and implement for existing Metadata
+**Status**: Waiting for Phase 0 merge
 
-**Base Branch**: `main` (after PR #0 is merged)
+**Goal**: Add simplest trait with no dependencies
+
+**Base Branch**: `main` (after Phase 0 merged)
 **Branch**: `feat/async-metadata-trait`
 
-**Branch**: `feat/async-metadata-trait`
+**Design Reference**: See [design.md](./design.md#phase-1-asyncmetadata)
+
+**Implementation Tasks**:
+- [ ] Create `src/traits/mod.rs`
+- [ ] Create `src/traits/metadata.rs` with `AsyncMetadata` trait
+- [ ] Add `pub mod traits;` to `src/lib.rs`
+- [ ] Implement `AsyncMetadata` for existing `Metadata` type in `src/metadata.rs`
+- [ ] Add tests for trait default methods
+- [ ] Add integration test verifying `Metadata` implements trait
 
 **Files Changed**:
-- `src/lib.rs` - add `pub mod traits;`
+- `src/lib.rs`
 - `src/traits/mod.rs` (new)
 - `src/traits/metadata.rs` (new)
-- `src/metadata.rs` - add `impl AsyncMetadata for Metadata`
-
-**Changes**:
-```rust
-// src/traits/mod.rs
-pub mod metadata;
-pub use metadata::AsyncMetadata;
-
-// src/traits/metadata.rs
-pub trait AsyncMetadata: Send + Sync + 'static {
-    fn size(&self) -> u64;
-    fn is_file(&self) -> bool;
-    fn is_dir(&self) -> bool;
-    fn is_symlink(&self) -> bool;
-    fn permissions(&self) -> u32;
-    fn uid(&self) -> u32;
-    fn gid(&self) -> u32;
-    fn modified(&self) -> SystemTime;
-    fn accessed(&self) -> SystemTime;
-    fn device_id(&self) -> u64;
-    fn inode_number(&self) -> u64;
-    fn link_count(&self) -> u64;
-    
-    // Provided methods with default implementations
-    fn is_empty(&self) -> bool { self.size() == 0 }
-    fn file_type(&self) -> &'static str { /* ... */ }
-    fn file_type_description(&self) -> String { /* ... */ }
-    fn is_special(&self) -> bool { /* ... */ }
-    fn is_same_file(&self, other: &Self) -> bool { /* ... */ }
-    fn summary(&self) -> String { /* ... */ }
-}
-
-// src/metadata.rs - add at end
-impl crate::traits::AsyncMetadata for Metadata {
-    fn size(&self) -> u64 { self.len() }
-    fn is_file(&self) -> bool { Metadata::is_file(self) }
-    fn is_dir(&self) -> bool { Metadata::is_dir(self) }
-    fn is_symlink(&self) -> bool { Metadata::is_symlink(self) }
-    fn permissions(&self) -> u32 { self.permissions().mode() }
-    // ... etc
-}
-```
-
-**Tests**:
-- Add `src/traits/metadata.rs` tests verifying default implementations
-- Add integration test verifying `Metadata` implements trait correctly
-
-**Success Criteria**:
-- ✅ Compiles without errors
-- ✅ All existing tests pass
-- ✅ New trait tests pass
-- ✅ `Metadata` type implements `AsyncMetadata`
+- `src/metadata.rs`
 
 **Estimated Time**: 4-6 hours
+
+**Success Criteria**:
+- [ ] Compiles without errors
+- [ ] All existing tests pass
+- [ ] New trait tests pass
+- [ ] `Metadata` implements `AsyncMetadata` correctly
 
 ---
 
 ## Phase 2: AsyncFile Trait
 
-### PR #2: Add AsyncFile trait
+**Status**: Waiting for Phase 1
 
+**Goal**: Add file I/O trait that uses AsyncMetadata
+
+**Base Branch**: `feat/async-metadata-trait`
 **Branch**: `feat/async-file-trait`
 
+**Design Reference**: See [design.md](./design.md#phase-2-asyncfile)
+
+**Implementation Tasks**:
+- [ ] Create `src/traits/file.rs` with `AsyncFile` trait
+- [ ] Add `pub mod file;` to `src/traits/mod.rs`
+- [ ] Add tests with mock implementation
+- [ ] Verify trait bounds compile correctly
+- [ ] Test provided methods (read_all, write_all_at)
+
 **Files Changed**:
-- `src/traits/mod.rs` - add `pub mod file;`
+- `src/traits/mod.rs`
 - `src/traits/file.rs` (new)
 
-**Changes**:
-```rust
-// src/traits/file.rs
-use crate::error::Result;
-use super::AsyncMetadata;
-
-pub trait AsyncFile: Send + Sync + 'static {
-    type Metadata: AsyncMetadata;
-    
-    async fn read_at(&self, buf: Vec<u8>, offset: u64) 
-        -> Result<(usize, Vec<u8>)>;
-    
-    async fn write_at(&self, buf: Vec<u8>, offset: u64) 
-        -> Result<(usize, Vec<u8>)>;
-    
-    async fn sync_all(&self) -> Result<()>;
-    
-    async fn metadata(&self) -> Result<Self::Metadata>;
-    
-    async fn copy_file_range(
-        &self,
-        dst: &mut Self,
-        src_offset: u64,
-        dst_offset: u64,
-        len: u64,
-    ) -> Result<u64>;
-    
-    // Provided methods
-    async fn read_all(&self) -> Result<Vec<u8>> {
-        let metadata = self.metadata().await?;
-        let size = metadata.size();
-        if size > 100 * 1024 * 1024 {
-            return Err(crate::error::SyncError::FileSystem(
-                "File too large for read_all".to_string()
-            ));
-        }
-        let buffer = vec![0u8; size as usize];
-        let (bytes_read, buffer) = self.read_at(buffer, 0).await?;
-        Ok(buffer[..bytes_read].to_vec())
-    }
-    
-    async fn write_all_at(&self, data: &[u8], offset: u64) -> Result<()> {
-        let buffer = data.to_vec();
-        let (bytes_written, _) = self.write_at(buffer, offset).await?;
-        if bytes_written != data.len() {
-            return Err(crate::error::SyncError::FileSystem(
-                "Partial write".to_string()
-            ));
-        }
-        Ok(())
-    }
-}
-```
-
-**Tests**:
-- Mock implementation of AsyncFile for testing
-- Test provided methods (read_all, write_all_at)
-- Verify trait bounds compile correctly
+**Estimated Time**: 4-6 hours
 
 **Success Criteria**:
-- ✅ Compiles without errors
-- ✅ All existing tests pass
-- ✅ Trait definition is clean and usable
-- ✅ Mock implementation works
-
-**Estimated Time**: 4-6 hours
+- [ ] Compiles without errors
+- [ ] All tests pass
+- [ ] Mock implementation works
+- [ ] Trait definition is clean
 
 ---
 
 ## Phase 3: AsyncDirectory Trait
 
-### PR #3: Add AsyncDirectory and AsyncDirectoryEntry traits
+**Status**: Waiting for Phase 2
 
+**Goal**: Add directory trait with entry iteration
+
+**Base Branch**: `feat/async-file-trait`
 **Branch**: `feat/async-directory-trait`
 
+**Design Reference**: See [design.md](./design.md#phase-3-asyncdirectory)
+
+**Implementation Tasks**:
+- [ ] Create `src/traits/directory.rs` with traits:
+  - `AsyncDirectoryEntry`
+  - `AsyncDirectory`
+- [ ] Add `pub mod directory;` to `src/traits/mod.rs`
+- [ ] Add tests with mock implementations
+- [ ] Verify trait bounds compile
+
 **Files Changed**:
-- `src/traits/mod.rs` - add `pub mod directory;`
+- `src/traits/mod.rs`
 - `src/traits/directory.rs` (new)
 
-**Changes**:
-```rust
-// src/traits/directory.rs
-use crate::error::Result;
-use std::path::Path;
-use super::AsyncMetadata;
-
-pub trait AsyncDirectoryEntry: Send + Sync + 'static {
-    type Metadata: AsyncMetadata;
-    
-    fn name(&self) -> &str;
-    fn path(&self) -> &Path;
-    async fn metadata(&self) -> Result<Self::Metadata>;
-    
-    // Provided methods
-    async fn is_file(&self) -> Result<bool> {
-        Ok(self.metadata().await?.is_file())
-    }
-    
-    async fn is_directory(&self) -> Result<bool> {
-        Ok(self.metadata().await?.is_dir())
-    }
-    
-    async fn is_symlink(&self) -> Result<bool> {
-        Ok(self.metadata().await?.is_symlink())
-    }
-}
-
-pub trait AsyncDirectory: Send + Sync + 'static {
-    type Entry: AsyncDirectoryEntry;
-    type Metadata: AsyncMetadata;
-    
-    async fn read_entries(&self) -> Result<Vec<Self::Entry>>;
-    async fn metadata(&self) -> Result<Self::Metadata>;
-    fn path(&self) -> &Path;
-}
-```
-
-**Tests**:
-- Mock implementations for testing
-- Test trait bounds
-- Verify entry iteration works
+**Estimated Time**: 4-6 hours
 
 **Success Criteria**:
-- ✅ Compiles without errors
-- ✅ All existing tests pass
-- ✅ Mock implementation works
-- ✅ Can iterate over directory entries
-
-**Estimated Time**: 4-6 hours
+- [ ] Compiles without errors
+- [ ] All tests pass
+- [ ] Mock implementations work
 
 ---
 
 ## Phase 4: AsyncFileSystem Trait
 
-### PR #4: Add AsyncFileSystem trait
+**Status**: Waiting for Phase 3
 
+**Goal**: Add top-level filesystem trait
+
+**Base Branch**: `feat/async-directory-trait`
 **Branch**: `feat/async-filesystem-trait`
 
+**Design Reference**: See [design.md](./design.md#phase-4-asyncfilesystem)
+
+**Implementation Tasks**:
+- [ ] Create `src/traits/filesystem.rs` with `AsyncFileSystem` trait
+- [ ] Add `pub mod filesystem;` to `src/traits/mod.rs`
+- [ ] Add tests with mock implementation
+- [ ] Verify associated types work correctly
+
 **Files Changed**:
-- `src/traits/mod.rs` - add `pub mod filesystem;`
+- `src/traits/mod.rs`
 - `src/traits/filesystem.rs` (new)
-
-**Changes**:
-```rust
-// src/traits/filesystem.rs
-use crate::error::Result;
-use std::path::Path;
-use super::{AsyncFile, AsyncDirectory, AsyncMetadata};
-
-pub trait AsyncFileSystem: Send + Sync + 'static {
-    type File: AsyncFile<Metadata = Self::Metadata>;
-    type Directory: AsyncDirectory<Metadata = Self::Metadata>;
-    type Metadata: AsyncMetadata;
-    
-    // File operations
-    async fn open_file(&self, path: &Path) -> Result<Self::File>;
-    async fn create_file(&self, path: &Path) -> Result<Self::File>;
-    
-    // Directory operations
-    async fn open_directory(&self, path: &Path) -> Result<Self::Directory>;
-    async fn create_directory(&self, path: &Path) -> Result<()>;
-    async fn create_directory_all(&self, path: &Path) -> Result<()>;
-    
-    // Metadata operations
-    async fn metadata(&self, path: &Path) -> Result<Self::Metadata>;
-    
-    // Remove operations
-    async fn remove_file(&self, path: &Path) -> Result<()>;
-    async fn remove_directory(&self, path: &Path) -> Result<()>;
-    
-    // Capability queries
-    fn supports_copy_file_range(&self) -> bool { false }
-    fn supports_hardlinks(&self) -> bool { false }
-    fn supports_symlinks(&self) -> bool { false }
-}
-```
-
-**Tests**:
-- Mock filesystem implementation
-- Test trait bounds
-- Verify associated types work correctly
-
-**Success Criteria**:
-- ✅ Compiles without errors
-- ✅ All existing tests pass
-- ✅ Trait definition is clean
-- ✅ Associated types work
 
 **Estimated Time**: 4-6 hours
 
+**Success Criteria**:
+- [ ] Compiles without errors
+- [ ] All tests pass
+- [ ] Associated types work
+
 ---
 
-## Phase 5: Local Filesystem Backend
+## Phase 5a: Shared Filesystem Operations
 
-### PR #5: Add LocalFileSystem backend
+**Status**: Waiting for Phase 4
 
-**Branch**: `feat/local-filesystem-backend`
+**Goal**: Extract shared operations (tree walking, metadata preservation, etc.)
+
+**Base Branch**: `feat/async-filesystem-trait`
+**Branch**: `feat/shared-filesystem-ops`
+
+**Design Reference**: See [layer-integration.md](./layer-integration.md#shared-filesystem-operations-layer-2)
+
+**Implementation Tasks**:
+- [ ] Create `src/filesystem/` module
+- [ ] Create `src/filesystem/walker.rs` - `SecureTreeWalker` using DirectoryFd
+- [ ] Create `src/filesystem/read.rs` - `read_file_content()` with openat
+- [ ] Create `src/filesystem/write.rs` - `write_file_content()` with openat
+- [ ] Create `src/filesystem/metadata.rs` - `preserve_metadata()` with *at syscalls
+- [ ] Add comprehensive tests
 
 **Files Changed**:
-- `src/lib.rs` - add `pub mod backends;`
-- `src/backends/mod.rs` (new)
-- `src/backends/local.rs` (new)
+- `src/lib.rs`
+- `src/filesystem/mod.rs` (new)
+- `src/filesystem/walker.rs` (new)
+- `src/filesystem/read.rs` (new)
+- `src/filesystem/write.rs` (new)
+- `src/filesystem/metadata.rs` (new)
 
-**Changes**:
-```rust
-// src/backends/mod.rs
-pub mod local;
-pub use local::LocalFileSystem;
-
-// src/backends/local.rs
-pub struct LocalFileSystem;
-
-pub struct LocalFile {
-    file: compio::fs::File,
-}
-
-pub struct LocalDirectory {
-    path: PathBuf,
-}
-
-pub struct LocalDirectoryEntry {
-    name: String,
-    path: PathBuf,
-    metadata: Option<Metadata>, // Cached
-}
-
-impl AsyncFileSystem for LocalFileSystem {
-    type File = LocalFile;
-    type Directory = LocalDirectory;
-    type Metadata = Metadata;
-    
-    async fn open_file(&self, path: &Path) -> Result<Self::File> {
-        let file = compio::fs::File::open(path).await?;
-        Ok(LocalFile { file })
-    }
-    
-    // ... implement all methods
-}
-
-impl AsyncFile for LocalFile {
-    type Metadata = Metadata;
-    
-    async fn read_at(&self, buf: Vec<u8>, offset: u64) 
-        -> Result<(usize, Vec<u8>)> {
-        let buf_result = self.file.read_at(buf, offset).await;
-        Ok((buf_result.0?, buf_result.1))
-    }
-    
-    // ... implement all methods
-}
-
-impl AsyncDirectory for LocalDirectory {
-    type Entry = LocalDirectoryEntry;
-    type Metadata = Metadata;
-    
-    async fn read_entries(&self) -> Result<Vec<Self::Entry>> {
-        let entries = compio_fs_extended::directory::read_dir(&self.path).await?;
-        let mut result = Vec::new();
-        for entry_result in entries {
-            let entry = entry_result?;
-            let name = entry.file_name().to_string_lossy().to_string();
-            let path = self.path.join(&name);
-            result.push(LocalDirectoryEntry {
-                name,
-                path,
-                metadata: None,
-            });
-        }
-        Ok(result)
-    }
-    
-    // ... implement all methods
-}
-
-impl AsyncDirectoryEntry for LocalDirectoryEntry {
-    type Metadata = Metadata;
-    
-    fn name(&self) -> &str { &self.name }
-    fn path(&self) -> &Path { &self.path }
-    
-    async fn metadata(&self) -> Result<Self::Metadata> {
-        // Use cached if available, otherwise fetch
-        if let Some(ref meta) = self.metadata {
-            Ok(meta.clone())
-        } else {
-            Ok(compio::fs::metadata(&self.path).await?)
-        }
-    }
-}
-```
-
-**Tests**:
-- Comprehensive integration tests with temp files
-- Test all filesystem operations
-- Compare with direct compio usage
-- Test error cases
-
-**Success Criteria**:
-- ✅ All trait methods implemented
-- ✅ All tests pass
-- ✅ Performance is comparable to direct compio
-- ✅ Error handling works correctly
+**Key Pattern**: All operations use DirectoryFd and secure *at syscalls
 
 **Estimated Time**: 8-12 hours
 
----
-
-## Phase 6: Protocol Backend Stub
-
-### PR #6: Add ProtocolFileSystem stub backend
-
-**Branch**: `feat/protocol-filesystem-stub`
-
-**Files Changed**:
-- `src/backends/mod.rs` - add `pub mod protocol;`
-- `src/backends/protocol.rs` (new)
-
-**Changes**:
-```rust
-// src/backends/protocol.rs
-use crate::protocol::transport::Transport;
-
-pub struct ProtocolFileSystem<T: Transport> {
-    transport: T,
-}
-
-impl<T> ProtocolFileSystem<T>
-where
-    T: Transport + Send + Sync + 'static,
-{
-    pub fn new(transport: T) -> Self {
-        Self { transport }
-    }
-}
-
-// Stub implementations that return NotImplemented
-impl<T> AsyncFileSystem for ProtocolFileSystem<T>
-where
-    T: Transport + Send + Sync + 'static,
-{
-    type File = ProtocolFile<T>;
-    type Directory = ProtocolDirectory<T>;
-    type Metadata = ProtocolMetadata;
-    
-    async fn open_file(&self, _path: &Path) -> Result<Self::File> {
-        Err(SyncError::NotImplemented(
-            "Protocol filesystem not yet implemented".into()
-        ))
-    }
-    
-    // ... all other methods return NotImplemented
-}
-
-// Similar stubs for ProtocolFile, ProtocolDirectory, etc.
-```
-
-**Tests**:
-- Verify trait implementation compiles
-- Test that methods return NotImplemented error
-- Verify generic constraints work with Transport
-
 **Success Criteria**:
-- ✅ Compiles with Transport trait
-- ✅ All trait methods stubbed
-- ✅ Tests verify NotImplemented errors
-
-**Estimated Time**: 4-6 hours
+- [ ] All operations use DirectoryFd
+- [ ] TOCTOU-safe
+- [ ] Comprehensive tests
+- [ ] Used by both local and protocol backends
 
 ---
 
-## Phase 7: Generic Operations
+## Phase 5b: Local Backend Implementation
 
-### PR #7: Add generic filesystem operations
+**Status**: Waiting for Phase 5a
 
-**Branch**: `feat/generic-operations`
+**Goal**: Implement AsyncFileSystem traits for local filesystem
+
+**Base Branch**: `feat/shared-filesystem-ops`
+**Branch**: `feat/local-filesystem-backend`
+
+**Design Reference**: See [design.md](./design.md#5a-local-filesystem-backend) and [layer-integration.md](./layer-integration.md#local-backend-direct-use)
+
+**Implementation Tasks**:
+- [ ] Create `src/backends/mod.rs`
+- [ ] Create `src/backends/local.rs`:
+  - `LocalFileSystem`
+  - `LocalFile`
+  - `LocalDirectory`
+  - `LocalDirectoryEntry`
+- [ ] Implement all trait methods
+- [ ] **Use shared operations from Phase 5a**
+- [ ] Add comprehensive integration tests
+- [ ] Performance comparison with direct compio
 
 **Files Changed**:
-- `src/traits/mod.rs` - add `pub mod operations;`
-- `src/traits/operations.rs` (new)
+- `src/lib.rs`
+- `src/backends/mod.rs` (new)
+- `src/backends/local.rs` (new)
 
-**Changes**:
-```rust
-// src/traits/operations.rs
-use super::AsyncFileSystem;
+**Key Pattern**: Reuse shared operations, don't duplicate
 
-pub trait FileOperations {
-    async fn copy_file(&self, src: &Path, dst: &Path) -> Result<u64>;
-    async fn copy_directory(&self, src: &Path, dst: &Path) -> Result<()>;
-}
-
-pub struct GenericFileOperations<FS: AsyncFileSystem> {
-    filesystem: FS,
-    buffer_size: usize,
-}
-
-impl<FS: AsyncFileSystem> GenericFileOperations<FS> {
-    pub fn new(filesystem: FS, buffer_size: usize) -> Self {
-        Self { filesystem, buffer_size }
-    }
-    
-    pub fn filesystem(&self) -> &FS {
-        &self.filesystem
-    }
-}
-
-impl<FS: AsyncFileSystem> FileOperations for GenericFileOperations<FS> {
-    async fn copy_file(&self, src: &Path, dst: &Path) -> Result<u64> {
-        let src_file = self.filesystem.open_file(src).await?;
-        let dst_file = self.filesystem.create_file(dst).await?;
-        
-        let src_metadata = src_file.metadata().await?;
-        let size = src_metadata.size();
-        
-        let mut offset = 0;
-        let mut total_copied = 0;
-        
-        while offset < size {
-            let to_read = std::cmp::min(self.buffer_size, (size - offset) as usize);
-            let buffer = vec![0u8; to_read];
-            
-            let (bytes_read, buffer) = src_file.read_at(buffer, offset).await?;
-            if bytes_read == 0 {
-                break;
-            }
-            
-            let data = &buffer[..bytes_read];
-            dst_file.write_all_at(data, offset).await?;
-            
-            offset += bytes_read as u64;
-            total_copied += bytes_read as u64;
-        }
-        
-        dst_file.sync_all().await?;
-        Ok(total_copied)
-    }
-    
-    async fn copy_directory(&self, src: &Path, dst: &Path) -> Result<()> {
-        // Implementation...
-        todo!()
-    }
-}
-```
-
-**Tests**:
-- Test copy_file with LocalFileSystem
-- Test with various file sizes
-- Verify byte-for-byte correctness
+**Estimated Time**: 8-12 hours
 
 **Success Criteria**:
-- ✅ Generic operations work with any AsyncFileSystem
-- ✅ copy_file works correctly
-- ✅ Tests pass with LocalFileSystem
+- [ ] All trait methods implemented
+- [ ] Uses shared operations from `src/filesystem/`
+- [ ] Uses DirectoryFd throughout
+- [ ] Performance comparable to direct compio
+- [ ] All tests pass
+
+---
+
+## Phase 6: SyncProtocol Trait + Rsync Backend
+
+**Status**: Waiting for Phase 5b
+
+**Goal**: Add protocol abstraction and rsync implementation
+
+**Base Branch**: `feat/local-filesystem-backend`
+**Branch**: `feat/rsync-protocol-backend`
+
+**Design Reference**: See [rsync-protocol-analysis.md](./rsync-protocol-analysis.md#proposed-design-three-layer-architecture)
+
+**Implementation Tasks**:
+- [ ] Create `src/traits/sync_protocol.rs` with `SyncProtocol` trait
+- [ ] Update `src/backends/protocol.rs`:
+  - Implement `SyncProtocol` for rsync wire protocol
+  - **Use shared operations from Phase 5a** for file I/O
+  - Don't duplicate file operations
+- [ ] Add tests with existing Transport implementations
+
+**Files Changed**:
+- `src/traits/mod.rs`
+- `src/traits/sync_protocol.rs` (new)
+- `src/backends/protocol.rs` (update)
+
+**Key Pattern**: Protocol uses shared operations for file I/O, only adds protocol-specific logic
+
+**Estimated Time**: 8-12 hours
+
+**Success Criteria**:
+- [ ] `SyncProtocol` trait defined
+- [ ] Rsync backend uses shared operations
+- [ ] No duplicate file I/O code
+- [ ] Works with existing Transport
+- [ ] Tests pass
+
+---
+
+## Phase 7: High-Level Sync Operations
+
+**Status**: Waiting for Phase 6
+
+**Goal**: Add unified sync operations that work with any backend
+
+**Base Branch**: `feat/rsync-protocol-backend`
+**Branch**: `feat/high-level-sync-ops`
+
+**Design Reference**: See [streaming-vs-batch.md](./streaming-vs-batch.md#the-unified-api-backend-decides)
+
+**Implementation Tasks**:
+- [ ] Create `src/sync/engine.rs`:
+  - `SyncEngine` that orchestrates backends
+  - Common logic: tree walking, metadata comparison
+  - Backend dispatch: streaming for local, batching for protocol
+- [ ] Add progress reporting
+- [ ] Add comprehensive tests with both backends
+
+**Files Changed**:
+- `src/sync/engine.rs` (new)
+- `src/sync/mod.rs` (update)
+
+**Key Pattern**: Shared logic with backend-specific execution
+
+**Estimated Time**: 8-12 hours
+
+**Success Criteria**:
+- [ ] Works with both local and protocol backends
+- [ ] Streaming for local (no forced batching)
+- [ ] Batching for protocol (where needed)
+- [ ] Common logic reused
+- [ ] Tests pass with both backends
+
+---
+
+## Phase 8: Integration with Existing Code
+
+**Status**: Waiting for Phase 7
+
+**Goal**: Gradually migrate existing code to use new traits
+
+**Base Branch**: `feat/high-level-sync-ops`
+**Branch**: `refactor/migrate-to-traits`
+
+**Design Reference**: See [design.md](./design.md#phase-7-integration-with-existing-code)
+
+**Implementation Tasks**:
+- [ ] Add trait-based alternative functions alongside existing
+- [ ] Update tests to verify equivalent behavior
+- [ ] Performance benchmarks
+- [ ] Document migration path
+
+**Files Changed**:
+- `src/copy.rs` (add trait-based alternatives)
+- `src/sync.rs` (add trait-based alternatives)
+
+**Strategy**: Keep existing code, add alternatives, migrate gradually
 
 **Estimated Time**: 6-8 hours
 
----
-
-## Phase 8: Integration & Migration
-
-### PR #8: Add trait-based alternative for file copying
-
-**Branch**: `feat/trait-copy-alternative`
-
-**Files Changed**:
-- `src/copy.rs` - add trait-based functions alongside existing
-- Examples showing usage
-
-**Changes**:
-```rust
-// Add to src/copy.rs
-pub async fn copy_file_with_traits(
-    src: &Path,
-    dst: &Path,
-    buffer_size: usize,
-) -> Result<u64> {
-    use crate::backends::LocalFileSystem;
-    use crate::traits::{FileOperations, GenericFileOperations};
-    
-    let fs = LocalFileSystem;
-    let ops = GenericFileOperations::new(fs, buffer_size);
-    ops.copy_file(src, dst).await
-}
-```
-
-**Tests**:
-- Comparative tests (trait-based vs original)
-- Performance benchmarks
-- Verify identical behavior
-
 **Success Criteria**:
-- ✅ Trait-based version works
-- ✅ Performance is equivalent
-- ✅ Tests pass
-
-**Estimated Time**: 4-6 hours
+- [ ] Trait-based versions work correctly
+- [ ] Performance is equivalent
+- [ ] Both versions coexist
+- [ ] Tests pass
 
 ---
 
-## Later Phases (Future Work)
+## Future Work (Not in Initial PRs)
 
 ### Phase 9: Complete Protocol Backend
-- Implement full protocol filesystem
+- Implement full protocol filesystem operations
 - Add remote file operations
 - Integrate with SSH transport
 
 ### Phase 10: Full Migration
-- Migrate remaining code
-- Remove old implementations
-- Update documentation
+- Deprecate old code paths
+- Remove duplicated implementations
+- Update all call sites
 
 ### Phase 11: Optimizations
 - Add caching where beneficial
 - Optimize hot paths
-- Add advanced features
+- Advanced features
+
+---
 
 ## Summary
 
-**Total PRs**: 1 design PR + 8 implementation PRs + future work
+**Total**: 1 design PR + 8 implementation PRs
 
 **Timeline**:
-- **Phase 0**: Design documentation (COMPLETE! Ready for review)
-- Phase 1-4: ~2-3 weeks (traits only)
+- **Phase 0**: ✅ COMPLETE (design docs)
+- Phase 1-4: ~2-3 weeks (trait definitions)
 - Phase 5-7: ~2-3 weeks (implementations)
 - Phase 8: ~1 week (integration)
-- **Total**: ~5-7 weeks (after design approval)
+- **Total**: ~5-7 weeks after design approval
 
-**Dependencies**:
-- PR #0 (design) must be merged first
-- Each subsequent PR depends on previous one
-- All implementation PRs reference the design docs
-- Can be reviewed sequentially
-- Can pause between phases for feedback
+**Dependencies**: Linear - each PR builds on previous
 
 **Git Strategy**:
 ```
 main
- └─> design/trait-based-filesystem-abstraction (PR #0 - CURRENT)
-      └─> feat/async-metadata-trait (PR #1 - stacks on design)
+ └─> design/... (PR #0) ← CURRENT
+      └─> feat/async-metadata-trait (PR #1)
            └─> feat/async-file-trait (PR #2)
-                └─> feat/async-directory-trait (PR #3)
-                     └─> ... (and so on)
+                └─> ... (continue stacking)
 ```
 
-## Review Process
+**Key Reference Docs**:
+- [design.md](./design.md) - Architecture and detailed design
+- [rsync-protocol-analysis.md](./rsync-protocol-analysis.md) - Protocol compatibility
+- [streaming-vs-batch.md](./streaming-vs-batch.md) - Execution strategies
+- [layer-integration.md](./layer-integration.md) - How layers work together
 
-### For the Design PR (PR #0):
+---
 
-1. Review focus:
-   - ✅ Architecture makes sense
-   - ✅ Streaming vs batching approach is sound
-   - ✅ Layer integration (DirectoryFd reuse) is correct
-   - ✅ Plan is achievable
-   - ✅ No major design flaws
+## Review Checklist
 
-2. Create PR with:
-   - Link to this README.md for overview
-   - Summary of key decisions
-   - Call out what reviewers should focus on
+### For PR #0 (Design):
+- [ ] Architecture makes sense
+- [ ] Streaming vs batching approach is sound
+- [ ] Layer integration (DirectoryFd reuse) is correct
+- [ ] Plan is achievable
+- [ ] No major design flaws
 
-3. Address feedback:
-   - Update design docs as needed
-   - Answer questions
-   - Iterate on approach
-
-4. **Merge when approved**
-
-5. **All subsequent PRs can now reference these docs**
-
-### For Implementation PRs (PR #1-8):
-
-For each PR:
-1. Self-review checklist:
-   - ✅ Compiles without warnings
-   - ✅ All tests pass
-   - ✅ Documentation complete
-   - ✅ Examples work
-   - ✅ No breaking changes (unless planned)
-
-2. Create PR with:
-   - Clear description
-   - Link to design doc
-   - Test results
-   - Performance comparison (if applicable)
-
-3. Address feedback and iterate
-
-4. Merge when approved
-
-5. Start next PR from merged branch
-
-## Success Metrics
-
-- All PRs merged successfully
-- No performance regressions
-- Code coverage maintained or improved
-- Documentation is clear
-- Team understands the new system
-
+### For Each Implementation PR:
+- [ ] Compiles without warnings
+- [ ] All tests pass
+- [ ] Follows design documents
+- [ ] No deviation from approved architecture
+- [ ] Documentation complete
+- [ ] Performance is acceptable
