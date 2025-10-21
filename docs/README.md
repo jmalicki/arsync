@@ -52,6 +52,20 @@ In-depth technical documentation:
 - [Power Measurement](POWER_MEASUREMENT.md) - Energy efficiency benchmarking
 - [Documentation Standards](DOCUMENTATION_STANDARDS.md) - How we write documentation
 
+## 🛡️ Safety & Security
+
+**✅ VERIFIED SAFE**: Compio handles cancellation correctly (verified via source code review)
+
+Response to [Tonbo.io "Async Rust is Not Safe with io_uring"](https://tonbo.io/blog/async-rust-is-not-safe-with-io-uring):
+
+- **⭐ [Safety Analysis](safety/)** - Complete io_uring safety verification
+  - [README.md](safety/README.md) - Complete answer (start here!)
+  - [compio-verification.md](safety/compio-verification.md) - Source code proof
+  - [diagrams.md](safety/diagrams.md) - Visual diagrams (Mermaid)
+  - [quick-reference.md](safety/quick-reference.md) - Developer patterns
+
+**TL;DR**: The criticism is valid for naive implementations. Compio is safe via heap allocation + manual reference counting (verified by source review). Our code uses safe patterns. Production-ready.
+
 ## 📊 Historical Records
 
 Past pull requests and development history:
