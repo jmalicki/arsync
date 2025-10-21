@@ -221,6 +221,13 @@ Incremental plan to add trait-based filesystem abstractions to arsync. Each phas
 
 **Design Reference**: See [design.md](./design.md#5a-local-filesystem-backend) and [layer-integration.md](./layer-integration.md#local-backend-direct-use)
 
+**⚠️ CRITICAL**: See [implementation-requirements.md](./implementation-requirements.md) for security and performance requirements
+
+**Before Implementation**:
+- [ ] Read `src/directory/mod.rs` to understand existing patterns
+- [ ] Read `crates/compio-fs-extended/src/directory.rs` for DirectoryFd usage
+- [ ] Review [implementation-requirements.md](./implementation-requirements.md) requirements
+
 **Implementation Tasks**:
 - [ ] Create `src/backends/mod.rs`
 - [ ] Create `src/backends/local.rs`:
@@ -245,9 +252,13 @@ Incremental plan to add trait-based filesystem abstractions to arsync. Each phas
 **Success Criteria**:
 - [ ] All trait methods implemented
 - [ ] Uses shared operations from `src/filesystem/`
-- [ ] Uses DirectoryFd throughout
-- [ ] Performance comparable to direct compio
+- [ ] **DirectoryFd used everywhere** (no path-based operations)
+- [ ] **No std::fs usage** (compio-fs-extended only)
+- [ ] **TOCTOU-safe** (all *at syscalls)
+- [ ] **stat() called once per file** (metadata cached)
+- [ ] Performance comparable to or better than existing code
 - [ ] All tests pass
+- [ ] Security audit passed (see [implementation-requirements.md](./implementation-requirements.md))
 
 ---
 

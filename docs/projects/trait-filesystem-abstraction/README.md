@@ -99,10 +99,11 @@ Each trait can be implemented for different backends:
 
 - **`README.md`** - This file (overview and quick links)
 - **`design.md`** - Full design document with architecture and rationale
-- **`plan.md`** - Step-by-step implementation plan with 8 sequential PRs
+- **`plan.md`** - Step-by-step implementation plan with 8 sequential PRs (checklist format)
 - **`rsync-protocol-analysis.md`** - Why protocol ≠ filesystem, two abstractions needed
 - **`streaming-vs-batch.md`** - How to support both patterns without forcing either
 - **`layer-integration.md`** - How rsync uses local filesystem abstractions (DirectoryFd, etc.)
+- **`implementation-requirements.md`** - ⚠️ **CRITICAL**: Security and performance requirements (must read before implementing)
 
 ## Status
 
