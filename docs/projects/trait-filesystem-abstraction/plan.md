@@ -56,18 +56,18 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 **What**: Just the trait definition, no implementation yet
 
 **Tasks**:
-- [ ] Create `src/traits/mod.rs`
-- [ ] Create `src/traits/metadata.rs` with trait
-- [ ] Add `pub mod traits;` to `src/lib.rs`
-- [ ] Add basic tests (compile checks)
+- [x] Create `src/traits/mod.rs`
+- [x] Create `src/traits/metadata.rs` with trait
+- [x] Add `pub mod traits;` to `src/lib.rs`
+- [x] Add basic tests (compile checks)
 
 **Files**: `src/lib.rs`, `src/traits/*.rs` (2 new files)
 
 **Time**: 2-3 hours
 
 **Success**:
-- [ ] Trait compiles
-- [ ] Tests pass
+- [x] Trait compiles
+- [x] Tests pass (12 tests for provided methods)
 
 ---
 
