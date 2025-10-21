@@ -13,7 +13,7 @@ pub enum ExtendedError {
     Io(#[from] std::io::Error),
 
     /// Task spawn/join error (from compio::runtime::spawn)
-    #[error("spawn failed")]
+    #[error("spawn failed: {0}")]
     SpawnJoin(String),
 
     /// copy_file_range specific error

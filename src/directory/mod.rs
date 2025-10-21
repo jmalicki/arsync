@@ -146,7 +146,7 @@ mod tests {
 
     /// Test ExtendedMetadata creation and basic functionality
     #[compio::test]
-    async fn test_extended_metadata_basic() {
+    async fn test_file_metadata_basic() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let test_file = temp_dir.path().join("test_file.txt");
 
@@ -171,9 +171,9 @@ mod tests {
         assert_eq!(metadata.nlink, 1); // Regular file has 1 link
     }
 
-    /// Test ExtendedMetadata for directories
+    /// Test FileMetadata for directories
     #[compio::test]
-    async fn test_extended_metadata_directory() {
+    async fn test_file_metadata_directory() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
 
         // Test directory metadata
@@ -186,9 +186,9 @@ mod tests {
         assert!(!metadata.is_symlink());
     }
 
-    /// Test ExtendedMetadata for symlinks
+    /// Test FileMetadata for symlinks
     #[compio::test]
-    async fn test_extended_metadata_symlink() {
+    async fn test_file_metadata_symlink() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let target_file = temp_dir.path().join("target.txt");
         let symlink_file = temp_dir.path().join("symlink.txt");
