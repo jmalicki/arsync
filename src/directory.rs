@@ -62,12 +62,6 @@ pub struct TraversalContext {
     pub parallel_config: Arc<crate::cli::ParallelCopyConfig>,
     /// Global dispatcher for parallel operations
     pub dispatcher: &'static Dispatcher,
-    /// Whether to use buffer pool for zero-copy I/O
-    ///
-    /// When true, copy operations will create thread-local `BufferPools`
-    /// using compio's `io_uring` `BUFFER_SELECT`. If false or unavailable,
-    /// falls back to regular allocations.
-    pub use_buffer_pool: bool,
 }
 
 /// Extended metadata using `io_uring` statx or compio metadata
@@ -410,16 +404,6 @@ async fn traverse_and_copy_directory_iterative(
     // but all child operations complete before we unwrap, so it's just +1/-1.
     // Delegate to root wrapper which handles DirectoryFd setup
     // Build traversal context
-
-    // Attempt zero-copy with buffer pool; copy_file_internal will fall back on error
-    let use_buffer_pool = true;
-
-    info!(
-        "Will attempt zero-copy I/O with buffer pool ({} buffers × {} bytes); falls back to standard copy if unavailable",
-        128,  // BUFFER_POOL_COUNT from copy.rs
-        file_ops.buffer_size()
-    );
-
     let ctx = TraversalContext {
         file_ops: file_ops_arc,
         copy_method: _copy_method,
@@ -429,7 +413,6 @@ async fn traverse_and_copy_directory_iterative(
         metadata_config: metadata_config_arc,
         parallel_config: parallel_config_arc,
         dispatcher,
-        use_buffer_pool,
     };
 
     let result = process_root_entry(initial_src, initial_dst, ctx).await;
@@ -894,8 +877,6 @@ async fn process_file(
             src.filename.as_ref(),
             &dst.parent_dir,
             dst.filename.as_ref(),
-            ctx.use_buffer_pool,
-            ctx.file_ops.buffer_size(),
         )
         .await?;
 
@@ -946,8 +927,6 @@ async fn process_file(
             src.filename.as_ref(),
             &dst.parent_dir,
             dst.filename.as_ref(),
-            ctx.use_buffer_pool,
-            ctx.file_ops.buffer_size(),
         )
         .await?;
 

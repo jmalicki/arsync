@@ -44,14 +44,16 @@ use crate::error::{Result, SyncError};
 use crate::metadata::{preserve_file_metadata, MetadataConfig};
 use compio::dispatcher::Dispatcher;
 use compio::fs::File;
-use compio::io::{AsyncReadAt, AsyncReadManagedAt, AsyncWriteAt};
-use compio::runtime::BufferPool;
+use compio::io::{AsyncReadAt, AsyncWriteAt};
 use futures::stream::{FuturesUnordered, StreamExt};
 use std::path::Path;
 use std::sync::LazyLock;
 
-/// Number of buffers in the buffer pool for zero-copy operations
-const BUFFER_POOL_COUNT: u16 = 128;
+/// Default I/O buffer size (in bytes) used for chunked read/write operations.
+///
+/// Chosen to balance syscall overhead and memory usage. Adjust if profiling
+/// indicates different optimal sizes for specific workloads.
+const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer
 
 /// 2MB huge page size for alignment in parallel copies
 const HUGE_PAGE_SIZE: u64 = 2 * 1024 * 1024;
@@ -96,7 +98,6 @@ pub async fn copy_file(
     dst: &Path,
     metadata_config: &MetadataConfig,
     parallel_config: &ParallelCopyConfig,
-    buffer_size: usize,
 ) -> Result<()> {
     // Set up DirectoryFd for source
     let src_parent_dir = compio_fs_extended::DirectoryFd::open(
@@ -127,9 +128,6 @@ pub async fn copy_file(
     // Get reference to global dispatcher (initialized on first use)
     let dispatcher: &'static Dispatcher = &DISPATCHER;
 
-    // Check if buffer pool is available (test creation)
-    let use_buffer_pool = BufferPool::new(BUFFER_POOL_COUNT, buffer_size).is_ok();
-
     copy_file_internal(
         src,
         dst,
@@ -141,8 +139,6 @@ pub async fn copy_file(
         src_filename,
         &dst_parent_dir,
         dst_filename,
-        use_buffer_pool,
-        buffer_size,
     )
     .await
 }
@@ -199,8 +195,6 @@ pub async fn copy_file_internal(
     src_filename: &std::ffi::OsStr,
     dst_parent_dir: &compio_fs_extended::DirectoryFd,
     dst_filename: &std::ffi::OsStr,
-    use_buffer_pool: bool,
-    buffer_size: usize,
 ) -> Result<()> {
     // Get file size from pre-fetched metadata (no syscall needed!)
     let file_size = src_metadata.metadata.size;
@@ -232,8 +226,6 @@ pub async fn copy_file_internal(
             src_filename,
             dst_parent_dir,
             dst_filename,
-            use_buffer_pool,
-            buffer_size,
         )
         .await
     }
@@ -289,8 +281,6 @@ async fn copy_read_write(
     src_filename: &std::ffi::OsStr,
     dst_parent_dir: &compio_fs_extended::DirectoryFd,
     dst_filename: &std::ffi::OsStr,
-    use_buffer_pool: bool,
-    buffer_size: usize,
 ) -> Result<()> {
     // Extract timestamps from pre-fetched metadata (no syscall needed!)
     let (src_accessed, src_modified) = (
@@ -376,117 +366,61 @@ async fn copy_read_write(
         }
     }
 
+    // Use compio's async read_at/write_at operations with buffer reuse
+    // Create buffer once and reuse it throughout the copy (no allocations!)
+    let mut buffer = vec![0u8; BUFFER_SIZE];
     let mut offset = 0u64;
     let mut total_copied = 0u64;
 
-    // Choose copy strategy based on buffer pool availability
-    if use_buffer_pool {
-        // Zero-copy path: Use compio's BufferPool with io_uring BUFFER_SELECT
-        // This eliminates both allocation and kernel→userspace copy
-        let buffer_pool = BufferPool::new(128, buffer_size)
-            .map_err(|e| SyncError::IoUring(format!("Failed to create buffer pool: {e}")))?;
+    while total_copied < file_size {
+        // Read data from source file - buffer ownership transferred to compio
+        let read_result = src_file.read_at(buffer, offset).await;
 
-        while total_copied < file_size {
-            #[allow(clippy::cast_possible_truncation)]
-            // file_size - total_copied < buffer_size which fits in usize
-            let to_read = std::cmp::min(buffer_size, (file_size - total_copied) as usize);
+        let bytes_read = read_result
+            .0
+            .map_err(|e| SyncError::IoUring(format!("compio read_at operation failed: {e}")))?;
 
-            // Zero-copy read using managed buffer (kernel writes directly to registered buffer)
-            let borrowed_buf = src_file
-                .read_managed_at(&buffer_pool, to_read, offset)
-                .await
-                .map_err(|e| SyncError::IoUring(format!("Buffer pool read failed: {e}")))?;
+        // Get buffer back from read operation
+        buffer = read_result.1;
 
-            let bytes_read = borrowed_buf.len();
-            if bytes_read == 0 {
-                break; // EOF
-            }
-
-            // Write from borrowed buffer - we need to copy to Vec because write_at requires IoBuf ownership
-            // The buffer is borrowed from the pool and can't be moved.
-            //
-            // TODO: Full zero-copy would require either:
-            // 1. Keep borrowed buffer alive during write (complex lifetime management)
-            // 2. Add write_managed() to compio that accepts borrowed buffers
-            // 3. Use io_uring registered buffers directly (bypass compio's ownership model)
-            //
-            // For now, we get zero-copy READ (50% of the work) which is still a significant win.
-            let write_result = dst_file
-                .write_at(Vec::from(borrowed_buf.as_ref()), offset)
-                .await;
-            let bytes_written = write_result
-                .0
-                .map_err(|e| SyncError::IoUring(format!("Write operation failed: {e}")))?;
-
-            if bytes_written != bytes_read {
-                return Err(SyncError::CopyFailed(format!(
-                    "Write size mismatch: expected {bytes_read}, got {bytes_written}"
-                )));
-            }
-
-            total_copied += bytes_written as u64;
-            offset += bytes_written as u64;
-
-            tracing::debug!(
-                "Zero-copy read: copied {} bytes, total: {}/{} (buffer pool, read-only zero-copy)",
-                bytes_written,
-                total_copied,
-                file_size
-            );
-            // borrowed_buf drops here → returns to pool automatically
+        if bytes_read == 0 {
+            // End of file
+            break;
         }
-    } else {
-        // Standard path: Use regular allocations with buffer reuse
-        // Create buffer once and reuse it throughout the copy (one allocation total!)
-        let mut buffer = vec![0u8; buffer_size];
 
-        while total_copied < file_size {
-            // Read data from source file - buffer ownership transferred to compio
-            let read_result = src_file.read_at(buffer, offset).await;
+        // Truncate buffer to only the bytes read (avoids writing garbage)
+        // This doesn't allocate, just changes the length
+        buffer.truncate(bytes_read);
 
-            let bytes_read = read_result
-                .0
-                .map_err(|e| SyncError::IoUring(format!("compio read_at operation failed: {e}")))?;
+        // Write data to destination file - write_at takes ownership and returns the buffer
+        // This way we reuse the same allocation for both read and write
+        let write_result = dst_file.write_at(buffer, offset).await;
 
-            // Get buffer back from read operation
-            buffer = read_result.1;
+        let bytes_written = write_result
+            .0
+            .map_err(|e| SyncError::IoUring(format!("compio write_at operation failed: {e}")))?;
 
-            if bytes_read == 0 {
-                // End of file
-                break;
-            }
+        // Get the buffer back from write operation and resize it for the next read
+        // resize() reuses the existing capacity when possible (no new allocation!)
+        buffer = write_result.1;
+        buffer.resize(BUFFER_SIZE, 0);
 
-            // Truncate buffer to only the bytes read (avoids writing garbage)
-            buffer.truncate(bytes_read);
-
-            // Write data to destination file - write_at takes ownership and returns the buffer
-            let write_result = dst_file.write_at(buffer, offset).await;
-
-            let bytes_written = write_result.0.map_err(|e| {
-                SyncError::IoUring(format!("compio write_at operation failed: {e}"))
-            })?;
-
-            // Get the buffer back from write operation and resize it for the next read
-            buffer = write_result.1;
-            buffer.resize(buffer_size, 0);
-
-            // Ensure we wrote the expected number of bytes
-            if bytes_written != bytes_read {
-                return Err(SyncError::CopyFailed(format!(
-                    "Write size mismatch: expected {bytes_read}, got {bytes_written}"
-                )));
-            }
-
-            total_copied += bytes_written as u64;
-            offset += bytes_written as u64;
-
-            tracing::debug!(
-                "Standard copy: copied {} bytes, total: {}/{} (buffer reused)",
-                bytes_written,
-                total_copied,
-                file_size
-            );
+        // Ensure we wrote the expected number of bytes
+        if bytes_written != bytes_read {
+            return Err(SyncError::CopyFailed(format!(
+                "Write size mismatch: expected {bytes_read}, got {bytes_written}"
+            )));
         }
+
+        total_copied += bytes_written as u64;
+        offset += bytes_written as u64;
+
+        tracing::debug!(
+            "compio read_at/write_at: copied {} bytes, total: {}/{} (buffer reused)",
+            bytes_written,
+            total_copied,
+            file_size
+        );
     }
 
     // Sync the destination file to disk if requested (matches rsync --fsync)
@@ -821,7 +755,6 @@ mod tests {
     };
     use crate::metadata::MetadataConfig;
     use std::fs;
-    use std::num::NonZeroUsize;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::time::Duration;
@@ -873,8 +806,6 @@ mod tests {
             src_filename,
             &dst_parent_dir,
             dst_filename,
-            false,     // Don't use buffer pool in tests (simpler)
-            64 * 1024, // 64KB buffer
         )
         .await
     }
@@ -888,7 +819,7 @@ mod tests {
             },
             io: IoConfig {
                 queue_depth: 4096,
-                buffer_size_kb: NonZeroUsize::new(64),
+                buffer_size_kb: 64,
                 copy_method: CopyMethod::Auto,
                 cpu_count: 1,
                 parallel: disabled_parallel_config(),
