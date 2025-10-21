@@ -20,7 +20,8 @@ This command should:
    - Rationale for opinion
    - Context about the design decision
    - Whether to accept, defer, or reject the suggestion
-4. **Summarize** the review and recommendations
+4. **Post replies directly on the PR** using `gh pr comment` or `gh api` for inline comments
+5. **Summarize** the review and recommendations
 
 ## Output Format
 
@@ -210,9 +211,31 @@ Reviewers: coderabbitai[bot] (20), @alice (2), @bob (1)
    - Style changes that reduce clarity
 ```
 
+## Posting Replies
+
+After analysis, **post responses directly on the PR**:
+
+```bash
+# Reply to inline comment
+gh api "repos/OWNER/REPO/pulls/comments/$COMMENT_ID/replies" \
+  -X POST \
+  -f body="Your analysis and response"
+
+# Post general PR comment
+gh pr comment $PR_NUM --body "Summary of review analysis"
+```
+
+**Response format**:
+- Acknowledge the suggestion
+- State agreement/disagreement with rationale
+- If agreeing: Confirm will implement
+- If disagreeing: Explain context/reasoning
+- Professional and constructive tone
+
 ## Notes
 
-- **No code changes** - this command is read-only
+- **Posts responses to PR** - engages with reviewers directly
+- **No code changes** - analysis and communication only
 - Provides AI-to-AI dialogue about code review
 - Helps user make informed decisions about which suggestions to accept
 - Documents rationale for rejecting suggestions
