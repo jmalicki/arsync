@@ -40,7 +40,7 @@ jobs:
     
     - name: Run clippy
       run: |
-        cargo clippy --all-targets --all-features -- \
+        cargo clippy --all-targets --features remote-sync,benchmarks -- \
           -D warnings \
           -D clippy::missing_docs_in_private_items \
           -D clippy::missing_errors_doc \
@@ -112,35 +112,35 @@ jobs:
     # Linux: Build all tests
     - name: Build all tests (Linux)
       if: matrix.os == 'ubuntu-latest'
-      run: cargo test --no-run --all-features
+      run: cargo test --no-run --features remote-sync,benchmarks
     
     # macOS: Only build compio-fs-extended tests
     - name: Build compio-fs-extended tests (macOS)
       if: matrix.os == 'macos-latest'
-      run: cargo test --no-run --all-features --package compio-fs-extended
+      run: cargo test --no-run --features remote-sync,benchmarks --package compio-fs-extended
     
     # Linux: Run full test suite (parent project + compio-fs-extended)
     - name: Run fast tests (Linux)
       if: matrix.os == 'ubuntu-latest'
       run: |
-        cargo nextest run --profile ci --all-features \
+        cargo nextest run --profile ci --features remote-sync,benchmarks \
           -E '!binary(~integration) & !binary(~performance) & !binary(~rsync)'
     
     # macOS: Only test compio-fs-extended (parent project has Linux-specific code for now)
     - name: Run compio-fs-extended tests (macOS)
       if: matrix.os == 'macos-latest'
       run: |
-        cargo nextest run --profile ci --all-features --package compio-fs-extended
+        cargo nextest run --profile ci --features remote-sync,benchmarks --package compio-fs-extended
     
     # macOS: Only test compio-fs-extended docs
     - name: Run doc tests
       if: matrix.os == 'macos-latest'
-      run: cargo test --all-features --doc --package compio-fs-extended
+      run: cargo test --features remote-sync,benchmarks --doc --package compio-fs-extended
     
     # Linux: Test all docs
     - name: Run doc tests (Linux)
       if: matrix.os == 'ubuntu-latest'
-      run: cargo test --all-features --doc
+      run: cargo test --features remote-sync,benchmarks --doc
     
     - name: Build release binary (Linux only for now)
       if: matrix.os == 'ubuntu-latest'
@@ -170,19 +170,19 @@ jobs:
         tool: nextest
     
     - name: Build all tests
-      run: cargo test --no-run --all-features
+      run: cargo test --no-run --features remote-sync,benchmarks
     
     - name: Run integration tests
-      run: cargo nextest run --profile ci --all-features -E 'binary(~integration)'
+      run: cargo nextest run --profile ci --features remote-sync,benchmarks -E 'binary(~integration)'
     
     - name: Run metadata tests
-      run: cargo nextest run --profile ci --all-features -E 'binary(~metadata)'
+      run: cargo nextest run --profile ci --features remote-sync,benchmarks -E 'binary(~metadata)'
     
     - name: Run xattr tests
-      run: cargo nextest run --profile ci --all-features -E 'binary(~xattr)'
+      run: cargo nextest run --profile ci --features remote-sync,benchmarks -E 'binary(~xattr)'
     
     - name: Run rsync tests
-      run: cargo nextest run --profile ci --all-features -E 'binary(~rsync)'
+      run: cargo nextest run --profile ci --features remote-sync,benchmarks -E 'binary(~rsync)'
 
   docker-tests:
     name: Docker Tests (privileged)
@@ -204,10 +204,10 @@ jobs:
       run: cargo build --release --bin arsync
     
     - name: Build all tests
-      run: cargo test --no-run --all-features
+      run: cargo test --no-run --features remote-sync,benchmarks
     
     - name: Run Docker-based tests
-      run: cargo nextest run --profile ci --all-features -E 'test(/docker/)'
+      run: cargo nextest run --profile ci --features remote-sync,benchmarks -E 'test(/docker/)'
       env:
         # Docker is available in GitHub Actions by default
         DOCKER_AVAILABLE: true
@@ -230,10 +230,10 @@ jobs:
         tool: nextest
     
     - name: Build all tests
-      run: cargo test --no-run --all-features
+      run: cargo test --no-run --features remote-sync,benchmarks
     
     - name: Run performance tests
-      run: cargo nextest run --profile ci --all-features -E 'binary(~performance)'
+      run: cargo nextest run --profile ci --features remote-sync,benchmarks -E 'binary(~performance)'
 
   coverage:
     name: Code Coverage
@@ -253,7 +253,7 @@ jobs:
         tool: cargo-tarpaulin@0.32.8
           
     - name: Generate coverage report
-      run: cargo tarpaulin --lib --all-features --out Html --output-dir coverage
+      run: cargo tarpaulin --lib --features remote-sync,benchmarks --out Html --output-dir coverage
     
     - name: Upload coverage artifact
       uses: actions/upload-artifact@v4
@@ -294,7 +294,7 @@ jobs:
       uses: ./.github/actions/setup-rust-optimized
     
     - name: Run benchmarks
-      run: cargo bench --all-features
+      run: cargo bench --features remote-sync,benchmarks
     
     - name: Upload benchmark artifacts
       uses: actions/upload-artifact@v4
@@ -316,7 +316,7 @@ jobs:
       uses: ./.github/actions/setup-rust-optimized
     
     - name: Build documentation
-      run: cargo doc --document-private-items --no-deps --all-features
+      run: cargo doc --document-private-items --no-deps --features remote-sync,benchmarks
       env:
         RUSTDOCFLAGS: -D warnings
     
