@@ -17,5 +17,5 @@ pub async fn copy_file_test(
     parallel_config: &ParallelCopyConfig,
 ) -> Result<()> {
     // Simply call the public API - it handles DirectoryFd setup internally
-    copy_file(src, dst, metadata_config, parallel_config).await
+    copy_file(src, dst, metadata_config, parallel_config, 64 * 1024).await
 }

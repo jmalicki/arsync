@@ -157,9 +157,9 @@ async fn test_directory_complex_scenarios() {
 
     // Create files in parallel using DirectoryFd
     let file_operations = vec![
-        dir_fd.create_directory("new_feature", 0o755),
-        dir_fd.create_directory("bug_fixes", 0o755),
-        dir_fd.create_directory("documentation", 0o755),
+        dir_fd.create_directory(std::ffi::OsStr::new("new_feature"), 0o755),
+        dir_fd.create_directory(std::ffi::OsStr::new("bug_fixes"), 0o755),
+        dir_fd.create_directory(std::ffi::OsStr::new("documentation"), 0o755),
     ];
 
     // Execute all operations in parallel

@@ -51,7 +51,6 @@ use tracing::debug;
 #[derive(Debug, Clone)]
 pub struct FileOperations {
     /// Buffer size for I/O operations in bytes
-    #[allow(dead_code)]
     buffer_size: usize,
 }
 
@@ -91,6 +90,15 @@ impl FileOperations {
         // For Phase 1.2, we'll use async I/O as a foundation
         // TODO: Implement actual io_uring integration in future phases
         Ok(Self { buffer_size })
+    }
+
+    /// Get the configured buffer size for I/O operations
+    ///
+    /// Returns the buffer size in bytes configured during construction.
+    /// This is used by buffer pool creation and copy operations.
+    #[must_use]
+    pub const fn buffer_size(&self) -> usize {
+        self.buffer_size
     }
 
     /// Copy file using chunked read/write with compio buffer management
@@ -441,7 +449,14 @@ impl FileOperations {
         };
 
         // Call public API - it handles DirectoryFd and Dispatcher setup internally (no leak!)
-        crate::copy::copy_file(src, dst, &metadata_config, parallel_config).await?;
+        crate::copy::copy_file(
+            src,
+            dst,
+            &metadata_config,
+            parallel_config,
+            self.buffer_size,
+        )
+        .await?;
 
         debug!(
             "Copied {} bytes from {} to {} with metadata preservation",
