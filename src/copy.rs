@@ -755,6 +755,7 @@ mod tests {
     };
     use crate::metadata::MetadataConfig;
     use std::fs;
+    use std::num::NonZeroUsize;
     use std::os::unix::fs::PermissionsExt;
     use std::path::PathBuf;
     use std::time::Duration;
@@ -819,7 +820,7 @@ mod tests {
             },
             io: IoConfig {
                 queue_depth: 4096,
-                buffer_size_kb: 64,
+                buffer_size_kb: NonZeroUsize::new(64),
                 copy_method: CopyMethod::Auto,
                 cpu_count: 1,
                 parallel: disabled_parallel_config(),

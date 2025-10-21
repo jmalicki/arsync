@@ -82,7 +82,12 @@ async fn main() -> Result<()> {
         info!("Copy method: {:?}", args.copy_method());
         info!("Queue depth: {}", args.queue_depth());
         info!("CPU count: {}", args.effective_cpu_count());
-        info!("Buffer size: {} KB", args.io.buffer_size_kb);
+        info!(
+            "Buffer size: {} KB",
+            args.io
+                .buffer_size_kb
+                .map_or_else(|| "auto".to_string(), |kb| kb.to_string())
+        );
         info!("Max files in flight: {}", args.max_files_in_flight());
     }
 
