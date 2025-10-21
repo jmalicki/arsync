@@ -3,6 +3,7 @@
 use arsync::cli::{
     Args, ConcurrencyConfig, CopyMethod, IoConfig, MetadataConfig, OutputConfig, PathConfig,
 };
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 /// Create minimal test Args for basic testing
@@ -14,7 +15,7 @@ pub fn create_minimal_test_args() -> Args {
         },
         io: IoConfig {
             queue_depth: 4096,
-            buffer_size_kb: 64,
+            buffer_size_kb: NonZeroUsize::new(64),
             copy_method: CopyMethod::Auto,
             cpu_count: 1,
             parallel: super::disabled_parallel_config(),

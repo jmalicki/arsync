@@ -50,11 +50,8 @@ use futures::stream::{FuturesUnordered, StreamExt};
 use std::path::Path;
 use std::sync::LazyLock;
 
-/// Default I/O buffer size (in bytes) used for chunked read/write operations.
-///
-/// Chosen to balance syscall overhead and memory usage. Adjust if profiling
-/// indicates different optimal sizes for specific workloads.
-const BUFFER_SIZE: usize = 64 * 1024; // 64KB buffer
+/// Number of buffers in the buffer pool for zero-copy operations
+const BUFFER_POOL_COUNT: u16 = 128;
 
 /// 2MB huge page size for alignment in parallel copies
 const HUGE_PAGE_SIZE: u64 = 2 * 1024 * 1024;
@@ -99,6 +96,7 @@ pub async fn copy_file(
     dst: &Path,
     metadata_config: &MetadataConfig,
     parallel_config: &ParallelCopyConfig,
+    buffer_size: usize,
 ) -> Result<()> {
     // Set up DirectoryFd for source
     let src_parent_dir = compio_fs_extended::DirectoryFd::open(
@@ -130,7 +128,7 @@ pub async fn copy_file(
     let dispatcher: &'static Dispatcher = &DISPATCHER;
 
     // Check if buffer pool is available (test creation)
-    let use_buffer_pool = BufferPool::new(128, BUFFER_SIZE).is_ok();
+    let use_buffer_pool = BufferPool::new(BUFFER_POOL_COUNT, buffer_size).is_ok();
 
     copy_file_internal(
         src,
@@ -144,7 +142,7 @@ pub async fn copy_file(
         &dst_parent_dir,
         dst_filename,
         use_buffer_pool,
-        BUFFER_SIZE,
+        buffer_size,
     )
     .await
 }
@@ -875,8 +873,8 @@ mod tests {
             src_filename,
             &dst_parent_dir,
             dst_filename,
-            false, // Don't use buffer pool in tests (simpler)
-            BUFFER_SIZE,
+            false,     // Don't use buffer pool in tests (simpler)
+            64 * 1024, // 64KB buffer
         )
         .await
     }

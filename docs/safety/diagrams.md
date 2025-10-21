@@ -134,7 +134,7 @@ stateDiagram-v2
         Buffer dropped only
         after kernel done
     end note
-```
+   ```
 
 ---
 

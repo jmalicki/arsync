@@ -411,18 +411,14 @@ async fn traverse_and_copy_directory_iterative(
     // Delegate to root wrapper which handles DirectoryFd setup
     // Build traversal context
 
-    // Check if buffer pool is available (requires io_uring)
-    // Test creation to see if it's supported on this platform
-    let use_buffer_pool = compio::runtime::BufferPool::new(128, file_ops.buffer_size()).is_ok();
+    // Attempt zero-copy with buffer pool; copy_file_internal will fall back on error
+    let use_buffer_pool = true;
 
-    if use_buffer_pool {
-        info!(
-            "Buffer pool available: 128 buffers × {} bytes (zero-copy enabled)",
-            file_ops.buffer_size()
-        );
-    } else {
-        info!("Buffer pool unavailable (non-io_uring platform or insufficient resources)");
-    }
+    info!(
+        "Will attempt zero-copy I/O with buffer pool ({} buffers × {} bytes); falls back to standard copy if unavailable",
+        128,  // BUFFER_POOL_COUNT from copy.rs
+        file_ops.buffer_size()
+    );
 
     let ctx = TraversalContext {
         file_ops: file_ops_arc,
