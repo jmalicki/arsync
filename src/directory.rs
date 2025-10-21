@@ -19,6 +19,51 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing::{debug, error, info, warn};
 
+/// Location information for a file/directory with `DirectoryFd` context
+///
+/// Groups the path, parent `DirectoryFd`, and filename together. This triplet appears
+/// everywhere (src and dst) and should be kept together for TOCTOU-safe operations.
+#[derive(Clone)]
+pub struct FileLocation {
+    /// Full path (used only for error messages and logging)
+    pub path: PathBuf,
+    /// Parent directory as `DirectoryFd` (for TOCTOU-safe operations)
+    pub parent_dir: Arc<compio_fs_extended::DirectoryFd>,
+    /// Filename relative to `parent_dir` (basename only, no path separators)
+    pub filename: std::ffi::OsString,
+}
+
+/// Context passed through directory traversal operations
+///
+/// Groups all the near-global state that needs to be passed down the recursion tree.
+/// This significantly reduces function argument counts and makes the code more maintainable.
+///
+/// # Benefits
+/// - Reduces function signatures from 15+ args to ~4-5 args
+/// - Easier to add new context in the future
+/// - Groups logically related state together
+/// - Makes function calls more readable
+#[derive(Clone)]
+pub struct TraversalContext {
+    /// File operations handler (contains copy method)
+    #[allow(dead_code)] // Reserved for future use
+    pub file_ops: Arc<FileOperations>,
+    /// Copy method to use (e.g., auto, `copy_file_range`, splice)
+    pub copy_method: CopyMethod,
+    /// Shared statistics accumulator
+    pub stats: Arc<SharedStats>,
+    /// Hardlink tracker for inode-based deduplication
+    pub hardlink_tracker: Arc<FilesystemTracker>,
+    /// Adaptive concurrency controller (prevents FD exhaustion)
+    pub concurrency_controller: Arc<AdaptiveConcurrencyController>,
+    /// Metadata preservation configuration
+    pub metadata_config: Arc<MetadataConfig>,
+    /// Parallel copy configuration
+    pub parallel_config: Arc<crate::cli::ParallelCopyConfig>,
+    /// Global dispatcher for parallel operations
+    pub dispatcher: &'static Dispatcher,
+}
+
 /// Extended metadata using `io_uring` statx or compio metadata
 ///
 /// This wraps `compio_fs_extended::FileMetadata` which uses `io_uring` STATX
@@ -358,19 +403,19 @@ async fn traverse_and_copy_directory_iterative(
     // unwrap them later to return the final stats. The clone increments ref count,
     // but all child operations complete before we unwrap, so it's just +1/-1.
     // Delegate to root wrapper which handles DirectoryFd setup
-    let result = process_root_entry(
-        dispatcher,
-        initial_src,
-        initial_dst,
-        file_ops_arc,
-        _copy_method,
-        shared_stats.clone(),
-        shared_hardlink_tracker.clone(),
+    // Build traversal context
+    let ctx = TraversalContext {
+        file_ops: file_ops_arc,
+        copy_method: _copy_method,
+        stats: shared_stats.clone(),
+        hardlink_tracker: shared_hardlink_tracker.clone(),
         concurrency_controller,
-        metadata_config_arc,
-        parallel_config_arc,
-    )
-    .await;
+        metadata_config: metadata_config_arc,
+        parallel_config: parallel_config_arc,
+        dispatcher,
+    };
+
+    let result = process_root_entry(initial_src, initial_dst, ctx).await;
 
     // Restore the state
     // This unwraps successfully because the function and all child operations have completed,
@@ -439,7 +484,7 @@ async fn traverse_and_copy_directory_iterative(
 /// Extracts the common pattern of opening a path's parent as `DirectoryFd`.
 #[allow(clippy::future_not_send)]
 async fn open_parent_dirfd(path: &Path) -> Result<Arc<compio_fs_extended::DirectoryFd>> {
-    let parent = path.parent().unwrap_or(path);
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
     let dir_fd = compio_fs_extended::DirectoryFd::open(parent)
         .await
         .map_err(|e| {
@@ -452,20 +497,11 @@ async fn open_parent_dirfd(path: &Path) -> Result<Arc<compio_fs_extended::Direct
 }
 
 /// Process root entry (wrapper that sets up `DirectoryFd` for TOCTOU-safe operations)
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::future_not_send)]
-#[allow(clippy::used_underscore_binding)]
 async fn process_root_entry(
-    dispatcher: &'static Dispatcher,
     src_path: PathBuf,
     dst_path: PathBuf,
-    file_ops: Arc<FileOperations>,
-    _copy_method: CopyMethod,
-    stats: Arc<SharedStats>,
-    hardlink_tracker: Arc<FilesystemTracker>,
-    concurrency_controller: Arc<AdaptiveConcurrencyController>,
-    metadata_config: Arc<MetadataConfig>,
-    parallel_config: Arc<crate::cli::ParallelCopyConfig>,
+    ctx: TraversalContext,
 ) -> Result<()> {
     let src_parent_dir = open_parent_dirfd(&src_path).await?;
     let src_filename = src_path
@@ -479,23 +515,19 @@ async fn process_root_entry(
         .ok_or_else(|| SyncError::FileSystem("No filename".to_string()))?
         .to_os_string();
 
-    process_directory_entry_with_compio(
-        dispatcher,
-        src_path,
-        dst_path,
-        file_ops,
-        _copy_method,
-        stats,
-        hardlink_tracker,
-        concurrency_controller,
-        metadata_config,
-        parallel_config,
-        src_parent_dir,
-        src_filename,
-        dst_parent_dir,
-        dst_filename,
-    )
-    .await
+    let src = FileLocation {
+        path: src_path,
+        parent_dir: src_parent_dir,
+        filename: src_filename,
+    };
+
+    let dst = FileLocation {
+        path: dst_path,
+        parent_dir: dst_parent_dir,
+        filename: dst_filename,
+    };
+
+    process_directory_entry_with_compio(src, dst, ctx).await
 }
 
 /// Internal: Process directory entry recursively with TOCTOU-safe `DirectoryFd` operations
@@ -536,28 +568,15 @@ async fn process_root_entry(
 /// - File copy operations fail
 /// - Symlink operations fail
 /// - Hardlink operations fail
-#[allow(clippy::too_many_arguments)]
 #[allow(clippy::future_not_send)]
-#[allow(clippy::used_underscore_binding)]
 #[allow(clippy::too_many_lines)]
 async fn process_directory_entry_with_compio(
-    dispatcher: &'static Dispatcher,
-    src_path: PathBuf,
-    dst_path: PathBuf,
-    file_ops: Arc<FileOperations>,
-    _copy_method: CopyMethod,
-    stats: Arc<SharedStats>,
-    hardlink_tracker: Arc<FilesystemTracker>,
-    concurrency_controller: Arc<AdaptiveConcurrencyController>,
-    metadata_config: Arc<MetadataConfig>,
-    parallel_config: Arc<crate::cli::ParallelCopyConfig>,
-    src_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
-    src_filename: std::ffi::OsString,
-    dst_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
-    dst_filename: std::ffi::OsString,
+    src: FileLocation,
+    dst: FileLocation,
+    ctx: TraversalContext,
 ) -> Result<()> {
     // Clone controller before acquiring permit to avoid borrow/move conflict
-    let controller = Arc::clone(&concurrency_controller);
+    let controller = Arc::clone(&ctx.concurrency_controller);
 
     // Acquire permit from adaptive concurrency controller
     // This prevents unbounded queue growth and adapts to resource constraints (e.g., FD exhaustion)
@@ -567,50 +586,57 @@ async fn process_directory_entry_with_compio(
     // Get comprehensive metadata using io_uring statx via DirectoryFd
     // ✅ ALWAYS uses DirectoryFd - no fallback, no path-based operations!
     let extended_metadata =
-        ExtendedMetadata::from_dirfd(&src_parent_dir, src_filename.as_ref()).await?;
+        ExtendedMetadata::from_dirfd(&src.parent_dir, src.filename.as_ref()).await?;
 
     if extended_metadata.is_dir() {
         // ========================================================================
         // DIRECTORY PROCESSING: Handle directory entries
         // ========================================================================
-        debug!("Processing directory: {}", src_path.display());
+        debug!("Processing directory: {}", src.path.display());
 
-        // Try to create destination directory using DirectoryFd (TOCTOU-safe mkdirat!)
-        // This uses mkdirat(2) via DirectoryFd, which is atomic and TOCTOU-safe
-        match dst_parent_dir
-            .create_directory(dst_filename.as_ref(), 0o755)
-            .await
-        {
+        // Try to create destination directory (TOCTOU-safe: no exists() check!)
+        match compio::fs::create_dir(&dst.path).await {
             Ok(()) => {
-                stats.increment_directories_created();
+                ctx.stats.increment_directories_created();
             }
-            Err(e)
-                if e.to_string().contains("File exists")
-                    || e.to_string().contains("AlreadyExists") =>
-            {
-                // Directory already exists - we'll verify by trying to open it below
-                debug!("Directory already exists: {}", dst_path.display());
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // Something exists - verify it's actually a directory
+                let existing_metadata = compio::fs::metadata(&dst.path).await.map_err(|e| {
+                    SyncError::FileSystem(format!(
+                        "Failed to check existing path {}: {}",
+                        dst.path.display(),
+                        e
+                    ))
+                })?;
+
+                if !existing_metadata.is_dir() {
+                    return Err(SyncError::FileSystem(format!(
+                        "Cannot create directory {}: path exists but is not a directory (is_file: {}, is_symlink: {})",
+                        dst.path.display(),
+                        existing_metadata.is_file(),
+                        existing_metadata.is_symlink()
+                    )));
+                }
+
+                debug!("Directory already exists: {}", dst.path.display());
             }
             Err(e) => {
                 return Err(SyncError::FileSystem(format!(
                     "Failed to create directory {}: {}",
-                    dst_path.display(),
+                    dst.path.display(),
                     e
                 )));
             }
         }
 
         // Open the destination directory immediately (for metadata and children)
-        // This also serves as our type verification: openat with O_DIRECTORY will fail
-        // if the path exists but is not a directory (e.g., it's a file or symlink).
-        // TOCTOU-safe: opens relative to already-opened parent DirectoryFd, doesn't follow symlinks.
         let dst_dir_fd = Arc::new(
-            dst_parent_dir.open_directory_at(dst_filename.as_ref())
+            compio_fs_extended::DirectoryFd::open(&dst.path)
                 .await
                 .map_err(|e| {
                     SyncError::FileSystem(format!(
-                        "Failed to open destination directory {} (path may exist but not be a directory): {}",
-                        dst_path.display(),
+                        "Failed to open destination directory {}: {}",
+                        dst.path.display(),
                         e
                     ))
                 })?,
@@ -619,22 +645,22 @@ async fn process_directory_entry_with_compio(
         // ALWAYS preserve directory metadata (whether just created or already existed)
         // This ensures metadata is synchronized even on re-sync operations
         preserve_directory_metadata_fd(
-            &src_path,
-            &dst_path,
+            &src.path,
+            &dst.path,
             &dst_dir_fd,
             &extended_metadata,
-            &metadata_config,
+            &ctx.metadata_config,
         )
         .await?;
 
         // Open source directory as DirectoryFd for TOCTOU-safe operations
         let src_dir = Arc::new(
-            compio_fs_extended::DirectoryFd::open(&src_path)
+            compio_fs_extended::DirectoryFd::open(&src.path)
                 .await
                 .map_err(|e| {
                     SyncError::FileSystem(format!(
                         "Failed to open source directory {}: {e}",
-                        src_path.display()
+                        src.path.display()
                     ))
                 })?,
         );
@@ -642,12 +668,12 @@ async fn process_directory_entry_with_compio(
         // Read directory entries using compio-fs-extended wrapper
         // This abstracts whether read_dir is blocking or uses io_uring (currently blocking due to kernel limitation)
         // See: compio_fs_extended::directory::read_dir for implementation details and kernel status
-        let entries = compio_fs_extended::directory::read_dir(&src_path)
+        let entries = compio_fs_extended::directory::read_dir(&src.path)
             .await
             .map_err(|e| {
                 SyncError::FileSystem(format!(
                     "Failed to read directory {}: {}",
-                    src_path.display(),
+                    src.path.display(),
                     e
                 ))
             })?;
@@ -662,7 +688,7 @@ async fn process_directory_entry_with_compio(
         // This is the key innovation: instead of recursion or manual worklists,
         // we dispatch all child entries to the same function, creating a tree
         // of concurrent operations that compio manages efficiently
-        let copy_method = _copy_method.clone();
+        let _copy_method = ctx.copy_method.clone();
         for entry_result in entries {
             let entry = entry_result.map_err(|e| {
                 SyncError::FileSystem(format!("Failed to read directory entry: {e}"))
@@ -671,7 +697,7 @@ async fn process_directory_entry_with_compio(
             let file_name = child_src_path.file_name().ok_or_else(|| {
                 SyncError::FileSystem(format!("Invalid file name in {}", child_src_path.display()))
             })?;
-            let child_dst_path = dst_path.join(file_name);
+            let child_dst_path = dst.path.join(file_name);
             let file_name_osstring = file_name.to_os_string();
 
             // Dispatch all entries to the same function regardless of type
@@ -679,45 +705,27 @@ async fn process_directory_entry_with_compio(
             // determines its own processing path (file/dir/symlink)
             let child_src_path = child_src_path.clone();
             let child_dst_path = child_dst_path.clone();
-            let copy_method = copy_method.clone();
-            let stats = Arc::clone(&stats);
-            let hardlink_tracker = hardlink_tracker.clone();
-            let concurrency_controller = concurrency_controller.clone();
-            let file_ops_clone = Arc::clone(&file_ops);
-            let metadata_config_clone = Arc::clone(&metadata_config);
-            let parallel_config_clone = Arc::clone(&parallel_config);
+            let ctx_clone = ctx.clone();
             let src_dir_clone = Arc::clone(&src_dir);
-            // Also open destination DirectoryFd for TOCTOU-safe file creation
-            let dst_dir = compio_fs_extended::DirectoryFd::open(&dst_path)
-                .await
-                .map_err(|e| {
-                    SyncError::FileSystem(format!(
-                        "Failed to open destination directory {}: {}",
-                        dst_path.display(),
-                        e
-                    ))
-                })?;
-            let dst_dir_clone = Arc::new(dst_dir);
+            let dst_dir_clone = Arc::clone(&dst_dir_fd);
             let dst_file_name_osstring = file_name.to_os_string();
 
-            let receiver = dispatcher
+            let child_src = FileLocation {
+                path: child_src_path.clone(),
+                parent_dir: src_dir_clone,
+                filename: file_name_osstring,
+            };
+
+            let child_dst = FileLocation {
+                path: child_dst_path.clone(),
+                parent_dir: dst_dir_clone,
+                filename: dst_file_name_osstring,
+            };
+
+            let receiver = ctx
+                .dispatcher
                 .dispatch(move || {
-                    process_directory_entry_with_compio(
-                        dispatcher,
-                        child_src_path,
-                        child_dst_path,
-                        file_ops_clone,
-                        copy_method,
-                        stats,
-                        hardlink_tracker,
-                        concurrency_controller, // Move instead of clone - already cloned above
-                        metadata_config_clone,
-                        parallel_config_clone,
-                        src_dir_clone,          // Pass source parent DirectoryFd
-                        file_name_osstring,     // Pass source filename
-                        dst_dir_clone,          // Pass destination parent DirectoryFd
-                        dst_file_name_osstring, // Pass destination filename
-                    )
+                    process_directory_entry_with_compio(child_src, child_dst, ctx_clone)
                 })
                 .map_err(|e| {
                     SyncError::FileSystem(format!("Failed to dispatch entry processing: {e:?}"))
@@ -747,44 +755,27 @@ async fn process_directory_entry_with_compio(
         // ========================================================================
         // Files are processed with hardlink detection to avoid copying
         // the same content multiple times when hardlinks exist
-        process_file(
-            src_path,
-            dst_path,
-            extended_metadata,
-            file_ops,
-            _copy_method,
-            stats,
-            hardlink_tracker,
-            concurrency_controller,
-            metadata_config,
-            parallel_config,
-            dispatcher,
-            src_parent_dir,
-            src_filename,
-            dst_parent_dir,
-            dst_filename,
-        )
-        .await?;
+        process_file(src, dst, extended_metadata, ctx).await?;
     } else if extended_metadata.is_symlink() {
         // ========================================================================
         // SYMLINK PROCESSING: Handle symbolic links
         // ========================================================================
-        if metadata_config.should_preserve_links() {
+        if ctx.metadata_config.should_preserve_links() {
             // Copy symlink as symlink (preserve target)
-            process_symlink(src_path, dst_path, &metadata_config, stats).await?;
+            process_symlink(src.path, dst.path, &ctx.metadata_config, ctx.stats.clone()).await?;
         } else {
             // Dereference symlink: recursively process the target
             // This handles files, directories, and even chains of symlinks correctly
             debug!(
                 "Dereferencing symlink (will copy target): {}",
-                src_path.display()
+                src.path.display()
             );
 
             // Read symlink target
-            let target = std::fs::read_link(&src_path).map_err(|e| {
+            let target = std::fs::read_link(&src.path).map_err(|e| {
                 SyncError::FileSystem(format!(
                     "Failed to read symlink {}: {}",
-                    src_path.display(),
+                    src.path.display(),
                     e
                 ))
             })?;
@@ -793,12 +784,12 @@ async fn process_directory_entry_with_compio(
             let target_path = if target.is_absolute() {
                 target
             } else {
-                src_path
+                src.path
                     .parent()
                     .ok_or_else(|| {
                         SyncError::FileSystem(format!(
                             "Symlink has no parent: {}",
-                            src_path.display()
+                            src.path.display()
                         ))
                     })?
                     .join(target)
@@ -806,21 +797,9 @@ async fn process_directory_entry_with_compio(
 
             // Recursively process the target (handles files, dirs, and symlink chains)
             // Use process_root_entry since target path could be anywhere (needs own DirectoryFd setup)
-            let receiver = dispatcher
-                .dispatch(move || {
-                    process_root_entry(
-                        dispatcher,
-                        target_path,
-                        dst_path,
-                        file_ops,
-                        _copy_method,
-                        stats,
-                        hardlink_tracker,
-                        concurrency_controller,
-                        metadata_config,
-                        parallel_config,
-                    )
-                })
+            let receiver = ctx
+                .dispatcher
+                .dispatch(move || process_root_entry(target_path, dst.path, ctx))
                 .map_err(|e| {
                     SyncError::FileSystem(format!(
                         "Failed to dispatch symlink target processing: {e:?}"
@@ -858,25 +837,14 @@ async fn process_directory_entry_with_compio(
 /// Returns an error if hardlink handling fails in an unrecoverable way or if
 /// filesystem operations cannot be performed.
 async fn process_file(
-    src_path: PathBuf,
-    dst_path: PathBuf,
+    src: FileLocation,
+    dst: FileLocation,
     metadata: ExtendedMetadata,
-    _file_ops: Arc<FileOperations>,
-    _copy_method: CopyMethod,
-    stats: Arc<SharedStats>,
-    hardlink_tracker: Arc<FilesystemTracker>,
-    _concurrency_controller: Arc<AdaptiveConcurrencyController>,
-    metadata_config: Arc<MetadataConfig>,
-    parallel_config: Arc<crate::cli::ParallelCopyConfig>,
-    dispatcher: &'static Dispatcher,
-    src_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
-    src_filename: std::ffi::OsString,
-    dst_parent_dir: Arc<compio_fs_extended::DirectoryFd>,
-    dst_filename: std::ffi::OsString,
+    ctx: TraversalContext,
 ) -> Result<()> {
     debug!(
         "Processing file: {} (link_count: {})",
-        src_path.display(),
+        src.path.display(),
         metadata.link_count()
     );
 
@@ -885,42 +853,44 @@ async fn process_file(
     let link_count = metadata.link_count();
 
     // RACE-FREE HARDLINK PATTERN: Register and wait if linker
-    let is_copier = hardlink_tracker
-        .register_file(&src_path, &dst_path, device_id, inode_number, link_count)
+    let is_copier = ctx
+        .hardlink_tracker
+        .register_file(&src.path, &dst.path, device_id, inode_number, link_count)
         .await;
 
     if is_copier {
         // We're the copier - copy the file and signal completion
         debug!(
             "Copying file content (hardlink copier): {}",
-            src_path.display()
+            src.path.display()
         );
 
         // Copy file with DirectoryFd (TOCTOU-safe, compile-time enforced)
         copy_file_internal(
-            &src_path,
-            &dst_path,
-            &metadata_config,
-            &parallel_config,
-            dispatcher,
+            &src.path,
+            &dst.path,
+            &ctx.metadata_config,
+            &ctx.parallel_config,
+            ctx.dispatcher,
             &metadata,
-            &src_parent_dir,
-            &src_filename,
-            &dst_parent_dir,
-            &dst_filename,
+            &src.parent_dir,
+            src.filename.as_ref(),
+            &dst.parent_dir,
+            dst.filename.as_ref(),
         )
         .await?;
 
-        stats.increment_files_copied();
-        stats.increment_bytes_copied(metadata.len());
+        ctx.stats.increment_files_copied();
+        ctx.stats.increment_bytes_copied(metadata.len());
 
         // Signal waiting linkers (they wake up whether we succeeded or failed)
-        hardlink_tracker.signal_copy_complete(inode_number);
-        debug!("Copied file and signaled linkers: {}", dst_path.display());
+        ctx.hardlink_tracker.signal_copy_complete(inode_number);
+        debug!("Copied file and signaled linkers: {}", dst.path.display());
     } else if link_count > 1 {
         // We're a linker - waiting is already done inside register_file()
         // Get dst_path and create hardlink
-        let original_dst = hardlink_tracker
+        let original_dst = ctx
+            .hardlink_tracker
             .get_dst_path_for_inode(inode_number)
             .ok_or_else(|| {
                 SyncError::FileSystem(format!(
@@ -931,38 +901,38 @@ async fn process_file(
 
         debug!(
             "Creating hardlink {} → {} (inode: {})",
-            dst_path.display(),
+            dst.path.display(),
             original_dst.display(),
             inode_number
         );
 
         // Create hardlink (will naturally fail if copier failed to create dst file)
-        handle_existing_hardlink(&dst_path, &original_dst, inode_number, &stats).await?;
+        handle_existing_hardlink(&dst.path, &original_dst, inode_number, &ctx.stats).await?;
     } else {
         // Regular file (link_count == 1) - copy normally
         debug!(
             "Copying file content (non-hardlink): {}",
-            src_path.display()
+            src.path.display()
         );
 
         // Copy file with DirectoryFd (TOCTOU-safe, compile-time enforced)
         copy_file_internal(
-            &src_path,
-            &dst_path,
-            &metadata_config,
-            &parallel_config,
-            dispatcher,
+            &src.path,
+            &dst.path,
+            &ctx.metadata_config,
+            &ctx.parallel_config,
+            ctx.dispatcher,
             &metadata,
-            &src_parent_dir,
-            &src_filename,
-            &dst_parent_dir,
-            &dst_filename,
+            &src.parent_dir,
+            src.filename.as_ref(),
+            &dst.parent_dir,
+            dst.filename.as_ref(),
         )
         .await?;
 
-        stats.increment_files_copied();
-        stats.increment_bytes_copied(metadata.len());
-        debug!("Copied file: {}", dst_path.display());
+        ctx.stats.increment_files_copied();
+        ctx.stats.increment_bytes_copied(metadata.len());
+        debug!("Copied file: {}", dst.path.display());
     }
 
     Ok(())
