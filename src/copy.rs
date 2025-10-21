@@ -111,8 +111,7 @@ pub async fn copy_file(
         .ok_or_else(|| SyncError::FileSystem("Source has no filename".to_string()))?;
 
     // Get metadata
-    let src_metadata =
-        crate::directory::ExtendedMetadata::from_dirfd(&src_parent_dir, src_filename).await?;
+    let src_metadata = src_parent_dir.statx_full(src_filename).await?;
 
     // Set up DirectoryFd for destination
     let dst_parent_dir = compio_fs_extended::DirectoryFd::open(
@@ -190,14 +189,14 @@ pub async fn copy_file_internal(
     metadata_config: &MetadataConfig,
     parallel_config: &ParallelCopyConfig,
     dispatcher: &'static Dispatcher,
-    src_metadata: &crate::directory::ExtendedMetadata,
+    src_metadata: &compio_fs_extended::FileMetadata,
     src_parent_dir: &compio_fs_extended::DirectoryFd,
     src_filename: &std::ffi::OsStr,
     dst_parent_dir: &compio_fs_extended::DirectoryFd,
     dst_filename: &std::ffi::OsStr,
 ) -> Result<()> {
     // Get file size from pre-fetched metadata (no syscall needed!)
-    let file_size = src_metadata.metadata.size;
+    let file_size = src_metadata.size;
 
     // Decide whether to use parallel copy
     if parallel_config.should_use_parallel(file_size) {
@@ -276,17 +275,14 @@ async fn copy_read_write(
     dst: &Path, // Only for error messages
     metadata_config: &MetadataConfig,
     file_size: u64,
-    src_metadata: &crate::directory::ExtendedMetadata,
+    src_metadata: &compio_fs_extended::FileMetadata,
     src_parent_dir: &compio_fs_extended::DirectoryFd,
     src_filename: &std::ffi::OsStr,
     dst_parent_dir: &compio_fs_extended::DirectoryFd,
     dst_filename: &std::ffi::OsStr,
 ) -> Result<()> {
     // Extract timestamps from pre-fetched metadata (no syscall needed!)
-    let (src_accessed, src_modified) = (
-        src_metadata.metadata.accessed,
-        src_metadata.metadata.modified,
-    );
+    let (src_accessed, src_modified) = (src_metadata.accessed, src_metadata.modified);
 
     // Open source file via DirectoryFd (TOCTOU-safe!)
     let src_file = src_parent_dir
@@ -476,7 +472,7 @@ async fn copy_read_write_parallel(
     parallel_config: &ParallelCopyConfig,
     file_size: u64,
     dispatcher: &'static Dispatcher,
-    src_metadata: &crate::directory::ExtendedMetadata,
+    src_metadata: &compio_fs_extended::FileMetadata,
     src_parent_dir: &compio_fs_extended::DirectoryFd,
     src_filename: &std::ffi::OsStr,
     dst_parent_dir: &compio_fs_extended::DirectoryFd,
@@ -494,10 +490,7 @@ async fn copy_read_write_parallel(
     );
 
     // 1. Extract timestamps from pre-fetched metadata (no syscall needed!)
-    let (src_accessed, src_modified) = (
-        src_metadata.metadata.accessed,
-        src_metadata.metadata.modified,
-    );
+    let (src_accessed, src_modified) = (src_metadata.accessed, src_metadata.modified);
 
     // 2. Open source file via DirectoryFd (TOCTOU-safe!)
     let src_file = src_parent_dir
@@ -783,8 +776,7 @@ mod tests {
         .await
         .unwrap();
         let src_filename = src.file_name().unwrap();
-        let src_metadata =
-            crate::directory::ExtendedMetadata::from_dirfd(&src_parent_dir, src_filename).await?;
+        let src_metadata = src_parent_dir.statx_full(src_filename).await?;
 
         let dst_parent_dir = compio_fs_extended::DirectoryFd::open(
             dst.parent().unwrap_or(std::path::Path::new(".")),

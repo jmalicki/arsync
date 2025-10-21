@@ -17,7 +17,7 @@ use tracing::{debug, warn};
 
 use super::metadata::preserve_directory_metadata_fd;
 use super::symlink::process_symlink;
-use super::types::{DirectoryStats, ExtendedMetadata, FileLocation, TraversalContext};
+use super::types::{DirectoryStats, FileLocation, TraversalContext};
 
 /// Directory traversal using compio's dispatcher for iterative processing
 ///
@@ -258,8 +258,7 @@ pub(super) async fn process_directory_entry_with_compio(
 
     // Get comprehensive metadata using io_uring statx via DirectoryFd
     // ✅ ALWAYS uses DirectoryFd - no fallback, no path-based operations!
-    let extended_metadata =
-        ExtendedMetadata::from_dirfd(&src.parent_dir, src.filename.as_ref()).await?;
+    let extended_metadata = src.parent_dir.statx_full(src.filename.as_ref()).await?;
 
     if extended_metadata.is_dir() {
         // ========================================================================
@@ -512,18 +511,18 @@ pub(super) async fn process_directory_entry_with_compio(
 pub(super) async fn process_file(
     src: FileLocation,
     dst: FileLocation,
-    metadata: ExtendedMetadata,
+    metadata: compio_fs_extended::FileMetadata,
     ctx: TraversalContext,
 ) -> Result<()> {
     debug!(
         "Processing file: {} (link_count: {})",
         src.path.display(),
-        metadata.link_count()
+        metadata.nlink
     );
 
-    let device_id = metadata.device_id();
-    let inode_number = metadata.inode_number();
-    let link_count = metadata.link_count();
+    let device_id = metadata.dev;
+    let inode_number = metadata.ino;
+    let link_count = metadata.nlink;
 
     // RACE-FREE HARDLINK PATTERN: Register and wait if linker
     let is_copier = ctx
@@ -562,7 +561,7 @@ pub(super) async fn process_file(
         copy_result?;
 
         ctx.stats.increment_files_copied();
-        ctx.stats.increment_bytes_copied(metadata.len());
+        ctx.stats.increment_bytes_copied(metadata.size);
         debug!("Copied file and signaled linkers: {}", dst.path.display());
     } else if link_count > 1 {
         // We're a linker - waiting is already done inside register_file()
@@ -609,7 +608,7 @@ pub(super) async fn process_file(
         .await?;
 
         ctx.stats.increment_files_copied();
-        ctx.stats.increment_bytes_copied(metadata.len());
+        ctx.stats.increment_bytes_copied(metadata.size);
         debug!("Copied file: {}", dst.path.display());
     }
 

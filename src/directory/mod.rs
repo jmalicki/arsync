@@ -19,7 +19,7 @@ mod types;
 
 // Re-export public types
 #[allow(unused_imports)] // Used by external modules
-pub use types::{DirectoryStats, ExtendedMetadata, FileLocation, TraversalContext};
+pub use types::{metadata_from_path, DirectoryStats, FileLocation, TraversalContext};
 
 // Re-export public functions
 #[allow(unused_imports)] // Used by external modules
@@ -82,8 +82,8 @@ pub async fn copy_directory(
     // Create destination directory if it doesn't exist
     if dst.exists() {
         // Set source filesystem from root directory (destination already exists)
-        let root_metadata = types::ExtendedMetadata::new(src).await?;
-        hardlink_tracker.set_source_filesystem(root_metadata.device_id());
+        let root_metadata = types::metadata_from_path(src).await?;
+        hardlink_tracker.set_source_filesystem(root_metadata.dev);
     } else {
         compio::fs::create_dir_all(dst).await.map_err(|e| {
             SyncError::FileSystem(format!(
@@ -96,11 +96,11 @@ pub async fn copy_directory(
         debug!("Created destination directory: {}", dst.display());
 
         // Preserve root directory metadata (permissions, ownership, timestamps) if requested
-        let root_metadata = types::ExtendedMetadata::new(src).await?;
+        let root_metadata = types::metadata_from_path(src).await?;
         metadata::preserve_directory_metadata(src, dst, &root_metadata, &args.metadata).await?;
 
         // Set source filesystem from root directory
-        hardlink_tracker.set_source_filesystem(root_metadata.device_id());
+        hardlink_tracker.set_source_filesystem(root_metadata.dev);
     }
 
     // Traverse source directory iteratively using compio's dispatcher
@@ -146,7 +146,7 @@ mod tests {
 
     /// Test ExtendedMetadata creation and basic functionality
     #[compio::test]
-    async fn test_extended_metadata_basic() {
+    async fn test_file_metadata_basic() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let test_file = temp_dir.path().join("test_file.txt");
 
@@ -154,7 +154,7 @@ mod tests {
         std::fs::write(&test_file, "test content").expect("Failed to write test file");
 
         // Test metadata creation
-        let metadata = ExtendedMetadata::new(&test_file)
+        let metadata = types::metadata_from_path(&test_file)
             .await
             .expect("Failed to get metadata");
 
@@ -162,26 +162,22 @@ mod tests {
         assert!(metadata.is_file());
         assert!(!metadata.is_dir());
         assert!(!metadata.is_symlink());
-        assert!(!metadata.is_empty());
-        assert_eq!(metadata.len(), 12); // "test content" length
+        assert!(metadata.size > 0);
+        assert_eq!(metadata.size, 12); // "test content" length
 
         // Test device and inode info
-        let device_id = metadata.device_id();
-        let inode_number = metadata.inode_number();
-        let link_count = metadata.link_count();
-
-        assert!(device_id > 0);
-        assert!(inode_number > 0);
-        assert_eq!(link_count, 1); // Regular file has 1 link
+        assert!(metadata.dev > 0);
+        assert!(metadata.ino > 0);
+        assert_eq!(metadata.nlink, 1); // Regular file has 1 link
     }
 
-    /// Test ExtendedMetadata for directories
+    /// Test FileMetadata for directories
     #[compio::test]
-    async fn test_extended_metadata_directory() {
+    async fn test_file_metadata_directory() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
 
         // Test directory metadata
-        let metadata = ExtendedMetadata::new(temp_dir.path())
+        let metadata = types::metadata_from_path(temp_dir.path())
             .await
             .expect("Failed to get metadata");
 
@@ -190,9 +186,9 @@ mod tests {
         assert!(!metadata.is_symlink());
     }
 
-    /// Test ExtendedMetadata for symlinks
+    /// Test FileMetadata for symlinks
     #[compio::test]
-    async fn test_extended_metadata_symlink() {
+    async fn test_file_metadata_symlink() {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let target_file = temp_dir.path().join("target.txt");
         let symlink_file = temp_dir.path().join("symlink.txt");
@@ -204,7 +200,7 @@ mod tests {
         std::os::unix::fs::symlink(&target_file, &symlink_file).expect("Failed to create symlink");
 
         // Test symlink metadata
-        let metadata = ExtendedMetadata::new(&symlink_file)
+        let metadata = types::metadata_from_path(&symlink_file)
             .await
             .expect("Failed to get metadata");
 

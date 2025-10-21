@@ -5,7 +5,7 @@
 
 mod common;
 
-use arsync::directory::{preserve_directory_metadata, ExtendedMetadata};
+use arsync::directory::{metadata_from_path, preserve_directory_metadata};
 use std::fs;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::time::{Duration, SystemTime};
@@ -27,7 +27,7 @@ async fn test_directory_permissions_preservation() {
     fs::create_dir(&dst_dir).unwrap();
 
     // Get source metadata
-    let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
+    let extended_metadata = metadata_from_path(&src_dir).await.unwrap();
 
     // Actually call the preserve_directory_metadata function with archive mode
     let args = common::test_args::create_archive_test_args();
@@ -62,7 +62,7 @@ async fn test_directory_permissions_special_bits() {
     fs::create_dir(&dst_dir).unwrap();
 
     // Get source metadata
-    let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
+    let extended_metadata = metadata_from_path(&src_dir).await.unwrap();
 
     // Actually call the preserve_directory_metadata function with archive mode
     let args = common::test_args::create_archive_test_args();
@@ -105,7 +105,7 @@ async fn test_directory_ownership_preservation() {
     fs::create_dir(&dst_dir).unwrap();
 
     // Get source metadata
-    let _extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
+    let _extended_metadata = metadata_from_path(&src_dir).await.unwrap();
 
     // Test the preserve_directory_metadata function directly
     let dst_metadata = fs::metadata(&dst_dir).unwrap();
@@ -141,7 +141,7 @@ async fn test_directory_timestamp_preservation() {
     fs::create_dir(&dst_dir).unwrap();
 
     // Get source metadata
-    let _extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
+    let _extended_metadata = metadata_from_path(&src_dir).await.unwrap();
 
     // Test the preserve_directory_metadata function directly
     let src_metadata = fs::metadata(&src_dir).unwrap();
@@ -212,7 +212,7 @@ async fn test_nested_directory_metadata_preservation() {
     ];
 
     for (src_path, dst_path) in directories {
-        let extended_metadata = ExtendedMetadata::new(src_path).await.unwrap();
+        let extended_metadata = metadata_from_path(src_path).await.unwrap();
 
         // Actually call the preserve_directory_metadata function with archive mode
         let args = common::test_args::create_archive_test_args();
@@ -248,7 +248,7 @@ async fn test_directory_metadata_restrictive_permissions() {
     fs::create_dir(&dst_dir).unwrap();
 
     // Get source metadata
-    let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
+    let extended_metadata = metadata_from_path(&src_dir).await.unwrap();
 
     // Actually call the preserve_directory_metadata function with archive mode
     // Note: This may fail for very restrictive permissions (0o000) due to inability to read xattrs
@@ -297,7 +297,7 @@ async fn test_directory_metadata_no_permissions_failure() {
     fs::create_dir(&dst_dir).unwrap();
 
     // Get source metadata
-    let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
+    let extended_metadata = metadata_from_path(&src_dir).await.unwrap();
 
     // Attempt to preserve metadata with archive mode - this should fail due to no permissions
     let args = common::test_args::create_archive_test_args();
@@ -338,7 +338,7 @@ async fn test_directory_metadata_umask_interaction() {
     fs::create_dir(&dst_dir).unwrap();
 
     // Get source metadata
-    let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
+    let extended_metadata = metadata_from_path(&src_dir).await.unwrap();
 
     // Actually call the preserve_directory_metadata function with archive mode
     let args = common::test_args::create_archive_test_args();

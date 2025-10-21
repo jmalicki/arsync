@@ -7,7 +7,7 @@
 //! 2. With flag disabled: metadata IS NOT preserved (uses default/umask)
 
 use arsync::cli::Args;
-use arsync::directory::{preserve_directory_metadata, ExtendedMetadata};
+use arsync::directory::{metadata_from_path, preserve_directory_metadata};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
@@ -306,7 +306,7 @@ async fn test_directory_permissions_not_preserved_when_flag_off() {
     let src_mode = src_metadata.permissions().mode();
 
     // Preserve metadata WITHOUT --perms flag
-    let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
+    let extended_metadata = metadata_from_path(&src_dir).await.unwrap();
     let args = create_args_no_metadata();
     preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args.metadata)
         .await
@@ -348,7 +348,7 @@ async fn test_directory_permissions_preserved_when_flag_on() {
     let src_mode = src_metadata.permissions().mode();
 
     // Preserve metadata WITH --perms flag
-    let extended_metadata = ExtendedMetadata::new(&src_dir).await.unwrap();
+    let extended_metadata = metadata_from_path(&src_dir).await.unwrap();
     let args = create_args_perms_only();
     preserve_directory_metadata(&src_dir, &dst_dir, &extended_metadata, &args.metadata)
         .await
