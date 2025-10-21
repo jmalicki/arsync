@@ -396,7 +396,7 @@ pub async fn get_precise_timestamps(path: &Path) -> Result<(SystemTime, SystemTi
             // Fallthrough to stat fallback
         }
     }
-    
+
     // macOS or Linux fallback: use stat
     compio::runtime::spawn_blocking(move || {
         let mut stat_buf: libc::stat = unsafe { std::mem::zeroed() };

@@ -94,7 +94,7 @@ pub struct FileMetadata {
     pub modified: SystemTime,
     /// Creation time (birth time) if available
     pub created: Option<SystemTime>,
-    
+
     // Platform-specific metadata
     /// Linux file attributes (immutable, append-only, etc.)
     #[cfg(target_os = "linux")]
@@ -102,7 +102,7 @@ pub struct FileMetadata {
     /// Mask indicating which Linux attributes are valid
     #[cfg(target_os = "linux")]
     pub attributes_mask: Option<u64>,
-    
+
     /// macOS/BSD file flags (UF_IMMUTABLE, UF_APPEND, etc.)
     #[cfg(target_os = "macos")]
     pub flags: Option<u32>,
@@ -356,7 +356,7 @@ pub(crate) async fn statx_impl(
             } else {
                 None
             };
-            
+
             #[cfg(target_os = "linux")]
             let attributes_mask = if statx_buf.stx_attributes_mask != 0 {
                 Some(statx_buf.stx_attributes_mask)
@@ -395,21 +395,22 @@ pub(crate) async fn statx_impl(
     pathname: &std::ffi::OsStr,
 ) -> Result<FileMetadata> {
     use std::os::unix::ffi::OsStrExt;
-    
+
     let dir_fd = dir.as_raw_fd();
     let pathname_cstring = std::ffi::CString::new(pathname.as_bytes())
         .map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
-    
+
     compio::runtime::spawn_blocking(move || {
         use nix::fcntl::AtFlags;
         use nix::sys::stat::fstatat;
-        
+
         let stat_result = fstatat(
             Some(dir_fd),
             pathname_cstring.as_c_str(),
             AtFlags::AT_SYMLINK_NOFOLLOW,
-        ).map_err(|e| metadata_error(&format!("fstatat failed: {}", e)))?;
-        
+        )
+        .map_err(|e| metadata_error(&format!("fstatat failed: {}", e)))?;
+
         // Extract metadata fields
         let size = stat_result.st_size as u64;
         let mode = stat_result.st_mode as u32;
@@ -418,16 +419,19 @@ pub(crate) async fn statx_impl(
         let nlink = stat_result.st_nlink as u64;
         let ino = stat_result.st_ino;
         let dev = stat_result.st_dev as u64;
-        
+
         // Convert timestamps (macOS has nanosecond precision)
         let accessed = unix_ts_to_system_time(stat_result.st_atime, stat_result.st_atime_nsec);
         let modified = unix_ts_to_system_time(stat_result.st_mtime, stat_result.st_mtime_nsec);
-        let created = Some(unix_ts_to_system_time(stat_result.st_birthtime, stat_result.st_birthtime_nsec));
-        
+        let created = Some(unix_ts_to_system_time(
+            stat_result.st_birthtime,
+            stat_result.st_birthtime_nsec,
+        ));
+
         // macOS-specific fields
         let flags = Some(stat_result.st_flags as u32);
         let generation = Some(stat_result.st_gen as u32);
-        
+
         Ok(FileMetadata {
             size,
             mode,
