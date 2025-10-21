@@ -398,7 +398,6 @@ async fn test_timestamp_preservation_nanosecond_edge_cases() {
             let modified_duration = copied_modified
                 .duration_since(SystemTime::UNIX_EPOCH)
                 .unwrap_or_default();
-            let modified_nanos = modified_duration.subsec_nanos();
             // Level 1: Modified timestamp seconds check
             let expected_seconds = 1609459200; // Jan 1, 2021
             let modified_seconds = modified_duration.as_secs();
@@ -410,6 +409,7 @@ async fn test_timestamp_preservation_nanosecond_edge_cases() {
             // Level 2: Nanosecond precision check (Linux only)
             #[cfg(target_os = "linux")]
             {
+                let modified_nanos = modified_duration.subsec_nanos();
                 // On Linux filesystems, nanosecond precision should be preserved exactly
                 assert_eq!(
                     modified_nanos, *nanoseconds as u32,

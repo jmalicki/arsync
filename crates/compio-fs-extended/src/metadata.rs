@@ -115,19 +115,28 @@ impl FileMetadata {
     /// Check if this is a regular file
     #[must_use]
     pub fn is_file(&self) -> bool {
-        (self.mode & libc::S_IFMT as u32) == libc::S_IFREG as u32
+        #[allow(clippy::unnecessary_cast)] // macOS: u16 -> u32, Linux: u32 -> u32
+        {
+            (self.mode & libc::S_IFMT as u32) == libc::S_IFREG as u32
+        }
     }
 
     /// Check if this is a directory
     #[must_use]
     pub fn is_dir(&self) -> bool {
-        (self.mode & libc::S_IFMT as u32) == libc::S_IFDIR as u32
+        #[allow(clippy::unnecessary_cast)] // macOS: u16 -> u32, Linux: u32 -> u32
+        {
+            (self.mode & libc::S_IFMT as u32) == libc::S_IFDIR as u32
+        }
     }
 
     /// Check if this is a symlink
     #[must_use]
     pub fn is_symlink(&self) -> bool {
-        (self.mode & libc::S_IFMT as u32) == libc::S_IFLNK as u32
+        #[allow(clippy::unnecessary_cast)] // macOS: u16 -> u32, Linux: u32 -> u32
+        {
+            (self.mode & libc::S_IFMT as u32) == libc::S_IFLNK as u32
+        }
     }
 
     /// Get file permissions (mode & 0o7777)
