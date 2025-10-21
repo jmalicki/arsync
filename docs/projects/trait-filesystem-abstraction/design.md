@@ -2,7 +2,11 @@
 
 ## Overview
 
-This design document outlines an incremental approach to adding a trait-based filesystem abstraction layer to arsync. The goal is to create a unified interface that works with both local filesystem operations (via compio-fs-extended) and remote protocol operations (via Transport trait), enabling code reuse and consistent APIs.
+This design document outlines an incremental approach to adding trait-based abstractions to arsync. The goal is to **maximize code reuse** for common operations like file tree walking, metadata comparison, and sync decision-making, while providing appropriate abstractions for both:
+- **Local filesystem operations** (via AsyncFileSystem traits)
+- **Remote sync protocols** (via SyncProtocol trait)
+
+**Key Insight**: Local filesystem and rsync protocol are fundamentally different. We need **two complementary abstractions** with a **high-level layer** that shares the common logic (tree walking, metadata sync, etc.) regardless of backend.
 
 ## Background
 
@@ -31,7 +35,37 @@ This design takes an **incremental, bottom-up approach**:
 
 ## Architecture
 
-### Trait Hierarchy
+### Three-Layer Architecture
+
+```
+┌───────────────────────────────────────────────────────────┐
+│  HIGH-LEVEL SYNC OPERATIONS (Layer 3)                    │
+│  - walk_tree() - COMMON for both                         │
+│  - compare_metadata() - COMMON for both                  │
+│  - compute_sync_plan() - COMMON for both                 │
+│  - preserve_metadata() - COMMON for both                 │
+└─────────────┬─────────────────────────────────────────────┘
+              │
+       ┌──────┴──────────────┐
+       │                     │
+┌──────▼────────────┐ ┌──────▼─────────────┐
+│  LOCAL BACKEND    │ │  REMOTE BACKEND    │
+│  (Layer 2a)       │ │  (Layer 2b)        │
+│                   │ │                    │
+│  AsyncFileSystem  │ │  SyncProtocol      │
+│  - Random access  │ │  - Batch oriented  │
+│  - Individual ops │ │  - Stream based    │
+└───────────────────┘ └────────────────────┘
+       │                     │
+┌──────▼────────────┐ ┌──────▼─────────────┐
+│  AsyncMetadata    │ │  rsync protocol    │
+│  AsyncFile        │ │  Transport trait   │
+│  AsyncDirectory   │ │  Multiplexing      │
+│  (Layer 1)        │ │  (existing)        │
+└───────────────────┘ └────────────────────┘
+```
+
+### Trait Hierarchy (Layer 1 - Building Blocks)
 
 ```
 AsyncMetadata (foundation - no dependencies)
@@ -41,9 +75,9 @@ AsyncFile (depends on: AsyncMetadata)
 AsyncDirectory (depends on: AsyncFile, AsyncMetadata)
     ↓
 AsyncFileSystem (depends on: AsyncFile, AsyncDirectory, AsyncMetadata)
-    ↓
-FileOperations (depends on: AsyncFileSystem)
 ```
+
+**Note**: These traits are for **local/random-access** operations. Remote sync uses a separate `SyncProtocol` trait (see rsync-protocol-analysis.md).
 
 ### Design Principles
 
