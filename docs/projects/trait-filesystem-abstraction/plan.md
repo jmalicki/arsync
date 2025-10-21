@@ -79,20 +79,20 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 **What**: Make existing `Metadata` implement the trait
 
 **Tasks**:
-- [ ] Add `impl AsyncMetadata for Metadata` in `src/metadata.rs`
-- [ ] Add integration tests
-- [ ] Verify all trait methods work
+- [x] Add `impl AsyncMetadata for Metadata` in `src/metadata.rs`
+- [x] Add integration tests
+- [x] Verify all trait methods work
 
-**Files**: `src/metadata.rs`
+**Files**: `src/metadata.rs`, `src/main.rs`, `tests/trait_metadata_integration.rs` (new)
 
 **Time**: 2-3 hours
 
 **Integration**: Existing type now implements trait ✓
 
 **Success**:
-- [ ] `Metadata` implements `AsyncMetadata`
-- [ ] All trait methods work
-- [ ] Tests pass
+- [x] `FileMetadata` implements `AsyncMetadata`
+- [x] All trait methods work
+- [x] Tests pass (3 integration tests)
 
 ---
 
