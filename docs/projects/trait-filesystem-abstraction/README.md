@@ -106,9 +106,28 @@ Each trait can be implemented for different backends:
 
 ## Status
 
-**Current Phase**: Design complete, ready to start Phase 1
+**Current Phase**: Phase 0 (Design documentation)
 
-**Next Step**: Create PR #1 (AsyncMetadata trait)
+**Current Branch**: `design/trait-based-filesystem-abstraction`
+
+**Status**: ✅ Design complete, ready for review as PR #0
+
+**Next Steps**:
+1. **Push this branch** and create PR #0 (design docs only)
+2. **Get design reviewed** and merged into main
+3. **Then start Phase 1** (implementation begins)
+
+## PR Sequence
+
+```
+PR #0: Design docs (THIS PR!)
+  ↓
+PR #1: AsyncMetadata trait
+  ↓
+PR #2: AsyncFile trait
+  ↓
+... (continue stacking)
+```
 
 ## Questions?
 

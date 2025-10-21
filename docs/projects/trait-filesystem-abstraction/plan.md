@@ -12,9 +12,61 @@ This plan breaks down the trait-based filesystem abstraction into incremental, r
 4. **Bottom-up approach** (simple to complex)
 5. **Minimal changes** per PR to reduce risk
 
+## Phase 0: Design Documentation (Foundation)
+
+### PR #0: Add trait-based filesystem abstraction design
+
+**Branch**: `design/trait-based-filesystem-abstraction` (current branch!)
+
+**Files Changed**:
+- `docs/projects/trait-filesystem-abstraction/README.md` (new)
+- `docs/projects/trait-filesystem-abstraction/design.md` (new)
+- `docs/projects/trait-filesystem-abstraction/plan.md` (new)
+- `docs/projects/trait-filesystem-abstraction/rsync-protocol-analysis.md` (new)
+- `docs/projects/trait-filesystem-abstraction/streaming-vs-batch.md` (new)
+- `docs/projects/trait-filesystem-abstraction/layer-integration.md` (new)
+
+**Changes**:
+- Complete design documentation for the project
+- Architecture diagrams and rationale
+- Incremental implementation plan (this document)
+- Analysis of rsync protocol compatibility
+- Streaming vs batch execution strategies
+- How layers integrate (DirectoryFd, shared components)
+
+**No code changes** - documentation only!
+
+**Tests**:
+- No tests needed (documentation only)
+- Links in README.md should work
+- Markdown formatting should be clean
+
+**Success Criteria**:
+- ✅ Design is clear and comprehensive
+- ✅ Team understands the approach
+- ✅ Questions are answered
+- ✅ Buy-in from reviewers
+- ✅ Foundation for all subsequent PRs
+
+**Review Focus**:
+- Is the three-layer architecture sound?
+- Do we agree on streaming vs batching approach?
+- Is the layer integration (DirectoryFd reuse) correct?
+- Are there missing considerations?
+- Is the incremental plan reasonable?
+
+**Estimated Time**: Already complete! Ready for review.
+
+**Next Step**: Get this design PR merged, then start Phase 1.
+
+---
+
 ## Phase 1: AsyncMetadata Trait
 
 ### PR #1: Add AsyncMetadata trait and implement for existing Metadata
+
+**Base Branch**: `main` (after PR #0 is merged)
+**Branch**: `feat/async-metadata-trait`
 
 **Branch**: `feat/async-metadata-trait`
 
@@ -606,20 +658,58 @@ pub async fn copy_file_with_traits(
 
 ## Summary
 
-**Total PRs**: 8 core PRs + future work
+**Total PRs**: 1 design PR + 8 implementation PRs + future work
 
 **Timeline**:
+- **Phase 0**: Design documentation (COMPLETE! Ready for review)
 - Phase 1-4: ~2-3 weeks (traits only)
 - Phase 5-7: ~2-3 weeks (implementations)
 - Phase 8: ~1 week (integration)
-- **Total**: ~5-7 weeks
+- **Total**: ~5-7 weeks (after design approval)
 
 **Dependencies**:
-- Each PR depends on previous one
+- PR #0 (design) must be merged first
+- Each subsequent PR depends on previous one
+- All implementation PRs reference the design docs
 - Can be reviewed sequentially
 - Can pause between phases for feedback
 
+**Git Strategy**:
+```
+main
+ └─> design/trait-based-filesystem-abstraction (PR #0 - CURRENT)
+      └─> feat/async-metadata-trait (PR #1 - stacks on design)
+           └─> feat/async-file-trait (PR #2)
+                └─> feat/async-directory-trait (PR #3)
+                     └─> ... (and so on)
+```
+
 ## Review Process
+
+### For the Design PR (PR #0):
+
+1. Review focus:
+   - ✅ Architecture makes sense
+   - ✅ Streaming vs batching approach is sound
+   - ✅ Layer integration (DirectoryFd reuse) is correct
+   - ✅ Plan is achievable
+   - ✅ No major design flaws
+
+2. Create PR with:
+   - Link to this README.md for overview
+   - Summary of key decisions
+   - Call out what reviewers should focus on
+
+3. Address feedback:
+   - Update design docs as needed
+   - Answer questions
+   - Iterate on approach
+
+4. **Merge when approved**
+
+5. **All subsequent PRs can now reference these docs**
+
+### For Implementation PRs (PR #1-8):
 
 For each PR:
 1. Self-review checklist:
