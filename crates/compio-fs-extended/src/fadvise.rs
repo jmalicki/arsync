@@ -37,14 +37,13 @@
 //! For now, keeping Unix-only to maintain clean semantics and avoid
 //! surprising cross-platform behavior differences.
 
+use crate::error::Result;
+use compio::fs::File;
+
 #[cfg(target_os = "linux")]
 use crate::error::fadvise_error;
 #[cfg(target_os = "linux")]
-use crate::error::Result;
-#[cfg(target_os = "linux")]
 use compio::driver::OpCode;
-#[cfg(target_os = "linux")]
-use compio::fs::File;
 #[cfg(target_os = "linux")]
 use compio::runtime::submit;
 #[cfg(target_os = "linux")]
@@ -231,9 +230,14 @@ pub async fn fadvise(file: &File, advice: FadviseAdvice, offset: i64, len: i64) 
     }
 }
 
-// macOS/Windows: fadvise not defined
-// macOS removed posix_fadvise, Windows has different file hint mechanisms
-// Compile-time error if you try to use fadvise on these platforms
+// macOS/Other platforms: fadvise is a no-op
+// macOS removed posix_fadvise, so we gracefully degrade
+#[cfg(not(target_os = "linux"))]
+pub async fn fadvise(_file: &File, _advice: FadviseAdvice, _offset: i64, _len: i64) -> Result<()> {
+    // No-op on non-Linux platforms (macOS removed posix_fadvise)
+    // This is fine - fadvise is an optimization, not required for correctness
+    Ok(())
+}
 
 #[cfg(test)]
 #[cfg(target_os = "linux")] // fadvise is Linux-only
