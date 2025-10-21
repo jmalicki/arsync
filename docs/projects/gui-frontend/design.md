@@ -17,21 +17,36 @@
 |--------|---------|
 | **Framework** | winio v0.9.1 - single-threaded async GUI runtime |
 | **Integration** | Perfect (built FOR compio, same thread!) |
-| **Backends** | Win32, WinUI 3, GTK 4, Qt 5/6, AppKit |
+| **Backends** | Win32 (Windows), GTK 4 (Linux), AppKit (macOS) |
 | **Architecture** | Component-based (Elm), async-first |
 | **Safety** | Same io_uring safety (verified, see `docs/safety/`) |
 | **License** | MIT (compatible with arsync) |
 
 **Why winio wins over iced/egui**:
 - ✅ Built FOR compio → I/O + GUI in same thread (zero overhead!)
-- ✅ Native backends → choose per platform (Win32/WinUI/GTK/Qt/AppKit)
+- ✅ Native backends → one per platform (Win32/GTK/AppKit)
 - ✅ File operations built-in → FileBox, MessageBox, Progress
 - ✅ `spawn()` directly → no channels, no thread boundaries
 
-**Platform binaries**:
-- Windows: `arsync-gui-win32.exe` + `arsync-gui-winui.exe`
-- Linux: `arsync-gui-gtk` + `arsync-gui-qt`
-- macOS: `arsync-gui.app` (AppKit)
+**Platform binaries** (simplified - ONE per platform):
+- Windows: `arsync-gui.exe` (Win32 - works everywhere, includes dark mode)
+- Linux: `arsync-gui` (GTK 4 - native, well-supported)
+- macOS: `arsync-gui.app` (AppKit - native, only option)
+
+**Backend Strategy** (simplicity over options):
+- **Windows**: Win32 (not WinUI 3)
+  - ✅ Universal compatibility (Windows 7+)
+  - ✅ No runtime dependencies
+  - ✅ Includes dark mode support
+  - ❌ WinUI 3 rejected: requires Windows App SDK, deployment friction
+  
+- **Linux**: GTK 4 (not Qt)
+  - ✅ Native to Linux, well-supported
+  - ✅ Most distros use GTK-based DEs
+  - ❌ Qt rejected: cross-platform advantage irrelevant (winio handles that)
+  
+- **macOS**: AppKit (only option)
+  - ✅ Native macOS, no choice needed
 
 ---
 
@@ -368,40 +383,61 @@ With winio, we get to **choose the Windows backend** at compile time!
 
 ---
 
-### Recommended: **Dual Build** 🎯
+### Recommended: **Pick ONE** 🎯
 
-**Ship BOTH variants**:
-- `arsync-gui-win32.exe` - Classic, compatible
-- `arsync-gui-winui.exe` - Modern, beautiful
+**Question**: Which Windows backend?
 
-Users choose based on preference/Windows version!
+**WinUI 3 Analysis**:
+- ✅ Modern, beautiful (Fluent Design)
+- ✅ Latest Windows UI framework
+- ⚠️ **Requires Windows 10 1809+ (October 2018 Update)**
+- ⚠️ **Requires Windows App SDK runtime** (may not be pre-installed)
+- ⚠️ Deployment complexity (users need to install runtime)
 
-**Build configuration**:
-```toml
-[[bin]]
-name = "arsync-gui-win32"
-path = "src/bin/gui.rs"
-required-features = ["gui-win32"]
+**Win32 Analysis**:
+- ✅ **Works on ALL Windows versions** (Windows 7+)
+- ✅ **No additional runtime required**
+- ✅ Lightweight, fast startup
+- ✅ Universal compatibility
+- ⚠️ Classic look (not modern Fluent Design)
+- ⚠️ Can still support dark mode via `dark-mode` feature
 
-[[bin]]
-name = "arsync-gui-winui"  
-path = "src/bin/gui.rs"
-required-features = ["gui-winui"]
-```
+**Recommendation**: **Win32** for maximum compatibility
+
+**Why Win32 wins**:
+1. **Universal compatibility** - works everywhere
+2. **Zero deployment friction** - no runtime to install
+3. **Simpler distribution** - single .exe
+4. **Lighter weight** - smaller binary, faster startup
+5. **Dark mode available** - via `dark-mode` feature flag
+6. WinUI 3's beauty doesn't outweigh deployment complexity
+
+**Note**: As of 2025, Windows 10 1809 is 7+ years old, BUT:
+- Enterprise environments often lag behind
+- Users may not have Windows App SDK installed
+- Win32 "just works" everywhere
+
+**Decision**: Ship `arsync-gui.exe` (Win32 backend)
 
 ---
 
 ### Linux Backend Choice
 
-**Option A: GTK 4** (Recommended for GNOME/most distros)
-- Native look on GNOME-based systems
-- Modern, well-supported
+**Decision: GTK 4 only** 🎯
 
-**Option B: Qt 5/6** (Recommended for KDE/Qt-based systems)
-- Native look on KDE
-- More features, heavier
+**Rationale**:
+- ✅ Qt advantage is cross-platform, but winio already handles that!
+- ✅ GTK 4 is native to Linux, well-supported
+- ✅ Simpler build (one backend instead of two)
+- ✅ Smaller binary size
+- ✅ Most Linux distros use GTK-based environments (GNOME, XFCE, etc.)
 
-**Default**: GTK 4 (wider compatibility)
+**Note**: Qt's cross-platform advantage doesn't apply here since:
+- winio provides cross-platform via different backends per OS
+- Qt on Linux would still need Win32/WinUI on Windows
+- One native backend per platform is simpler
+
+**Linux binary**: `arsync-gui` (GTK 4 backend)
 
 ---
 
@@ -1392,15 +1428,49 @@ theme = "dark"  # or "light" or "system"
 ## Next Steps
 
 1. ✅ Review this design
-2. ⚠️ Decide: Proceed with iced or evaluate egui/slint more?
-3. ⚠️ Answer open questions (especially compio ↔ iced integration)
-4. Create implementation plan: `/plan`
-5. Prototype basic file selection + copy (Phase 1)
-6. Iterate based on feedback
+2. ✅ **UPDATED DECISION**: Use **winio** (compio's official GUI!)
+3. ✅ Integration questions SOLVED (winio = perfect integration!)
+4. ⚠️ Evaluate winio maturity (v0.9.x - check examples, docs)
+5. ⚠️ Create implementation plan: `/plan`
+6. ⚠️ Prototype basic file selection + copy with winio (Phase 1)
+7. ⚠️ Test on all platforms (Windows/Linux/macOS)
+8. ⚠️ Decide on backend per platform (Win32 vs WinUI, GTK vs Qt)
 
 ---
 
-**Status**: Draft - Needs review and open questions answered  
-**Recommendation**: iced is the best choice for cross-platform native GUI  
-**Next**: Answer integration questions, then start Phase 1 prototype
+## 🎯 Final Recommendation
+
+**Framework**: [**winio**](https://github.com/compio-rs/winio) v0.9.1+
+
+**Why**:
+1. ✅ Built FOR compio → perfect integration
+2. ✅ Single-threaded → zero overhead
+3. ✅ Native backends → choose per platform
+4. ✅ Async-first → spawn() directly
+5. ✅ File dialogs built-in → less dependencies
+6. ✅ Same safety model → verified (docs/safety/)
+7. ✅ MIT licensed → compatible
+
+**Trade-offs**:
+- ⚠️ Young project (v0.9.x) vs. iced (v0.13.x)
+- ⚠️ Smaller ecosystem vs. iced
+- ✅ **Perfect compio integration** outweighs maturity concerns!
+
+**Platform Binaries** (ONE per platform):
+- Windows: `arsync-gui.exe` (Win32 backend - universal compatibility)
+- Linux: `arsync-gui` (GTK 4 backend - native)
+- macOS: `arsync-gui.app` (AppKit backend - native)
+
+**Implementation**:
+- Branch: `gui/impl-winio-frontend`
+- Start with basic Window + FileBox + MessageBox
+- Integrate with existing `src/copy.rs` via `spawn()`
+- Add progress tracking via message passing
+- Build for all platforms
+
+---
+
+**Status**: ✅ Design complete - **winio** is the clear winner!  
+**Recommendation**: **winio** for perfect compio integration  
+**Next**: Create implementation plan, prototype with winio examples
 
