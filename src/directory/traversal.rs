@@ -19,9 +19,14 @@ use super::metadata::preserve_directory_metadata_fd;
 use super::symlink::process_symlink;
 use super::types::{DirectoryStats, ExtendedMetadata, FileLocation, TraversalContext};
 
+/// Directory traversal using compio's dispatcher for iterative processing
+///
+/// This function implements iterative directory traversal using compio's dispatcher
+/// instead of recursion or manual worklists.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::future_not_send)]
 #[allow(clippy::used_underscore_binding)]
+#[allow(clippy::missing_docs_in_private_items)]
 pub(super) async fn traverse_and_copy_directory_iterative(
     initial_src: PathBuf,
     initial_dst: PathBuf,
