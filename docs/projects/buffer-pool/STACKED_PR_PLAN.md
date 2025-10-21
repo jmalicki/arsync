@@ -166,76 +166,86 @@ struct RegisteredBufferCache {
 let mut pooled = BUFFER_POOL.acquire_io_buffer();
 let buffer = pooled.take();
 
-// Try to get registered index for this buffer on THIS thread
-REGISTERED_IO_CACHE.with(|cache| {
-    if let Some(buf_index) = cache.borrow_mut().get_or_register(&buffer) {
+// Try to use registered I/O on current thread
+REGISTERED_IO_BUFFERS.with(|reg| {
+    let mut reg = reg.borrow_mut();
+    if let Some(buf_index) = reg.get_or_register(&buffer) {
         // HIT: Buffer is registered with this thread's ring
         // Use zero-copy I/O
-        io_uring_prep_read_fixed(ring, fd, buf_index, len, offset);
+        file.read_at_fixed(buf_index, len, offset).await
     } else {
-        // MISS: Buffer not registered (cache full or new buffer)
-        // Fall back to normal I/O (still reuses allocation!)
-        read_at(fd, buffer, offset);
+        // MISS: Cache full (unlikely) or first time on this thread
+        // Fall back to normal I/O (still reuses allocation from pool!)
+        file.read_at(buffer, offset).await
     }
 });
 ```
 
-### LRU Cache Logic
+### Registration Logic (No Eviction!)
 
 ```rust
-impl RegisteredBufferCache {
+impl RegisteredBufferMap {
     /// Get registered index, or register if space available
-    fn get_or_register(&mut self, buffer: &Vec<u8>) -> Option<u16> {
+    fn get_or_register(&mut self, buffer: &[u8]) -> Option<u16> {
         let buf_ptr = buffer.as_ptr() as usize;
         
-        // Check cache
-        if let Some(&index) = self.cache.get(&buf_ptr) {
-            return Some(index);  // HIT
+        // Check if already registered on this thread
+        if let Some(&index) = self.registered.get(&buf_ptr) {
+            self.hits += 1;
+            return Some(index);  // HIT - use zero-copy
         }
         
-        // Not in cache - can we register it?
-        if self.cache.len() < self.max_registered {
-            // Register new buffer with io_uring
-            let index = self.register_buffer(buffer)?;
-            self.cache.put(buf_ptr, index);
-            return Some(index);
+        self.misses += 1;
+        
+        // Not registered - can we register it?
+        if self.registered.len() < self.max_size {
+            // Register with this thread's io_uring ring
+            if let Ok(()) = unsafe { 
+                io_uring_register_buffer(self.ring, buffer, self.next_index) 
+            } {
+                let index = self.next_index;
+                self.registered.insert(buf_ptr, index);
+                self.next_index += 1;
+                return Some(index);
+            }
         }
         
-        // Cache full - evict LRU and register new one
-        if let Some((evicted_ptr, evicted_index)) = self.cache.pop_lru() {
-            self.unregister_buffer(evicted_index);
-            let index = self.register_buffer(buffer)?;
-            self.cache.put(buf_ptr, index);
-            return Some(index);
-        }
-        
-        None  // Fallback to non-registered
-    }
-    
-    fn register_buffer(&mut self, buffer: &Vec<u8>) -> Option<u16> {
-        // Use io_uring_sys to register this buffer
-        // Returns buffer index usable with _fixed operations
+        // Cache full (rare!) - fall back to normal I/O
+        self.fallbacks += 1;
+        None
     }
 }
 ```
 
-### Key Benefits of LRU Approach
+**No eviction logic needed!**
+- Pool: ~128 buffers (global, shared)
+- Cache: ~256 slots per thread
+- Pool fits entirely in each thread's cache
+- Once warm: 100% hit rate, zero eviction
+
+### Key Benefits of No-Eviction Approach
+
+✅ **Simplest possible:**
+- Just a HashMap
+- No LRU bookkeeping
+- No eviction logic
+- ~50 lines of code vs ~150 for LRU
+
+✅ **Best performance:**
+- O(1) lookup
+- No eviction overhead
+- Once warm, stays warm
 
 ✅ **Handles migration gracefully:**
 - Task migrates to Thread B
-- Thread B's cache doesn't have this buffer
-- Falls back to normal I/O automatically
-- No errors, just slower path
+- Thread B hasn't seen this buffer yet
+- Registers it (or falls back if full)
+- No errors, graceful degradation
 
-✅ **Adapts to patterns:**
-- Frequently used buffers stay registered
-- Rarely used buffers don't waste slots
-- Per-thread caching matches per-thread rings
-
-✅ **Bounded registration:**
-- Each thread registers max N buffers (e.g., 256)
-- Stays well under kernel limit (1024)
-- No registration explosion
+✅ **Predictable:**
+- After warmup: 100% hit rate
+- Stable performance
+- No cache thrashing
 
 ### Performance Expectations
 
