@@ -292,7 +292,7 @@ pub async fn futimens_fd(file: &File, accessed: SystemTime, modified: SystemTime
             .map_err(|e| metadata_error(&format!("futimens failed: {}", e)))
     })
     .await
-    .map_err(ExtendedError::SpawnJoin)?;
+    .map_err(|e| ExtendedError::SpawnJoin(format!("spawn_blocking failed: {:?}", e)))?;
     inner?;
     Ok(())
 }
@@ -457,7 +457,7 @@ pub(crate) async fn statx_impl(
         })
     })
     .await
-    .map_err(ExtendedError::SpawnJoin)?
+    .map_err(|e| ExtendedError::SpawnJoin(format!("spawn_blocking failed: {:?}", e)))?
 }
 
 /// Convert Unix timestamp to SystemTime (macOS)

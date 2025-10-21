@@ -9,6 +9,10 @@ pub enum SyncError {
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 
+    /// Error from compio-fs-extended
+    #[error("Extended filesystem operation error: {0}")]
+    ExtendedFs(#[from] compio_fs_extended::ExtendedError),
+
     /// `io_uring` specific error
     #[error("io_uring error: {0}")]
     IoUring(String),

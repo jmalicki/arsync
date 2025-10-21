@@ -221,7 +221,9 @@ pub(crate) async fn symlinkat_impl(
         .map_err(|e| symlink_error(&format!("symlinkat failed: {}", e)))
     })
     .await
-    .map_err(crate::error::ExtendedError::SpawnJoin)?
+    .map_err(|e| {
+        crate::error::ExtendedError::SpawnJoin(format!("spawn_blocking failed: {:?}", e))
+    })?
 }
 
 // Windows: symlinkat_impl not defined
@@ -247,7 +249,9 @@ pub(crate) async fn readlinkat_impl(
         fcntl::readlinkat(Some(dir_fd), std::path::Path::new(&link_name))
     })
     .await
-    .map_err(crate::error::ExtendedError::SpawnJoin)?;
+    .map_err(|e| {
+        crate::error::ExtendedError::SpawnJoin(format!("spawn_blocking failed: {:?}", e))
+    })?;
 
     Ok(std::path::PathBuf::from(
         os_string.map_err(|e| symlink_error(&e.to_string()))?,

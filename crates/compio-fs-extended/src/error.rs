@@ -14,7 +14,7 @@ pub enum ExtendedError {
 
     /// Task spawn/join error (from compio::runtime::spawn)
     #[error("spawn failed")]
-    SpawnJoin(Box<dyn std::any::Any + Send>),
+    SpawnJoin(String),
 
     /// copy_file_range specific error
     #[error("copy_file_range failed: {0}")]

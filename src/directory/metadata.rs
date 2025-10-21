@@ -1,6 +1,5 @@
 //! Directory and file metadata preservation operations
 
-use super::types::ExtendedMetadata;
 use crate::error::{Result, SyncError};
 use crate::io_uring::FileOperations;
 use crate::metadata::MetadataConfig;
@@ -131,7 +130,7 @@ pub async fn preserve_directory_metadata_fd(
     src_path: &Path,
     dst_path: &Path,
     dst_dir_fd: &compio_fs_extended::DirectoryFd,
-    extended_metadata: &ExtendedMetadata,
+    extended_metadata: &compio_fs_extended::FileMetadata,
     metadata_config: &MetadataConfig,
 ) -> Result<()> {
     use compio_fs_extended::OwnershipOps;
@@ -141,7 +140,7 @@ pub async fn preserve_directory_metadata_fd(
 
     // Preserve directory permissions if requested
     if metadata_config.should_preserve_permissions() {
-        let mode = extended_metadata.metadata.permissions();
+        let mode = extended_metadata.permissions();
         let compio_permissions = compio::fs::Permissions::from_mode(mode);
 
         // Use FD-based set_permissions (TOCTOU-safe, no umask interference)
@@ -161,8 +160,8 @@ pub async fn preserve_directory_metadata_fd(
 
     // Preserve directory ownership if requested
     if metadata_config.should_preserve_ownership() {
-        let source_uid = extended_metadata.metadata.uid;
-        let source_gid = extended_metadata.metadata.gid;
+        let source_uid = extended_metadata.uid;
+        let source_gid = extended_metadata.gid;
 
         // Use FD-based fchown (TOCTOU-safe!)
         dst_file.fchown(source_uid, source_gid).await.map_err(|e| {
@@ -179,8 +178,8 @@ pub async fn preserve_directory_metadata_fd(
 
     // Preserve directory timestamps if requested
     if metadata_config.should_preserve_timestamps() {
-        let src_accessed = extended_metadata.metadata.accessed;
-        let src_modified = extended_metadata.metadata.modified;
+        let src_accessed = extended_metadata.accessed;
+        let src_modified = extended_metadata.modified;
 
         // Use DirectoryFd::set_times (TOCTOU-safe!)
         dst_dir_fd
@@ -213,7 +212,7 @@ pub async fn preserve_directory_metadata_fd(
 pub async fn preserve_directory_metadata(
     src_path: &Path,
     dst_path: &Path,
-    extended_metadata: &ExtendedMetadata,
+    extended_metadata: &compio_fs_extended::FileMetadata,
     metadata_config: &MetadataConfig,
 ) -> Result<()> {
     // Open DirectoryFd once and use FD-based operations

@@ -315,7 +315,9 @@ impl DirectoryFd {
             })
         })
         .await
-        .map_err(crate::error::ExtendedError::SpawnJoin)?
+        .map_err(|e| {
+            crate::error::ExtendedError::SpawnJoin(format!("spawn_blocking failed: {:?}", e))
+        })?
     }
 
     /// Open a file relative to this directory (TOCTOU-safe)
@@ -410,7 +412,9 @@ impl DirectoryFd {
             Ok(unsafe { compio::fs::File::from_raw_fd(fd) })
         })
         .await
-        .map_err(crate::error::ExtendedError::SpawnJoin)?
+        .map_err(|e| {
+            crate::error::ExtendedError::SpawnJoin(format!("spawn_blocking failed: {:?}", e))
+        })?
     }
 
     /// Set permissions on this directory itself
