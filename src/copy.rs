@@ -46,6 +46,7 @@ use compio::dispatcher::Dispatcher;
 use compio::fs::File;
 use compio::io::{AsyncReadAt, AsyncReadManagedAt, AsyncWriteAt};
 use compio::runtime::BufferPool;
+use compio_fs_extended::AsyncWriteManagedAt;
 use futures::stream::{FuturesUnordered, StreamExt};
 use std::path::Path;
 use std::sync::LazyLock;
@@ -404,20 +405,11 @@ async fn copy_read_write(
                 break; // EOF
             }
 
-            // Write from borrowed buffer - we need to copy to Vec because write_at requires IoBuf ownership
-            // The buffer is borrowed from the pool and can't be moved.
-            //
-            // TODO: Full zero-copy would require either:
-            // 1. Keep borrowed buffer alive during write (complex lifetime management)
-            // 2. Add write_managed() to compio that accepts borrowed buffers
-            // 3. Use io_uring registered buffers directly (bypass compio's ownership model)
-            //
-            // For now, we get zero-copy READ (50% of the work) which is still a significant win.
-            let write_result = dst_file
-                .write_at(Vec::from(borrowed_buf.as_ref()), offset)
-                .await;
-            let bytes_written = write_result
-                .0
+            // Zero-copy write using write_managed_at!
+            // This keeps the borrowed buffer alive during the write, enabling true zero-copy I/O.
+            let bytes_written = dst_file
+                .write_managed_at(borrowed_buf, offset)
+                .await
                 .map_err(|e| SyncError::IoUring(format!("Write operation failed: {e}")))?;
 
             if bytes_written != bytes_read {
@@ -430,12 +422,12 @@ async fn copy_read_write(
             offset += bytes_written as u64;
 
             tracing::debug!(
-                "Zero-copy read: copied {} bytes, total: {}/{} (buffer pool, read-only zero-copy)",
+                "Full zero-copy: {} bytes, total: {}/{} (read+write zero-copy via BufferPool)",
                 bytes_written,
                 total_copied,
                 file_size
             );
-            // borrowed_buf drops here → returns to pool automatically
+            // Note: borrowed_buf was consumed by write_managed_at
         }
     } else {
         // Standard path: Use regular allocations with buffer reuse

@@ -46,6 +46,7 @@ pub mod hardlink;
 pub mod metadata;
 pub mod ownership;
 pub mod symlink;
+pub mod write_managed;
 pub mod xattr;
 
 // Platform-specific shims (none required at module level yet)
@@ -63,6 +64,7 @@ pub use fallocate::Fallocate;
 pub use hardlink::HardlinkOps;
 pub use ownership::OwnershipOps;
 pub use symlink::SymlinkOps;
+pub use write_managed::AsyncWriteManagedAt;
 pub use xattr::XattrOps;
 
 /// Version information
