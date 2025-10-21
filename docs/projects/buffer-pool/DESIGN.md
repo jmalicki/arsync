@@ -132,41 +132,43 @@ pub struct BufferPool {
 - ✅ Efficient: Metadata operations don't waste memory with large buffers
 - ✅ No magic numbers: Buffer sizes have clear provenance
 
-### Pool Structure
+### Pool Structure (Per-Thread!)
+
+**Critical insight**: Buffers must be per-thread because:
+1. Each thread has its own io_uring ring
+2. Registered buffers are per-ring (not shareable across rings)
+3. compio dispatcher schedules tasks on arbitrary threads
 
 ```rust
-/// Thread-safe buffer pool with io_uring registration
-pub struct BufferPool {
-    /// I/O buffers for file read/write (user-configured size)
-    io_pool: Arc<BufferSubPool>,
-    
-    /// Metadata buffers for statx/readlink (fixed 4KB)
-    metadata_pool: Arc<BufferSubPool>,
-    
-    /// io_uring registration state (if supported)
-    registration: Option<RegisteredBuffers>,
+/// Thread-local buffer pool (one per worker thread)
+thread_local! {
+    static THREAD_BUFFER_POOL: RefCell<ThreadBufferPool> = RefCell::new(
+        ThreadBufferPool::new_for_current_thread()
+    );
 }
 
-/// Sub-pool for a specific buffer type
-struct BufferSubPool {
-    /// Size of buffers in this pool
-    buffer_size: usize,
+/// Buffer pool for a single thread's io_uring ring
+struct ThreadBufferPool {
+    /// I/O buffers (user-configured size)
+    io_buffers: VecDeque<Vec<u8>>,
+    io_buffer_size: usize,
     
-    /// Pre-allocated buffers ready for use
-    available: Mutex<VecDeque<Vec<u8>>>,
+    /// Metadata buffers (fixed 4KB)
+    metadata_buffers: VecDeque<Vec<u8>>,
     
-    /// io_uring buffer indices (if registered)
-    buffer_indices: Option<Vec<u16>>,
+    /// io_uring registration for THIS thread's ring
+    registration: Option<RegisteredBuffers>,
     
-    /// Statistics
+    /// Statistics for this thread
     stats: PoolStats,
 }
 
 struct PoolStats {
-    total_allocated: AtomicUsize,
-    current_in_use: AtomicUsize,
-    peak_usage: AtomicUsize,
-    total_acquisitions: AtomicUsize,
+    io_buffers_allocated: usize,
+    io_buffers_in_use: usize,
+    metadata_buffers_allocated: usize,
+    metadata_buffers_in_use: usize,
+    total_acquisitions: usize,
 }
 
 /// RAII guard for pooled buffer
@@ -174,11 +176,16 @@ pub struct PooledBuffer {
     /// The actual buffer data (None when taken for compio operations)
     data: Option<Vec<u8>>,
     
-    /// io_uring buffer index (if registered)
+    /// io_uring buffer index (if registered with THIS thread's ring)
     ioring_index: Option<u16>,
     
-    /// Pool to return to on drop
-    pool: Arc<BufferSubPool>,
+    /// Buffer type (for return to correct pool)
+    buffer_type: BufferType,
+}
+
+enum BufferType {
+    Io,
+    Metadata,
 }
 ```
 
@@ -684,35 +691,42 @@ Metadata pool:  256 buffers × 4KB   = 1MB
 
 ## Implementation Phases
 
-### Phase 1: Basic Two-Pool System (Week 1)
+### Phase 1: Global Two-Pool System (Week 1)
 
 **Deliverables:**
-1. ✅ `src/buffer_pool.rs` - Two-pool implementation
+1. ✅ `src/buffer_pool.rs` - Global two-pool implementation
 2. ✅ Integration in `src/copy.rs` - Replace allocations in sequential and parallel copy
-3. ✅ Add `buffer_pool` to `TraversalContext`
-4. ✅ Tests - Verify reuse and concurrency
+3. ✅ Pass buffer pool config (io_buffer_size from CLI)
+4. ✅ Tests - Verify reuse, concurrency, thread safety
 5. ✅ Benchmarks - Measure allocation reduction
 
 **Success metrics:**
 - Zero allocations in `copy_region_sequential` hot path
 - 50-70% reduction in total allocations per sync
 - 25-40% performance improvement on large files
+- Works correctly with compio task migration
 - No performance regression
 
-### Phase 2: io_uring Registration (Week 2-3)
+**Explicitly NOT doing:**
+- ❌ io_uring buffer registration (incompatible with task migration)
 
-**Deliverables:**
-1. ✅ Research compio buffer registration support
-2. ✅ Implement in compio-fs-extended if needed
-3. ✅ Register both I/O and metadata buffer pools
-4. ✅ Use `_fixed` variants for read/write operations
-5. ✅ Benchmarks - Measure zero-copy benefit
+### Phase 2: Measure and Decide (Week 2)
+
+**Investigation:**
+1. Profile compio task migration frequency
+2. Measure actual thread affinity in practice
+3. Research compio thread-pinning possibilities
+4. Benchmark global pool performance
+
+**Decision point:**
+- If tasks rarely migrate: Consider thread-local pools + registration
+- If tasks migrate often: Keep global pool, skip registration
+- Document findings and trade-offs
 
 **Success metrics:**
-- All I/O uses registered buffers
-- Measurable CPU reduction (kernel no longer copies)
-- Additional 10-20% throughput improvement
-- Bounded memory usage maintained
+- Clear data on task migration patterns
+- Informed decision on registration feasibility
+- Documented rationale for approach chosen
 
 ---
 
@@ -848,6 +862,200 @@ impl IoBufMut for PooledBuffer {
 
 ---
 
+## Critical Design Challenge: Thread Migration vs Registered Buffers
+
+### The Problem
+
+**io_uring registered buffers are per-ring, rings are per-thread:**
+
+```
+Thread A: io_uring ring A → registered buffers [0-127]
+Thread B: io_uring ring B → registered buffers [0-127]
+Thread C: io_uring ring C → registered buffers [0-127]
+```
+
+**compio dispatcher can migrate tasks between threads:**
+
+```
+Task starts on Thread A → acquires buffer from Thread A's pool
+Task resumes on Thread B → buffer is from wrong ring!
+                          → io_uring_prep_read_fixed() with Thread A's buffer index
+                          → Thread B's ring doesn't know about that buffer
+                          → FAILURE or fall back to non-registered I/O
+```
+
+### Use Case Analysis
+
+#### Case 1: Sequential Copy (copy_read_write)
+```rust
+// Runs in one function, likely one thread
+let mut buffer = vec![0u8; size];
+while copying {
+    read_at(buffer, offset).await;  // Might migrate here
+    write_at(buffer, offset).await; // Or here
+}
+```
+
+**Migration risk**: MEDIUM
+- Multiple await points in loop
+- compio could reschedule between reads
+- But probably stays on same thread (work-stealing is lazy)
+
+#### Case 2: Parallel Copy (copy_region_sequential)
+```rust
+// Each region dispatched independently
+dispatcher.dispatch(move || {
+    copy_region_sequential(start, end);  // Whole region on one thread?
+});
+```
+
+**Migration risk**: LOW per region, HIGH across regions
+- Each region probably stays on one thread
+- But different regions definitely on different threads
+- Need buffer per region, not per thread
+
+#### Case 3: Directory Traversal
+```rust
+// Metadata fetch
+let metadata = statx_at(dirfd, filename).await;
+// ... reschedule possible ...
+// File copy (different thread possible!)
+copy_file_internal(...).await;
+```
+
+**Migration risk**: HIGH
+- Many await points
+- Long-running operation
+- Lots of opportunity for work-stealing
+
+### Solution Options
+
+#### Option A: ❌ Thread-Local Pools Only
+
+```rust
+thread_local! {
+    static POOL: RefCell<BufferPool> = ...;
+}
+```
+
+**Pros:**
+- ✅ Perfect for io_uring registration (one pool per ring)
+- ✅ No locking (thread-local is fast)
+
+**Cons:**
+- ❌ **BREAKS on task migration** - buffer from Thread A used on Thread B
+- ❌ Can't register buffers safely (task might migrate)
+- ❌ Defeats compio's work-stealing efficiency
+
+**Verdict**: Doesn't work with compio's architecture
+
+#### Option B: ❌ Global Pool with Registration
+
+```rust
+static POOL: BufferPool = ...;  // Shared across threads
+```
+
+**Pros:**
+- ✅ Works with task migration
+
+**Cons:**
+- ❌ **Can't register with io_uring** - buffers not tied to specific ring
+- ❌ Locking overhead (Mutex on every acquire)
+
+**Verdict**: No zero-copy benefit, just allocation reuse
+
+#### Option C: ⚠️ Global Pool + Thread-Local Registration
+
+```rust
+static GLOBAL_POOL: BufferPool = ...;  // Allocations shared
+
+thread_local! {
+    static RING_BUFFERS: RegisteredBufferSet = ...;  // Per-ring indices
+}
+
+// Acquire from global, try to use thread-local registration
+let buffer = GLOBAL_POOL.acquire_io_buffer();
+if let Some(index) = try_register_locally(buffer) {
+    // Use registered I/O (fast path)
+    read_fixed(fd, index, len);
+} else {
+    // Fall back to normal I/O
+    read_at(fd, buffer, offset);
+}
+```
+
+**Pros:**
+- ✅ Works with migration (buffers portable)
+- ✅ Opportunistic zero-copy when task stays on same thread
+
+**Cons:**
+- ⚠️ Complex: tracking registration state
+- ⚠️ Unpredictable performance (depends on migration)
+- ⚠️ Registration overhead (need to register/unregister dynamically)
+
+**Verdict**: Complicated, unpredictable benefit
+
+#### Option D: ✅ Global Pool WITHOUT Registration (Phase 1 Only)
+
+```rust
+static BUFFER_POOL: BufferPool = ...;  // Just allocation reuse
+
+// Use normal (non-registered) I/O
+let buffer = BUFFER_POOL.acquire_io_buffer();
+src.read_at(buffer, offset).await;  // Works on any thread
+```
+
+**Pros:**
+- ✅ Simple: Just allocation reuse
+- ✅ Works with task migration
+- ✅ Still get 25-40% improvement (allocation reduction)
+- ✅ compio-compatible
+
+**Cons:**
+- ❌ No zero-copy (can't use registered buffers safely)
+- ❌ Miss potential 10-20% additional gain
+
+**Verdict**: Safe, significant benefit, simpler
+
+#### Option E: ⚠️ Pin Tasks to Threads
+
+```rust
+// Somehow ensure tasks don't migrate
+dispatcher.dispatch_pinned(move || { ... });
+```
+
+**Pros:**
+- ✅ Could use thread-local pools
+- ✅ Could register buffers
+
+**Cons:**
+- ❌ compio doesn't expose thread-pinning API
+- ❌ Defeats work-stealing benefits
+- ❌ Reduces concurrency efficiency
+- ❌ Complex to implement correctly
+
+**Verdict**: Breaks compio's architecture
+
+### Recommendation: Hybrid Approach
+
+**Phase 1: Global pool (no registration)**
+- Simple, safe, works with migration
+- Gets 25-40% from allocation reuse
+- Good ROI for effort
+
+**Phase 2: Investigate compio's thread model**
+- Check if tasks actually migrate frequently
+- Profile to see if registration would help
+- Consider upstreaming task-pinning to compio
+- Or accept that zero-copy isn't compatible with work-stealing
+
+**Phase 3: Decide on registration**
+- If tasks rarely migrate: Add thread-local registration
+- If tasks migrate often: Skip registration, keep simple pool
+- Measure actual benefit vs complexity
+
+---
+
 ## Alternative Approaches Considered
 
 ### 1. ❌ Size-classed pools (Tiny/Small/Medium/Large)
@@ -858,25 +1066,13 @@ impl IoBufMut for PooledBuffer {
 
 Adding more size classes adds complexity without benefit.
 
-### 2. ❌ Per-thread pools
+### 2. ✅ Global pool without registration (CHOSEN for Phase 1)
 
-**Rejected**: Thread-local pools would require buffer migration between threads, complex with compio's work-stealing dispatcher.
-
-### 3. ❌ Single global pool (one size for everything)
-
-**Rejected**: Either wastes memory (large buffers for metadata) or is inefficient (small buffers for I/O).
-
-### 4. ❌ Object pooling crate (e.g., `deadpool`)
-
-**Rejected**: Async pool APIs don't work well with compio's ownership model (buffers taken and returned via tuples). Need custom solution.
-
-### 5. ✅ Two pools: I/O + Metadata (CHOSEN)
-
-**Selected**: 
-- ✅ Simple: Only two pools, clear purpose
-- ✅ Flexible: I/O buffer size from user CLI
-- ✅ Efficient: Each pool sized appropriately
-- ✅ compio-compatible: Works with ownership model
+**Selected:**
+- ✅ Simple: One global pool with two buffer types
+- ✅ Safe: Works with compio's task migration
+- ✅ Effective: 25-40% improvement from allocation reuse alone
+- ✅ Foundation: Can add registration later if task-pinning becomes available
 
 ---
 
@@ -908,19 +1104,23 @@ Adding more size classes adds complexity without benefit.
 
 ## Success Criteria
 
-### Phase 1 (Two-Pool System):
+### Phase 1 (Global Two-Pool System):
 - ✅ Zero buffer allocations in parallel copy hot path
 - ✅ Pool hit rate > 95% (simple two-pool design)
 - ✅ 25-40% performance improvement on large files
 - ✅ Memory usage bounded: ~8MB (concurrency=64, buffer_size=64KB)
+- ✅ Thread-safe: Works correctly with compio task migration
 - ✅ All tests passing
 - ✅ Works with any user-configured buffer size
 
-### Phase 2 (io_uring Registration):
-- ✅ All I/O uses registered buffers (both pools)
-- ✅ Additional 10-20% throughput improvement
-- ✅ CPU reduction measurable in profiling
-- ✅ Zero-copy verified via strace/perf
+### Phase 2 (Investigation):
+- ✅ Documented task migration frequency data
+- ✅ Clear decision on registration feasibility
+- ✅ If registration viable: prototype + benchmark
+- ✅ If not viable: document why and move on
+
+**Note**: io_uring registration may not be compatible with compio's work-stealing.  
+We get the major benefit (25-40%) from allocation reuse alone.
 
 ---
 
