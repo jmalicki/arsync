@@ -9,6 +9,7 @@ mod common;
 use std::fs;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::PermissionsExt;
+use std::time::Duration;
 use tempfile::TempDir;
 
 /// Test: Re-syncing to existing directory should UPDATE metadata
@@ -53,12 +54,8 @@ async fn test_resync_updates_directory_metadata() {
 /// Test: Type conflict (file exists, trying to create directory) should FAIL
 ///
 /// This verifies rsync-compatible behavior: cannot overwrite file with directory
-///
-/// **Current implementation:** Type conflict detection IS implemented via DirectoryFd.
-/// When `create_dir` fails with AlreadyExists, we verify the existing path is a directory.
-/// If it's not (e.g., it's a file), we return an error.
 #[compio::test]
-#[ignore] // TODO: Test scenario may not match actual traversal (needs verification)
+#[ignore] // TODO: Conflict detection needs traversal through destination tree
 async fn test_type_conflict_file_to_directory_fails() {
     let temp_dir = TempDir::new().unwrap();
     let src_dir = temp_dir.path().join("src");
@@ -100,15 +97,12 @@ async fn test_type_conflict_file_to_directory_fails() {
     println!("✅ Correctly rejected type conflict (file → directory)");
 }
 
-/// Test: File into directory - rsync nesting behavior
+/// Test: Type conflict (directory exists, trying to create file) - rsync behavior
 ///
 /// When source is file but destination is directory, rsync creates file INSIDE directory.
-/// This is NOT a type conflict - it's intentional nesting behavior.
-///
-/// **Implementation status:** File copying already uses DirectoryFd-based operations,
-/// but this specific nesting scenario (source=file, dest=dir) needs verification.
+/// This test documents expected behavior (not a type conflict, it's nesting).
 #[compio::test]
-#[ignore] // TODO: Verify rsync's nesting behavior is correctly implemented
+#[ignore] // TODO: Need to implement rsync's nesting behavior (file into directory)
 async fn test_file_into_existing_directory_creates_nested() {
     let temp_dir = TempDir::new().unwrap();
     let src_file = temp_dir.path().join("file.txt");
@@ -166,8 +160,9 @@ async fn test_resync_preserves_directory_timestamps() {
         std::io::Error::last_os_error()
     );
 
-    // Create destination directory with current timestamp (will differ from source's 2021 timestamp)
+    // Create destination directory with current timestamp
     fs::create_dir(&dst_dir).unwrap();
+    std::thread::sleep(Duration::from_millis(100));
 
     // Sync with --archive (should update timestamps)
     let mut args = common::test_args::create_archive_test_args();
