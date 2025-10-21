@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use clap::Parser;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
 // Import MetadataConfig from metadata module
@@ -63,9 +64,11 @@ pub struct IoConfig {
     #[arg(long, default_value = "4096")]
     pub queue_depth: usize,
 
-    /// Buffer size in KB (0 = auto-detect, default: 64KB)
-    #[arg(long, default_value = "0")]
-    pub buffer_size_kb: usize,
+    /// Buffer size in KB (default: auto-detect → 64KB)
+    ///
+    /// Must be non-zero if specified.
+    #[arg(long)]
+    pub buffer_size_kb: Option<NonZeroUsize>,
 
     /// Copy method to use
     #[arg(long, default_value = "auto")]
@@ -329,11 +332,11 @@ impl Args {
         }
 
         // Validate buffer size
-        if self.io.buffer_size_kb > 1024 * 1024 {
-            anyhow::bail!(
-                "Buffer size too large (max 1GB): {} KB",
-                self.io.buffer_size_kb
-            );
+        if let Some(kb) = self.io.buffer_size_kb {
+            let kb_value = kb.get();
+            if kb_value > 1024 * 1024 {
+                anyhow::bail!("Buffer size too large (max 1GB): {kb_value} KB");
+            }
         }
 
         // Check CPU count bounds
@@ -363,15 +366,12 @@ impl Args {
         }
     }
 
-    /// Get the actual buffer size in bytes
-    #[allow(dead_code)]
+    /// Get the actual buffer size in bytes (handles None → default)
     #[must_use]
     pub const fn effective_buffer_size(&self) -> usize {
-        if self.io.buffer_size_kb == 0 {
-            // Default to 64KB for now
-            64 * 1024
-        } else {
-            self.io.buffer_size_kb * 1024
+        match self.io.buffer_size_kb {
+            None => 64 * 1024, // Default: 64KB
+            Some(kb) => kb.get() * 1024,
         }
     }
 
@@ -387,10 +387,16 @@ impl Args {
         self.paths.source.is_file()
     }
 
-    /// Get buffer size in bytes
+    /// Get buffer size in bytes (returns None if auto-detect)
+    ///
+    /// Note: Prefer `effective_buffer_size()` which resolves None → 64KB default
     #[must_use]
-    pub const fn buffer_size_bytes(&self) -> usize {
-        self.io.buffer_size_kb * 1024
+    #[allow(dead_code)] // Kept for API compatibility
+    pub const fn buffer_size_bytes(&self) -> Option<usize> {
+        match self.io.buffer_size_kb {
+            None => None,
+            Some(kb) => Some(kb.get() * 1024),
+        }
     }
 
     // ========== Convenience accessors for commonly used fields ==========
@@ -509,7 +515,7 @@ mod tests {
             },
             io: IoConfig {
                 queue_depth: 4096,
-                buffer_size_kb: 1024,
+                buffer_size_kb: NonZeroUsize::new(1024),
                 copy_method: CopyMethod::Auto,
                 cpu_count: 2,
                 parallel: ParallelCopyConfig {
