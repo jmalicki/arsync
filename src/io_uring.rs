@@ -93,6 +93,12 @@ impl FileOperations {
         Ok(Self { buffer_size })
     }
 
+    /// Get the configured buffer size for I/O operations
+    #[must_use]
+    pub const fn buffer_size(&self) -> usize {
+        self.buffer_size
+    }
+
     /// Copy file using chunked read/write with compio buffer management
     ///
     /// This method copies a file by reading and writing in chunks, using compio's

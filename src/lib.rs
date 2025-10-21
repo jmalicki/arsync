@@ -46,6 +46,7 @@
 //! ```
 
 pub mod adaptive_concurrency;
+pub mod buffer_pool;
 pub mod cli;
 pub mod copy;
 pub mod directory;

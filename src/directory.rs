@@ -5,6 +5,7 @@
 //! filesystem operations for unsupported operations.
 
 use crate::adaptive_concurrency::{check_fd_limits, AdaptiveConcurrencyController};
+use crate::buffer_pool::BufferPool;
 use crate::cli::{Args, CopyMethod};
 use crate::copy::copy_file_internal;
 use crate::error::{Result, SyncError};
@@ -62,6 +63,8 @@ pub struct TraversalContext {
     pub parallel_config: Arc<crate::cli::ParallelCopyConfig>,
     /// Global dispatcher for parallel operations
     pub dispatcher: &'static Dispatcher,
+    /// Buffer pool for zero-allocation I/O
+    pub buffer_pool: Arc<BufferPool>,
 }
 
 /// Extended metadata using `io_uring` statx or compio metadata
@@ -404,6 +407,13 @@ async fn traverse_and_copy_directory_iterative(
     // but all child operations complete before we unwrap, so it's just +1/-1.
     // Delegate to root wrapper which handles DirectoryFd setup
     // Build traversal context
+    // Create buffer pool (2× concurrency for I/O pipelining)
+    // Use buffer size from file_ops (already computed from CLI)
+    let buffer_pool = BufferPool::new(
+        file_ops.buffer_size(),
+        concurrency_config.max_files_in_flight,
+    );
+
     let ctx = TraversalContext {
         file_ops: file_ops_arc,
         copy_method: _copy_method,
@@ -413,6 +423,7 @@ async fn traverse_and_copy_directory_iterative(
         metadata_config: metadata_config_arc,
         parallel_config: parallel_config_arc,
         dispatcher,
+        buffer_pool,
     };
 
     let result = process_root_entry(initial_src, initial_dst, ctx).await;

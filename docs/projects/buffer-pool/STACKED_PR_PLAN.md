@@ -142,20 +142,29 @@ cargo test --release -- --nocapture | grep "allocated"
 // Global pool (from PR #93) - allocation reuse
 static BUFFER_POOL: Arc<BufferPool> = ...;
 
-// Per-thread LRU cache - registered buffer indices
+// Per-thread Clock cache - registered buffer indices
 thread_local! {
-    static REGISTERED_IO_CACHE: RefCell<RegisteredBufferCache> = ...;
+    static REGISTERED_IO_CACHE: RefCell<ClockBufferCache> = ...;
 }
 
-struct RegisteredBufferCache {
-    /// LRU cache mapping buffer address → io_uring buffer index
-    cache: LruCache<usize, u16>,  // buffer ptr → registered index
+struct ClockBufferCache {
+    /// Circular array of cache entries
+    entries: Vec<CacheEntry>,
+    
+    /// Clock hand position
+    hand: usize,
+    
+    /// Fast lookup: buffer_ptr → slot index
+    map: HashMap<usize, usize>,
     
     /// io_uring ring for THIS thread
     ring: *mut io_uring,
-    
-    /// Max registered buffers (kernel limit: 1024)
-    max_registered: usize,
+}
+
+struct CacheEntry {
+    buffer_ptr: usize,   // 0 = empty
+    ioring_index: u16,
+    referenced: bool,    // Second-chance bit
 }
 ```
 
@@ -181,71 +190,108 @@ REGISTERED_IO_BUFFERS.with(|reg| {
 });
 ```
 
-### Registration Logic (No Eviction!)
+### Registration Logic (Clock Algorithm)
 
 ```rust
-impl RegisteredBufferMap {
-    /// Get registered index, or register if space available
+impl ClockBufferCache {
     fn get_or_register(&mut self, buffer: &[u8]) -> Option<u16> {
-        let buf_ptr = buffer.as_ptr() as usize;
+        let ptr = buffer.as_ptr() as usize;
         
-        // Check if already registered on this thread
-        if let Some(&index) = self.registered.get(&buf_ptr) {
-            self.hits += 1;
-            return Some(index);  // HIT - use zero-copy
+        // Already registered?
+        if let Some(&slot) = self.map.get(&ptr) {
+            self.entries[slot].referenced = true;  // Mark as used
+            return Some(self.entries[slot].ioring_index);
         }
         
-        self.misses += 1;
+        // Need to register - find slot (empty or evict)
+        let slot = self.find_slot_or_evict()?;
         
-        // Not registered - can we register it?
-        if self.registered.len() < self.max_size {
-            // Register with this thread's io_uring ring
-            if let Ok(()) = unsafe { 
-                io_uring_register_buffer(self.ring, buffer, self.next_index) 
-            } {
-                let index = self.next_index;
-                self.registered.insert(buf_ptr, index);
-                self.next_index += 1;
-                return Some(index);
+        // Register with io_uring
+        let ioring_index = unsafe {
+            io_uring_register_buffer_at_index(self.ring, buffer, slot as u16)?
+        };
+        
+        // Install in cache
+        self.entries[slot] = CacheEntry {
+            buffer_ptr: ptr,
+            ioring_index,
+            referenced: true,  // Just used
+        };
+        self.map.insert(ptr, slot);
+        
+        Some(ioring_index)
+    }
+    
+    fn find_slot_or_evict(&mut self) -> Option<usize> {
+        // Sweep clock looking for victim
+        for _ in 0..self.entries.len() {
+            let entry = &mut self.entries[self.hand];
+            
+            // Empty slot? Use it
+            if entry.buffer_ptr == 0 {
+                let slot = self.hand;
+                self.advance_hand();
+                return Some(slot);
             }
+            
+            // Referenced? Give second chance
+            if entry.referenced {
+                entry.referenced = false;
+                self.advance_hand();
+                continue;
+            }
+            
+            // Not referenced - evict!
+            let slot = self.hand;
+            self.evict_at(slot);
+            self.advance_hand();
+            return Some(slot);
         }
         
-        // Cache full (rare!) - fall back to normal I/O
-        self.fallbacks += 1;
-        None
+        // All referenced - evict current anyway (rare)
+        let slot = self.hand;
+        self.evict_at(slot);
+        self.advance_hand();
+        Some(slot)
+    }
+    
+    fn advance_hand(&mut self) {
+        self.hand = (self.hand + 1) % self.entries.len();
+    }
+    
+    fn evict_at(&mut self, slot: usize) {
+        let entry = &self.entries[slot];
+        self.map.remove(&entry.buffer_ptr);
+        unsafe {
+            io_uring_unregister_buffer(self.ring, entry.ioring_index);
+        }
+        self.entries[slot].buffer_ptr = 0;  // Mark empty
     }
 }
 ```
 
-**No eviction logic needed!**
-- Pool: ~128 buffers (global, shared)
-- Cache: ~256 slots per thread
-- Pool fits entirely in each thread's cache
-- Once warm: 100% hit rate, zero eviction
+### Key Benefits of Clock Algorithm
 
-### Key Benefits of No-Eviction Approach
+✅ **Robust:**
+- Handles any pool size / cache size ratio
+- Adapts to 4, 8, 16+ worker threads
+- Graceful eviction when needed
 
-✅ **Simplest possible:**
-- Just a HashMap
-- No LRU bookkeeping
-- No eviction logic
-- ~50 lines of code vs ~150 for LRU
+✅ **Efficient:**
+- O(1) lookup via HashMap
+- O(1) amortized eviction (usually finds victim on first sweep)
+- Just one bool per entry (not timestamps)
 
-✅ **Best performance:**
-- O(1) lookup
-- No eviction overhead
-- Once warm, stays warm
+✅ **Approximates LRU:**
+- Hot buffers stay registered (referenced bit protects them)
+- Cold buffers get evicted
+- Second-chance prevents thrashing
 
-✅ **Handles migration gracefully:**
-- Task migrates to Thread B
-- Thread B hasn't seen this buffer yet
-- Registers it (or falls back if full)
-- No errors, graceful degradation
-
-✅ **Predictable:**
-- After warmup: 100% hit rate
-- Stable performance
-- No cache thrashing
+✅ **Handles migration:**
+- Task moves to new thread
+- New thread's cache doesn't have buffer
+- Registers it (or evicts something cold)
+- No errors, graceful adaptation
 
 ### Performance Expectations
 

@@ -7,21 +7,12 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use tracing::{info, Level};
 
-mod adaptive_concurrency;
-mod cli;
-mod copy;
-mod directory;
-mod error;
-mod hardlink_tracker;
-mod i18n;
-mod io_uring;
-mod metadata;
-mod progress;
-mod stats;
-mod sync;
-
-use cli::Args;
-use i18n::{set_language, Language, TranslationKey};
+// Use arsync library modules
+use arsync::{
+    cli::Args,
+    i18n::{set_language, Language, TranslationKey},
+    sync::sync_files,
+};
 
 #[compio::main]
 async fn main() -> Result<()> {
@@ -90,7 +81,7 @@ async fn main() -> Result<()> {
     args.validate().context("Invalid arguments")?;
 
     // Perform the sync operation
-    let result = sync::sync_files(&args).await;
+    let result = sync_files(&args).await;
 
     match result {
         Ok(stats) => {
