@@ -178,118 +178,233 @@ impl NoEvictionCache {
 
 ---
 
-### 5. Clock/Second-Chance
+### 5. Clock/Second-Chance ⭐
 
 ```rust
 struct ClockCache {
-    entries: Vec<(usize, u16, bool)>,  // (ptr, index, ref_bit)
-    clock_hand: usize,
+    /// Circular array of (buffer_ptr, io_uring_index, referenced_bit)
+    entries: Vec<CacheEntry>,
+    /// Clock hand position
+    hand: usize,
+    /// Map for O(1) lookup: buffer_ptr → array index
+    map: HashMap<usize, usize>,
+}
+
+struct CacheEntry {
+    buffer_ptr: usize,
+    ioring_index: u16,
+    referenced: bool,  // Set on access, cleared on scan
 }
 ```
 
+**How it works:**
+1. On access: Set `referenced = true`
+2. On eviction needed: Scan from clock hand
+   - If `referenced = true`: Clear it, advance hand (second chance!)
+   - If `referenced = false`: Evict this one
+3. O(1) amortized (usually find victim quickly)
+
 **Pros:**
-- ✅ Approximates LRU with less overhead
+- ✅ Approximates LRU with much less overhead
 - ✅ O(1) amortized eviction
+- ✅ Simple reference bit (no timestamps)
+- ✅ Handles any pool size gracefully
+- ✅ Good for variable access patterns
 
 **Cons:**
-- ❌ More complex than needed
-- ❌ Reference bit overhead
+- ⚠️ Slightly more complex than no-eviction
+- ⚠️ Needs circular buffer + HashMap
 
-**Verdict**: Overkill
+**Verdict**: ⭐⭐⭐⭐⭐ **BEST CHOICE!** 
+
+**Why it's better than no-eviction:**
+- Handles case where pool > cache limit
+- Adapts to varying worker counts (4, 8, 16 threads)
+- Still simple (~80 lines vs 150 for LRU)
 
 ---
 
 ## Decision Matrix
 
-| Policy | Complexity | Lookup | Eviction | Our Workload Fit |
-|--------|------------|--------|----------|------------------|
-| **LRU** | High | O(1) | O(n) | ⭐⭐⭐ Good, but overkill |
-| **FIFO** | Medium | O(1) | O(1) | ⭐⭐ Suboptimal |
-| **Random** | Low | O(1) | O(1) | ⭐ Too unpredictable |
-| **No Eviction** | **Minimal** | **O(1)** | **N/A** | **⭐⭐⭐⭐⭐ Perfect!** |
-| **Clock** | Medium | O(1) | O(1) | ⭐⭐⭐ Good, unnecessary |
+| Policy | Complexity | Lookup | Eviction | Handles Growth | Our Workload Fit |
+|--------|------------|--------|----------|----------------|------------------|
+| **LRU** | High | O(1) | O(n) | ✅ Yes | ⭐⭐⭐ Good, but complex |
+| **FIFO** | Medium | O(1) | O(1) | ✅ Yes | ⭐⭐⭐ Evicts wrong buffers |
+| **Random** | Low | O(1) | O(1) | ✅ Yes | ⭐⭐ Too unpredictable |
+| **No Eviction** | Minimal | O(1) | N/A | ❌ Breaks if pool grows | ⭐⭐⭐⭐ Simple but fragile |
+| **Clock** | **Medium** | **O(1)** | **O(1) amortized** | **✅ Yes** | **⭐⭐⭐⭐⭐ BEST!** |
 
 ---
 
-## Recommended: No-Eviction Cache
+## Recommended: Clock/Second-Chance Algorithm
 
-### Why This is Optimal
+### Why Clock is Optimal for Us
 
-**Math:**
+**Advantages over no-eviction:**
+- ✅ Handles varying worker counts (4, 8, 16+ threads)
+- ✅ Adapts if pool size grows beyond cache
+- ✅ Robust to configuration changes
+
+**Advantages over LRU:**
+- ✅ Simpler: No timestamp tracking
+- ✅ Faster: O(1) amortized eviction (vs O(n) scan)
+- ✅ Less memory: One bit per entry vs counter
+
+**How it works for our workload:**
+
+**Sequential copy** (same buffer reused):
 ```
-Pool size:         ~128 I/O buffers (2× concurrency=64)
-Kernel limit:      1024 registered buffers per ring
-Space available:   1024 - 128 = 896 slots remaining
+Use buffer A → referenced = true
+Use buffer A → referenced = true (already set)
+Use buffer A → referenced = true (no overhead)
+→ Buffer stays hot, never evicted
 ```
 
-We have **plenty of space** to register all pool buffers!
+**Many files** (buffers cycle):
+```
+File 1: buffer A → register, referenced = true
+File 2: buffer B → register, referenced = true
+...
+File 128: buffer A again → referenced = true (was false, now true)
+→ Clock hand sweeps past A, sees referenced=true, gives second chance
+→ Hot buffers stay registered
+```
 
-**Access pattern**:
-- Same ~128 buffers cycle through the pool
-- Once all registered: 100% cache hit rate forever
-- No eviction ever needed
+**Migration** (task moves to new thread):
+```
+Thread A: has buffer X registered
+Task migrates to Thread B
+Thread B: doesn't have buffer X
+→ Registers it (or evicts cold buffer if full)
+→ Graceful handling
+```
 
-**Benefits:**
-- ✅ Simplest code: Just HashMap + counter
-- ✅ Best performance: No eviction overhead
-- ✅ Predictable: Once warm, always fast
-- ✅ Stable: Registered buffers don't change
-
-### Implementation
+### Implementation: Clock Algorithm
 
 ```rust
 thread_local! {
-    static REGISTERED_IO_BUFFERS: RefCell<RegisteredBufferMap> = 
-        RefCell::new(RegisteredBufferMap::new());
+    static REGISTERED_IO_BUFFERS: RefCell<ClockBufferCache> = 
+        RefCell::new(ClockBufferCache::new());
 }
 
-/// Simple map: buffer address → io_uring index
-/// No eviction - just register until we hit a reasonable limit
-struct RegisteredBufferMap {
-    /// Map buffer pointers to io_uring indices
-    map: HashMap<usize, u16>,
+/// Clock/Second-Chance cache for registered buffers
+struct ClockBufferCache {
+    /// Circular array of cache entries
+    entries: Vec<CacheEntry>,
     
-    /// Next index to allocate
-    next_index: u16,
+    /// Clock hand position (next eviction candidate)
+    hand: usize,
     
-    /// Max buffers to register (well under kernel's 1024 limit)
-    max_registered: usize,  // e.g., 256
+    /// Fast lookup: buffer_ptr → array index
+    map: HashMap<usize, usize>,
+    
+    /// io_uring ring for this thread
+    ring: *mut io_uring,
     
     /// Statistics
-    hits: usize,
-    misses: usize,
-    registrations: usize,
+    stats: CacheStats,
 }
 
-impl RegisteredBufferMap {
+struct CacheEntry {
+    buffer_ptr: usize,      // Buffer address (or 0 if empty)
+    ioring_index: u16,      // Registered index in io_uring
+    referenced: bool,       // Reference bit for second-chance
+}
+
+impl ClockBufferCache {
+    fn new(max_size: usize) -> Self {
+        Self {
+            entries: vec![CacheEntry::empty(); max_size],
+            hand: 0,
+            map: HashMap::with_capacity(max_size),
+            ring: get_current_thread_ring(),
+            stats: CacheStats::default(),
+        }
+    }
+    
     fn get_or_register(&mut self, buffer: &[u8]) -> Option<u16> {
         let ptr = buffer.as_ptr() as usize;
         
-        // Already registered?
-        if let Some(&index) = self.map.get(&ptr) {
-            self.hits += 1;
-            return Some(index);
+        // Fast path: Already registered?
+        if let Some(&slot) = self.map.get(&ptr) {
+            self.entries[slot].referenced = true;  // Mark as used
+            self.stats.hits += 1;
+            return Some(self.entries[slot].ioring_index);
         }
         
-        self.misses += 1;
+        self.stats.misses += 1;
         
-        // Can we register more?
-        if self.map.len() < self.max_registered {
-            let index = self.next_index;
+        // Find empty slot or evict using clock algorithm
+        let slot = self.find_slot_or_evict()?;
+        
+        // Register buffer with io_uring
+        let ioring_index = unsafe {
+            io_uring_register_buffer_at_index(self.ring, buffer, slot as u16)?
+        };
+        
+        // Install in cache
+        self.entries[slot] = CacheEntry {
+            buffer_ptr: ptr,
+            ioring_index,
+            referenced: true,
+        };
+        self.map.insert(ptr, slot);
+        self.stats.registrations += 1;
+        
+        Some(ioring_index)
+    }
+    
+    fn find_slot_or_evict(&mut self) -> Option<usize> {
+        // Make one full sweep of the clock
+        for _ in 0..self.entries.len() {
+            let entry = &mut self.entries[self.hand];
             
-            // Register with io_uring
-            if let Ok(()) = unsafe { register_buffer(buffer, index) } {
-                self.map.insert(ptr, index);
-                self.next_index += 1;
-                self.registrations += 1;
-                return Some(index);
+            // Empty slot? Use it!
+            if entry.buffer_ptr == 0 {
+                let slot = self.hand;
+                self.hand = (self.hand + 1) % self.entries.len();
+                return Some(slot);
             }
+            
+            // Referenced? Give second chance
+            if entry.referenced {
+                entry.referenced = false;
+                self.hand = (self.hand + 1) % self.entries.len();
+                continue;
+            }
+            
+            // Not referenced - evict this one
+            let slot = self.hand;
+            self.evict_entry(slot);
+            self.hand = (self.hand + 1) % self.entries.len();
+            self.stats.evictions += 1;
+            return Some(slot);
         }
         
-        // Cache full or registration failed - use normal I/O
-        None
+        // All entries referenced - evict at current hand anyway
+        let slot = self.hand;
+        self.evict_entry(slot);
+        self.hand = (self.hand + 1) % self.entries.len();
+        self.stats.forced_evictions += 1;
+        Some(slot)
+    }
+    
+    fn evict_entry(&mut self, slot: usize) {
+        let entry = &self.entries[slot];
+        self.map.remove(&entry.buffer_ptr);
+        unsafe {
+            io_uring_unregister_buffer_at_index(self.ring, entry.ioring_index);
+        }
     }
 }
+```
+
+**Complexity**: ~80 lines vs ~150 for LRU vs ~50 for no-eviction
+
+**Performance**:
+- Lookup: O(1) via HashMap
+- Eviction: O(1) amortized (usually finds victim quickly)
+- Reference bit update: O(1) (just set bool)
 ```
 
 ### Cache Sizing
@@ -472,38 +587,80 @@ impl RegisteredBufferCache {
 
 ---
 
-## Decision
+## Decision: Clock/Second-Chance Algorithm
 
-### Start with No-Eviction (Simplest)
+### Why Clock is Best
 
-**Phase 1 (PR #94):**
-- Simple HashMap cache
-- Register until full (256 per thread)
-- No eviction
-- Log warnings if fallbacks occur
+**Compared to no-eviction:**
+- ✅ Handles pool growth (if we increase concurrency)
+- ✅ Adapts to varying worker counts (4, 8, 16 threads)
+- ✅ Robust to configuration changes
 
-**Phase 2 (If needed):**
-- If `fallbacks` metric shows problems
-- Add simple FIFO eviction
-- Or just increase cache size
+**Compared to LRU:**
+- ✅ Much simpler (no timestamps, no scanning)
+- ✅ Same performance characteristics
+- ✅ O(1) amortized eviction
+- ✅ Approximates LRU well enough
 
-**Rationale:**
-- Pool is bounded and small
-- Cache can hold entire pool
-- No eviction needed in practice
-- Simpler code is better code
+**Compared to FIFO:**
+- ✅ Keeps hot buffers registered (FIFO doesn't)
+- ✅ Second-chance prevents premature eviction
+- ✅ Better hit rates in practice
+
+### Implementation Complexity
+
+**Clock**: ~80 lines
+```rust
+- Circular array: 20 lines
+- HashMap for lookup: 10 lines
+- Clock sweep logic: 30 lines
+- Eviction handling: 20 lines
+```
+
+**LRU**: ~150 lines
+```rust
+- Timestamp tracking: 30 lines
+- Find-minimum logic: 40 lines
+- Update tracking: 30 lines
+- Eviction: 30 lines
+- etc.
+```
+
+**No-eviction**: ~50 lines
+```rust
+- HashMap only: 30 lines
+- Simple insert: 20 lines
+- No eviction: 0 lines
+```
+
+**Verdict**: Clock is sweet spot - robust enough, not too complex
 
 ---
 
-## Final Recommendation
+## Final Recommendation for PR #94
 
-**Replace "LRU cache" with "Registration cache" or just "Buffer registration map"**
+**Use Clock/Second-Chance algorithm:**
 
-The cache doesn't need eviction logic - it's not really an LRU cache, it's just a:
-- **Registration tracking map**
-- Register buffers as seen (up to limit)
-- No eviction needed (pool fits in limit)
-- Fallback to normal I/O if somehow we overflow
+```rust
+struct ClockBufferCache {
+    entries: Vec<CacheEntry>,        // Fixed size array
+    hand: usize,                     // Clock hand
+    map: HashMap<usize, usize>,      // ptr → slot
+    max_size: usize,                 // e.g., 1024/num_workers
+}
 
-Much simpler, same or better performance!
+// On buffer use: mark referenced
+cache.get_or_register(buffer);  // Sets referenced = true
+
+// On eviction: sweep from hand
+// - Skip referenced (second chance)
+// - Evict unreferenced
+```
+
+**Benefits:**
+- Handles all worker counts (4, 8, 16+ threads)
+- Adapts if pool size changes
+- Approximates LRU well
+- Simple enough to implement correctly
+- Well-tested algorithm (used in OS page replacement)
 
