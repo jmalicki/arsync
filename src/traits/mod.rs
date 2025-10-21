@@ -10,4 +10,3 @@ pub mod metadata;
 
 // Re-export main traits for convenience
 pub use metadata::AsyncMetadata;
-

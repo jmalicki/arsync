@@ -568,4 +568,3 @@ mod tests {
         assert!(summary.contains("ino: 12345"));
     }
 }
-
