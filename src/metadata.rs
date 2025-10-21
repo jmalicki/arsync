@@ -25,6 +25,7 @@
 //! ```
 
 use crate::error::{Result, SyncError};
+use crate::traits::AsyncMetadata;
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -484,5 +485,63 @@ mod tests {
         assert!(config.should_preserve_ownership());
         assert!(config.should_preserve_timestamps());
         assert!(config.should_preserve_links());
+    }
+}
+
+// ============================================================================
+// Trait Implementations
+// ============================================================================
+
+/// Implementation of AsyncMetadata for FileMetadata
+///
+/// This enables FileMetadata to be used with the trait-based filesystem abstraction.
+/// All methods delegate to existing FileMetadata methods.
+impl AsyncMetadata for compio_fs_extended::FileMetadata {
+    fn size(&self) -> u64 {
+        self.size
+    }
+
+    fn is_file(&self) -> bool {
+        compio_fs_extended::FileMetadata::is_file(self)
+    }
+
+    fn is_dir(&self) -> bool {
+        compio_fs_extended::FileMetadata::is_dir(self)
+    }
+
+    fn is_symlink(&self) -> bool {
+        compio_fs_extended::FileMetadata::is_symlink(self)
+    }
+
+    fn permissions(&self) -> u32 {
+        compio_fs_extended::FileMetadata::permissions(self)
+    }
+
+    fn uid(&self) -> u32 {
+        self.uid
+    }
+
+    fn gid(&self) -> u32 {
+        self.gid
+    }
+
+    fn modified(&self) -> SystemTime {
+        self.modified
+    }
+
+    fn accessed(&self) -> SystemTime {
+        self.accessed
+    }
+
+    fn device_id(&self) -> u64 {
+        self.dev
+    }
+
+    fn inode_number(&self) -> u64 {
+        self.ino
+    }
+
+    fn link_count(&self) -> u64 {
+        self.nlink
     }
 }
