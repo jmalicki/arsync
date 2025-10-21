@@ -17,6 +17,7 @@ mod common;
 /// **Requires Docker** - Run with: `cargo nextest run -E 'test(/docker/)'`
 #[tokio::test]
 #[allow(clippy::panic)] // Test code can panic
+#[allow(clippy::too_many_lines)] // Integration test with comprehensive checks
 async fn test_docker_symlink_ownership_with_root_container() {
     // Skip if Docker isn't available
     if !common::container_helpers::can_use_containers() {
