@@ -22,19 +22,53 @@ pub async fn create_privileged_rust_container(
 
     let container = image.start().await?;
 
-    // Give container a moment to fully start
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    // Wait for container to be ready (poll with bounded timeout)
+    let container_id = container.id();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    loop {
+        let ready = std::process::Command::new("docker")
+            .args(["exec", container_id, "true"])
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+
+        if ready {
+            break;
+        }
+
+        if std::time::Instant::now() >= deadline {
+            return Err("Container not ready within 15s".into());
+        }
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    }
 
     Ok(container)
 }
 
-/// Helper to check if Docker is available
+/// Helper to check if Docker is available and supports privileged containers
+///
+/// This checks both that Docker is installed and that privileged containers
+/// can be run (fails early in rootless Docker environments).
 #[allow(dead_code)]
 pub fn can_use_containers() -> bool {
-    std::process::Command::new("docker")
+    // First check if docker is installed
+    let docker_available = std::process::Command::new("docker")
         .arg("version")
         .output()
         .map(|output| output.status.success())
+        .unwrap_or(false);
+
+    if !docker_available {
+        return false;
+    }
+
+    // Quick check: rootless Docker often rejects --privileged
+    // Use a minimal busybox test to fail fast
+    std::process::Command::new("docker")
+        .args(["run", "--rm", "--privileged", "busybox", "true"])
+        .output()
+        .map(|o| o.status.success())
         .unwrap_or(false)
 }
 

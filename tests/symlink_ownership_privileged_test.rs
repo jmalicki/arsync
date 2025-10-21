@@ -13,10 +13,11 @@ mod common;
 ///
 /// This test runs code inside a privileged Docker container to verify that
 /// lchown syscall works correctly for symlink ownership changes.
+///
+/// **Requires Docker** - Run with: `cargo nextest run -E 'test(/docker/)'`
 #[tokio::test]
-#[ignore] // Only run with --ignored flag (requires Docker)
 #[allow(clippy::panic)] // Test code can panic
-async fn test_symlink_ownership_with_root_container() {
+async fn test_docker_symlink_ownership_with_root_container() {
     // Skip if Docker isn't available
     if !common::container_helpers::can_use_containers() {
         eprintln!("SKIPPED: Docker not available");
@@ -36,7 +37,9 @@ async fn test_symlink_ownership_with_root_container() {
     println!("Creating privileged container...");
     let container = common::container_helpers::create_privileged_rust_container()
         .await
-        .unwrap_or_else(|e| panic!("Failed to create container: {}", e));
+        .unwrap_or_else(|e| {
+            panic!("Failed to create container: {}", e);
+        });
     let container_id = container.id();
     println!("✓ Container created: {}", container_id);
 
@@ -66,7 +69,8 @@ async fn test_symlink_ownership_with_root_container() {
 
     if !test_run.status.success() {
         panic!(
-            "Binary won't run: {}",
+            "Binary won't run.\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&test_run.stdout),
             String::from_utf8_lossy(&test_run.stderr)
         );
     }
@@ -127,9 +131,14 @@ if [ "$DST_LINK_GID" != "1001" ]; then
     exit 1
 fi
 
-# Verify target was NOT affected
+# Verify target was NOT affected (should remain root-owned)
 DST_TARGET_UID=$(stat -c '%u' dst/target.txt)
 echo "Target ownership: uid=$DST_TARGET_UID (should be 0)"
+
+if [ "$DST_TARGET_UID" != "0" ]; then
+    echo "ERROR: Target ownership changed! Expected uid=0, got $DST_TARGET_UID"
+    exit 1
+fi
 
 echo "✓ ARSYNC successfully preserved symlink ownership (uid=1000, gid=1001)"
 echo "✓ Target ownership correct (uid=$DST_TARGET_UID)"

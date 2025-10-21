@@ -33,12 +33,13 @@ Tests are organized by naming convention and can be filtered using expressions:
 
 | Category | Filter Expression | Description |
 |----------|------------------|-------------|
-| **Fast unit tests** | `not(test(/integration\|performance\|rsync/))` | Quick tests, run by default |
+| **Fast unit tests** | `not(test(/integration\|performance\|rsync\|docker/))` | Quick tests, run by default |
 | **Integration tests** | `test(/integration/)` | File operation integration tests |
 | **Performance tests** | `test(/performance/)` | Stress and performance tests (slow) |
 | **Metadata tests** | `test(/metadata/)` | Metadata preservation tests |
 | **XAttr tests** | `test(/xattr/)` | Extended attribute tests |
 | **Rsync tests** | `test(/rsync/)` | Rsync protocol compatibility tests |
+| **Docker tests** | `test(/docker/)` | Privileged tests requiring Docker (containers) |
 
 ## Running Tests
 
@@ -64,6 +65,10 @@ cargo nextest run -E 'test(/xattr/)'
 
 # Rsync tests
 cargo nextest run -E 'test(/rsync/)'
+
+# Docker tests (requires Docker daemon)
+cargo nextest run -E 'test(/docker/)'
+# or: cargo make test-docker
 ```
 
 ### Combine filters

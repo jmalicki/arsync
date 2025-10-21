@@ -11,3 +11,9 @@ echo "Running syscall analysis..."
 description = "Build arsync in release mode"
 command = "cargo"
 args = ["build", "--release"]
+
+[tasks.test-docker]
+description = "Run Docker-based privileged tests (requires Docker)"
+dependencies = ["build-release"]
+command = "cargo"
+args = ["nextest", "run", "-E", "test(/docker/)"]
