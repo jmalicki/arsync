@@ -15,6 +15,7 @@ mod common;
 /// lchown syscall works correctly for symlink ownership changes.
 #[tokio::test]
 #[ignore] // Only run with --ignored flag (requires Docker)
+#[allow(clippy::panic)] // Test code can panic
 async fn test_symlink_ownership_with_root_container() {
     // Skip if Docker isn't available
     if !common::container_helpers::can_use_containers() {
@@ -33,7 +34,9 @@ async fn test_symlink_ownership_with_root_container() {
     }
 
     println!("Creating privileged container...");
-    let container = common::container_helpers::create_privileged_rust_container().await;
+    let container = common::container_helpers::create_privileged_rust_container()
+        .await
+        .unwrap_or_else(|e| panic!("Failed to create container: {}", e));
     let container_id = container.id();
     println!("✓ Container created: {}", container_id);
 
