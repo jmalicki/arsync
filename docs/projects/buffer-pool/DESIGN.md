@@ -710,23 +710,48 @@ Metadata pool:  256 buffers × 4KB   = 1MB
 **Explicitly NOT doing:**
 - ❌ io_uring buffer registration (incompatible with task migration)
 
-### Phase 2: Measure and Decide (Week 2)
+### Phase 2: LRU Cache for Registered I/O Buffers (Week 2)
 
-**Investigation:**
-1. Profile compio task migration frequency
-2. Measure actual thread affinity in practice
-3. Research compio thread-pinning possibilities
-4. Benchmark global pool performance
+**Goal**: Zero-copy ONLY for large I/O buffers (where it matters)
 
-**Decision point:**
-- If tasks rarely migrate: Consider thread-local pools + registration
-- If tasks migrate often: Keep global pool, skip registration
-- Document findings and trade-offs
+**Strategy**: Thread-local LRU cache of registered buffer indices
+
+```rust
+thread_local! {
+    static REGISTERED_IO_CACHE: RefCell<LruCache<usize, u16>> = ...;
+    //                                           ↑        ↑
+    //                                      buffer ptr   io_uring index
+}
+```
+
+**How it works:**
+1. Acquire buffer from global pool (works on any thread)
+2. On current thread, check if buffer is registered in LRU cache
+3. If HIT: Use io_uring_prep_read_fixed (zero-copy!)
+4. If MISS: Use normal read_at (still fast, just not zero-copy)
+5. LRU ensures most-used buffers stay registered
+
+**What we register:**
+- ✅ I/O buffers (64KB+) - Zero-copy matters here
+- ❌ Metadata buffers (4KB) - Too small, copy overhead negligible
+
+**Migration handling:**
+- Task migrates to different thread
+- New thread's cache doesn't have buffer
+- Automatic fallback to normal I/O
+- No errors, just slightly slower
+
+**Deliverables:**
+1. ✅ Thread-local LRU cache implementation
+2. ✅ Register ONLY I/O buffers (skip metadata)
+3. ✅ Automatic fallback on cache miss/migration
+4. ✅ Benchmarks showing zero-copy benefit
 
 **Success metrics:**
-- Clear data on task migration patterns
-- Informed decision on registration feasibility
-- Documented rationale for approach chosen
+- High cache hit rate (>80%) for sequential copy
+- Additional 10-20% throughput improvement
+- CPU reduction measurable (5-10%)
+- Works correctly with task migration
 
 ---
 
@@ -1113,14 +1138,14 @@ Adding more size classes adds complexity without benefit.
 - ✅ All tests passing
 - ✅ Works with any user-configured buffer size
 
-### Phase 2 (Investigation):
-- ✅ Documented task migration frequency data
-- ✅ Clear decision on registration feasibility
-- ✅ If registration viable: prototype + benchmark
-- ✅ If not viable: document why and move on
+### Phase 2 (LRU Registered Buffer Cache):
+- ✅ Thread-local LRU cache for I/O buffers only
+- ✅ Graceful fallback on cache miss (task migration)
+- ✅ Additional 10-20% improvement from zero-copy
+- ✅ Metadata buffers NOT registered (too small to matter)
 
-**Note**: io_uring registration may not be compatible with compio's work-stealing.  
-We get the major benefit (25-40%) from allocation reuse alone.
+**Key insight**: Zero-copy only valuable for large buffers (64KB+).  
+Small metadata operations (4KB) don't benefit from zero-copy - kernel copy overhead is negligible.
 
 ---
 
