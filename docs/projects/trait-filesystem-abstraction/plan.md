@@ -11,8 +11,9 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 1. **Small PRs** - each does one thing
 2. **Early integration** - validate as we go
 3. **Each PR compiles and passes tests**
-4. **Stacked** - each builds on previous
-5. **Can merge independently** - deliver value early
+4. **Create PR immediately** - push branch and create PR after completing tasks
+5. **Stacked** - each builds on previous
+6. **Can merge independently** - deliver value early
 
 ---
 
@@ -34,10 +35,12 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 - [x] Create implementation-requirements.md - Security/performance requirements
 
 **Next**: 
-- [ ] Push branch to origin
-- [ ] Create PR #0 for review
+- [x] Push branch to origin
+- [x] Create PR #0: `gh pr create --base main --title "design: Add trait-based filesystem abstraction design" --draft`
 - [ ] Get design reviewed and approved
 - [ ] Merge to main
+
+**PR**: https://github.com/jmalicki/arsync/pull/105 ✅
 
 **Success**: [ ] Merged to main
 
