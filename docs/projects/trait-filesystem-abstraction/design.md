@@ -87,6 +87,42 @@ AsyncFileSystem (depends on: AsyncFile, AsyncDirectory, AsyncMetadata)
 4. **Minimal Backend Requirements**: Only add backend implementations when needed
 5. **Parallel Development**: Traits can be added without full backend implementations
 
+## Execution Strategies
+
+### Local Backend: Streaming (Zero Accumulation)
+```rust
+async fn sync_directory(src, dst) {
+    // Walk and copy immediately - no accumulation!
+    for entry in walk_tree(src).await {
+        if needs_copy(&entry, dst).await? {
+            copy_file(&entry, dst).await?;  // Immediate!
+        }
+    }
+}
+```
+
+### Protocol Backend: Batching (Required by Protocol)
+```rust
+async fn sync_directory(src, dst) {
+    // Accumulate file list (protocol requirement)
+    let files = walk_tree(src).await?.collect::<Vec<_>>();
+    
+    // Send entire list via protocol
+    protocol.send_file_list(&files).await?;
+    
+    // Transfer files
+    protocol.transfer_files(&files).await?;
+}
+```
+
+### Shared Components (Used by Both)
+- `walk_tree()` - Tree walking iterator
+- `needs_sync()` - Metadata comparison
+- `preserve_metadata()` - Metadata preservation
+- Progress reporting, error handling, etc.
+
+**See [streaming-vs-batch.md](./streaming-vs-batch.md) for detailed analysis.**
+
 ## Incremental Implementation Plan
 
 ### Phase 1: AsyncMetadata (Foundation)
