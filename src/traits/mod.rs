@@ -6,7 +6,9 @@
 //!
 //! See `docs/projects/trait-filesystem-abstraction/` for design documentation.
 
+pub mod file;
 pub mod metadata;
 
 // Re-export main traits for convenience
+pub use file::AsyncFile;
 pub use metadata::AsyncMetadata;
