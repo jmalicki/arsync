@@ -34,8 +34,34 @@ use crate::io_uring::FileOperations;
 use std::path::Path;
 use tracing::{debug, info};
 
+/// Copy an entire directory tree from source to destination
+///
+/// Recursively copies all files, directories, and symlinks from `src` to `dst`,
+/// preserving metadata according to the configuration in `args`. Uses async
+/// `io_uring` operations for optimal performance and TOCTOU-safe DirectoryFd-based
+/// operations for security.
+///
+/// # Arguments
+///
+/// * `src` - Source directory path to copy from
+/// * `dst` - Destination directory path to copy to
+/// * `file_ops` - File operations handler containing copy configuration
+/// * `_copy_method` - Copy method (e.g., auto, `copy_file_range`, splice)
+/// * `args` - Command-line arguments containing metadata and concurrency config
+///
+/// # Returns
+///
+/// Returns `DirectoryStats` containing operation counts (files copied, directories
+/// created, bytes transferred, symlinks processed, hardlinks detected).
+///
+/// # Errors
+///
+/// Returns error if:
+/// - Source directory doesn't exist or isn't accessible
+/// - Destination directory can't be created
+/// - File/directory operations fail during traversal
+/// - Metadata preservation fails
 #[allow(clippy::future_not_send)]
-#[allow(clippy::missing_errors_doc)] // Documented in function doc comment
 #[allow(clippy::used_underscore_binding)]
 pub async fn copy_directory(
     src: &Path,

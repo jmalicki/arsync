@@ -539,7 +539,8 @@ pub(super) async fn process_file(
         );
 
         // Copy file with DirectoryFd (TOCTOU-safe, compile-time enforced)
-        copy_file_internal(
+        // CRITICAL: Capture result but don't propagate yet - must signal linkers first!
+        let copy_result = copy_file_internal(
             &src.path,
             &dst.path,
             &ctx.metadata_config,
@@ -551,13 +552,17 @@ pub(super) async fn process_file(
             &dst.parent_dir,
             dst.filename.as_ref(),
         )
-        .await?;
+        .await;
+
+        // Signal waiting linkers BEFORE propagating errors (prevents deadlock!)
+        // Linkers must wake up regardless of copy success/failure
+        ctx.hardlink_tracker.signal_copy_complete(inode_number);
+
+        // Now propagate the copy result (after linkers are notified)
+        copy_result?;
 
         ctx.stats.increment_files_copied();
         ctx.stats.increment_bytes_copied(metadata.len());
-
-        // Signal waiting linkers (they wake up whether we succeeded or failed)
-        ctx.hardlink_tracker.signal_copy_complete(inode_number);
         debug!("Copied file and signaled linkers: {}", dst.path.display());
     } else if link_count > 1 {
         // We're a linker - waiting is already done inside register_file()

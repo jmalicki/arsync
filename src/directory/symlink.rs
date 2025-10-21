@@ -152,8 +152,8 @@ pub(super) async fn copy_symlink(
     // Preserve symlink metadata using DirectoryFd operations with AT_SYMLINK_NOFOLLOW
     // These operate on the symlink itself, not its target
 
-    // Get source symlink metadata
-    let src_metadata = std::fs::symlink_metadata(src).map_err(|e| {
+    // Get source symlink metadata (async to avoid blocking)
+    let src_metadata = compio::fs::symlink_metadata(src).await.map_err(|e| {
         SyncError::FileSystem(format!(
             "Failed to get symlink metadata for {}: {}",
             src.display(),
