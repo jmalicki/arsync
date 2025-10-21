@@ -87,17 +87,22 @@ Each trait can be implemented for different backends:
 
 ## Key Design Decisions
 
-1. **Associated Types** over generic parameters for cleaner API
-2. **Synchronous methods** for metadata (already fetched)
-3. **Vec<Entry>** instead of iterators (async iterators unstable)
-4. **Buffer ownership** pattern matching compio (zero-copy)
-5. **No &mut self** for operations (compio uses internal mutability)
+1. **Two Complementary Abstractions**: AsyncFileSystem for local (random access), SyncProtocol for remote (batch)
+2. **No Forced Batching**: Local streams (walk→copy), protocol batches (accumulate→send)
+3. **Shared Components**: Tree walking, metadata comparison, preservation used by both
+4. **DirectoryFd Everywhere**: Both backends use secure *at syscalls via DirectoryFd
+5. **Protocol Reuses Local**: rsync uses local filesystem abstractions, doesn't duplicate I/O
+6. **Associated Types** over generic parameters for cleaner API
+7. **Buffer ownership** pattern matching compio (zero-copy)
 
 ## Files
 
-- `design.md` - Full design document (~200 lines)
-- `plan.md` - Implementation plan with PR breakdown (~500 lines)
-- `README.md` - This file
+- **`README.md`** - This file (overview and quick links)
+- **`design.md`** - Full design document with architecture and rationale
+- **`plan.md`** - Step-by-step implementation plan with 8 sequential PRs
+- **`rsync-protocol-analysis.md`** - Why protocol ≠ filesystem, two abstractions needed
+- **`streaming-vs-batch.md`** - How to support both patterns without forcing either
+- **`layer-integration.md`** - How rsync uses local filesystem abstractions (DirectoryFd, etc.)
 
 ## Status
 
