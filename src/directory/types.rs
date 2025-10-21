@@ -86,7 +86,7 @@ pub struct DirectoryStats {
 ///
 /// Returns error if metadata cannot be retrieved.
 #[allow(clippy::future_not_send)]
-pub(super) async fn metadata_from_path(path: &Path) -> Result<compio_fs_extended::FileMetadata> {
+pub async fn metadata_from_path(path: &Path) -> Result<compio_fs_extended::FileMetadata> {
     use std::os::unix::fs::MetadataExt;
 
     let compio_metadata = compio::fs::symlink_metadata(path).await.map_err(|e| {
