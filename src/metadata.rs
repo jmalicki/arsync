@@ -347,7 +347,8 @@ pub async fn get_precise_timestamps(path: &Path) -> Result<(SystemTime, SystemTi
     let path_cstr = CString::new(path.as_os_str().as_bytes())
         .map_err(|e| SyncError::FileSystem(format!("Invalid path for timestamp reading: {e}")))?;
 
-    // Prefer statx when available
+    // Prefer statx when available (Linux only)
+    #[cfg(target_os = "linux")]
     let statx_result: Result<(SystemTime, SystemTime)> = compio::runtime::spawn_blocking({
         let path_cstr = path_cstr.clone();
         move || {
@@ -386,37 +387,43 @@ pub async fn get_precise_timestamps(path: &Path) -> Result<(SystemTime, SystemTi
     .await
     .map_err(|e| SyncError::FileSystem(format!("spawn_blocking failed: {e:?}")))?;
 
+    #[cfg(target_os = "linux")]
     match statx_result {
-        Ok(r) => Ok(r),
+        Ok((atime, mtime)) => {
+            return Ok((atime, mtime));
+        }
         Err(_) => {
-            // Fallback to stat
-            compio::runtime::spawn_blocking(move || {
-                let mut stat_buf: libc::stat = unsafe { std::mem::zeroed() };
-                let result = unsafe { libc::stat(path_cstr.as_ptr(), &raw mut stat_buf) };
-
-                if result == -1 {
-                    let errno = std::io::Error::last_os_error();
-                    Err(SyncError::FileSystem(format!(
-                        "stat failed: {errno} (errno: {})",
-                        errno.raw_os_error().unwrap_or(-1)
-                    )))
-                } else {
-                    // Convert timespec to SystemTime
-                    let accessed_nanos: u32 = u32::try_from(stat_buf.st_atime_nsec).unwrap_or(0);
-                    let modified_nanos: u32 = u32::try_from(stat_buf.st_mtime_nsec).unwrap_or(0);
-                    #[allow(clippy::cast_sign_loss)]
-                    let accessed = SystemTime::UNIX_EPOCH
-                        + std::time::Duration::new(stat_buf.st_atime as u64, accessed_nanos);
-                    #[allow(clippy::cast_sign_loss)]
-                    let modified = SystemTime::UNIX_EPOCH
-                        + std::time::Duration::new(stat_buf.st_mtime as u64, modified_nanos);
-                    Ok((accessed, modified))
-                }
-            })
-            .await
-            .map_err(|e| SyncError::FileSystem(format!("spawn_blocking failed: {e:?}")))?
+            // Fallthrough to stat fallback
         }
     }
+    
+    // macOS or Linux fallback: use stat
+    compio::runtime::spawn_blocking(move || {
+        let mut stat_buf: libc::stat = unsafe { std::mem::zeroed() };
+        let result = unsafe { libc::stat(path_cstr.as_ptr(), &raw mut stat_buf) };
+
+        if result == -1 {
+            let errno = std::io::Error::last_os_error();
+            Err(SyncError::FileSystem(format!(
+                "stat failed: {errno} (errno: {})",
+                errno.raw_os_error().unwrap_or(-1)
+            )))
+        } else {
+            // Convert timespec to SystemTime
+            let accessed_nanos: u32 = u32::try_from(stat_buf.st_atime_nsec).unwrap_or(0);
+            let modified_nanos: u32 = u32::try_from(stat_buf.st_mtime_nsec).unwrap_or(0);
+            #[allow(clippy::cast_sign_loss)]
+            let accessed = SystemTime::UNIX_EPOCH
+                + std::time::Duration::new(stat_buf.st_atime as u64, accessed_nanos);
+            #[allow(clippy::cast_sign_loss)]
+            let modified = SystemTime::UNIX_EPOCH
+                + std::time::Duration::new(stat_buf.st_mtime as u64, modified_nanos);
+            Ok((accessed, modified))
+        }
+    })
+    .await
+    .map_err(|e| SyncError::FileSystem(format!("spawn_blocking failed: {e:?}")))
+    .and_then(|r| r)
 }
 
 #[cfg(test)]

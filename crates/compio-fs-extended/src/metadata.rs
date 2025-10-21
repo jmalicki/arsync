@@ -63,12 +63,17 @@ use std::pin::Pin;
 #[cfg(unix)]
 use std::time::SystemTime;
 
-/// Full file metadata from io_uring statx operation
+/// Full file metadata with platform-specific extensions
 ///
-/// This struct contains all file metadata fields from `statx(2)` syscall,
-/// providing a complete view of file attributes with nanosecond-precision timestamps.
+/// Contains standard Unix metadata fields available on all platforms,
+/// plus platform-specific extensions.
+///
+/// **Platform-specific fields:**
+/// - **Linux:** `attributes`, `attributes_mask` (from statx)
+/// - **macOS:** `flags`, `generation` (from stat)
 #[derive(Debug, Clone)]
 pub struct FileMetadata {
+    // Common Unix metadata
     /// File size in bytes
     pub size: u64,
     /// File mode (type + permissions)
@@ -89,25 +94,40 @@ pub struct FileMetadata {
     pub modified: SystemTime,
     /// Creation time (birth time) if available
     pub created: Option<SystemTime>,
+    
+    // Platform-specific metadata
+    /// Linux file attributes (immutable, append-only, etc.)
+    #[cfg(target_os = "linux")]
+    pub attributes: Option<u64>,
+    /// Mask indicating which Linux attributes are valid
+    #[cfg(target_os = "linux")]
+    pub attributes_mask: Option<u64>,
+    
+    /// macOS/BSD file flags (UF_IMMUTABLE, UF_APPEND, etc.)
+    #[cfg(target_os = "macos")]
+    pub flags: Option<u32>,
+    /// File generation number (macOS/BSD)
+    #[cfg(target_os = "macos")]
+    pub generation: Option<u32>,
 }
 
 impl FileMetadata {
     /// Check if this is a regular file
     #[must_use]
     pub fn is_file(&self) -> bool {
-        (self.mode & libc::S_IFMT) == libc::S_IFREG
+        (self.mode & libc::S_IFMT as u32) == libc::S_IFREG as u32
     }
 
     /// Check if this is a directory
     #[must_use]
     pub fn is_dir(&self) -> bool {
-        (self.mode & libc::S_IFMT) == libc::S_IFDIR
+        (self.mode & libc::S_IFMT as u32) == libc::S_IFDIR as u32
     }
 
     /// Check if this is a symlink
     #[must_use]
     pub fn is_symlink(&self) -> bool {
-        (self.mode & libc::S_IFMT) == libc::S_IFLNK
+        (self.mode & libc::S_IFMT as u32) == libc::S_IFLNK as u32
     }
 
     /// Get file permissions (mode & 0o7777)
@@ -329,6 +349,21 @@ pub(crate) async fn statx_impl(
                 None
             };
 
+            // Platform-specific fields
+            #[cfg(target_os = "linux")]
+            let attributes = if statx_buf.stx_attributes_mask != 0 {
+                Some(statx_buf.stx_attributes)
+            } else {
+                None
+            };
+            
+            #[cfg(target_os = "linux")]
+            let attributes_mask = if statx_buf.stx_attributes_mask != 0 {
+                Some(statx_buf.stx_attributes_mask)
+            } else {
+                None
+            };
+
             Ok(FileMetadata {
                 size,
                 mode,
@@ -340,9 +375,89 @@ pub(crate) async fn statx_impl(
                 accessed,
                 modified,
                 created,
+                #[cfg(target_os = "linux")]
+                attributes,
+                #[cfg(target_os = "linux")]
+                attributes_mask,
             })
         }
         Err(e) => Err(metadata_error(&format!("statx failed: {}", e))),
+    }
+}
+
+/// Get file metadata using fstatat (macOS)
+///
+/// Uses `fstatat(2)` with directory FD for TOCTOU-safe metadata retrieval.
+/// This is the macOS equivalent of Linux `statx_impl`.
+#[cfg(target_os = "macos")]
+pub(crate) async fn statx_impl(
+    dir: &DirectoryFd,
+    pathname: &std::ffi::OsStr,
+) -> Result<FileMetadata> {
+    use std::os::unix::ffi::OsStrExt;
+    
+    let dir_fd = dir.as_raw_fd();
+    let pathname_cstring = std::ffi::CString::new(pathname.as_bytes())
+        .map_err(|e| metadata_error(&format!("Invalid pathname: {}", e)))?;
+    
+    compio::runtime::spawn_blocking(move || {
+        use nix::fcntl::AtFlags;
+        use nix::sys::stat::fstatat;
+        
+        let stat_result = fstatat(
+            Some(dir_fd),
+            pathname_cstring.as_c_str(),
+            AtFlags::AT_SYMLINK_NOFOLLOW,
+        ).map_err(|e| metadata_error(&format!("fstatat failed: {}", e)))?;
+        
+        // Extract metadata fields
+        let size = stat_result.st_size as u64;
+        let mode = stat_result.st_mode as u32;
+        let uid = stat_result.st_uid;
+        let gid = stat_result.st_gid;
+        let nlink = stat_result.st_nlink as u64;
+        let ino = stat_result.st_ino;
+        let dev = stat_result.st_dev as u64;
+        
+        // Convert timestamps (macOS has nanosecond precision)
+        let accessed = unix_ts_to_system_time(stat_result.st_atime, stat_result.st_atime_nsec);
+        let modified = unix_ts_to_system_time(stat_result.st_mtime, stat_result.st_mtime_nsec);
+        let created = Some(unix_ts_to_system_time(stat_result.st_birthtime, stat_result.st_birthtime_nsec));
+        
+        // macOS-specific fields
+        let flags = Some(stat_result.st_flags as u32);
+        let generation = Some(stat_result.st_gen as u32);
+        
+        Ok(FileMetadata {
+            size,
+            mode,
+            uid,
+            gid,
+            nlink,
+            ino,
+            dev,
+            accessed,
+            modified,
+            created,
+            flags,
+            generation,
+        })
+    })
+    .await
+    .map_err(ExtendedError::SpawnJoin)?
+}
+
+/// Convert Unix timestamp to SystemTime (macOS)
+#[cfg(target_os = "macos")]
+fn unix_ts_to_system_time(secs: i64, nsec: i64) -> SystemTime {
+    let nsec = nsec as u32;
+    if secs >= 0 {
+        SystemTime::UNIX_EPOCH + std::time::Duration::new(secs as u64, nsec)
+    } else {
+        let abs_secs = (-secs) as u64;
+        SystemTime::UNIX_EPOCH
+            .checked_sub(std::time::Duration::new(abs_secs, nsec))
+            .unwrap_or(SystemTime::UNIX_EPOCH)
     }
 }
 
