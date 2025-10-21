@@ -59,6 +59,10 @@ pub mod protocol;
 pub mod stats;
 pub mod sync;
 
+// GUI module (only available with gui feature)
+#[cfg(feature = "gui")]
+pub mod gui;
+
 // Re-export commonly used types
 pub use error::{Result, SyncError};
 pub use hardlink_tracker::FilesystemTracker;
