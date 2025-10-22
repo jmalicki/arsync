@@ -5,8 +5,8 @@
 //!
 //! See `docs/projects/trait-filesystem-abstraction/design.md` for architecture.
 
-use crate::error::Result;
 use super::AsyncMetadata;
+use crate::error::Result;
 
 /// Unified file interface for both local and remote operations
 ///
@@ -162,19 +162,20 @@ pub trait AsyncFile: Send + Sync + 'static {
     async fn read_all(&self) -> Result<Vec<u8>> {
         let metadata = self.metadata().await?;
         let size = metadata.size();
-        
+
         // Prevent accidentally loading huge files into memory
         const MAX_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
         if size > MAX_SIZE {
-            return Err(crate::error::SyncError::FileSystem(
-                format!("File too large for read_all: {} bytes (max {} bytes)", size, MAX_SIZE)
-            ));
+            return Err(crate::error::SyncError::FileSystem(format!(
+                "File too large for read_all: {} bytes (max {} bytes)",
+                size, MAX_SIZE
+            )));
         }
-        
+
         if size == 0 {
             return Ok(Vec::new());
         }
-        
+
         let buffer = vec![0u8; size as usize];
         let (bytes_read, mut buffer) = self.read_at(buffer, 0).await?;
         buffer.truncate(bytes_read);
@@ -197,21 +198,21 @@ pub trait AsyncFile: Send + Sync + 'static {
     async fn write_all_at(&self, data: &[u8], offset: u64) -> Result<()> {
         let mut buffer = data.to_vec();
         let mut current_offset = offset;
-        
+
         while !buffer.is_empty() {
             let (bytes_written, returned_buffer) = self.write_at(buffer, current_offset).await?;
-            
+
             if bytes_written == 0 {
                 return Err(crate::error::SyncError::FileSystem(
-                    "Failed to write data: no bytes written".to_string()
+                    "Failed to write data: no bytes written".to_string(),
                 ));
             }
-            
+
             buffer = returned_buffer;
             buffer.drain(..bytes_written);
             current_offset += bytes_written as u64;
         }
-        
+
         Ok(())
     }
 }
@@ -232,18 +233,42 @@ mod tests {
     }
 
     impl AsyncMetadata for MockMetadata {
-        fn size(&self) -> u64 { self.size }
-        fn is_file(&self) -> bool { true }
-        fn is_dir(&self) -> bool { false }
-        fn is_symlink(&self) -> bool { false }
-        fn permissions(&self) -> u32 { 0o644 }
-        fn uid(&self) -> u32 { 1000 }
-        fn gid(&self) -> u32 { 1000 }
-        fn modified(&self) -> SystemTime { SystemTime::now() }
-        fn accessed(&self) -> SystemTime { SystemTime::now() }
-        fn device_id(&self) -> u64 { 1 }
-        fn inode_number(&self) -> u64 { 12345 }
-        fn link_count(&self) -> u64 { 1 }
+        fn size(&self) -> u64 {
+            self.size
+        }
+        fn is_file(&self) -> bool {
+            true
+        }
+        fn is_dir(&self) -> bool {
+            false
+        }
+        fn is_symlink(&self) -> bool {
+            false
+        }
+        fn permissions(&self) -> u32 {
+            0o644
+        }
+        fn uid(&self) -> u32 {
+            1000
+        }
+        fn gid(&self) -> u32 {
+            1000
+        }
+        fn modified(&self) -> SystemTime {
+            SystemTime::now()
+        }
+        fn accessed(&self) -> SystemTime {
+            SystemTime::now()
+        }
+        fn device_id(&self) -> u64 {
+            1
+        }
+        fn inode_number(&self) -> u64 {
+            12345
+        }
+        fn link_count(&self) -> u64 {
+            1
+        }
     }
 
     impl AsyncFile for MockFile {
@@ -252,11 +277,11 @@ mod tests {
         async fn read_at(&self, mut buf: Vec<u8>, offset: u64) -> Result<(usize, Vec<u8>)> {
             let start = offset as usize;
             let end = std::cmp::min(start + buf.len(), self.content.len());
-            
+
             if start >= self.content.len() {
                 return Ok((0, buf));
             }
-            
+
             let to_copy = end - start;
             buf[..to_copy].copy_from_slice(&self.content[start..end]);
             Ok((to_copy, buf))
@@ -271,7 +296,9 @@ mod tests {
         }
 
         async fn metadata(&self) -> Result<Self::Metadata> {
-            Ok(MockMetadata { size: self.content.len() as u64 })
+            Ok(MockMetadata {
+                size: self.content.len() as u64,
+            })
         }
 
         async fn copy_file_range(
@@ -331,4 +358,3 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("too large"));
     }
 }
-
