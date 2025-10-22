@@ -149,6 +149,7 @@ pub struct DirectoryEntryWrapper {
     path: PathBuf,
 }
 
+#[allow(dead_code)] // Methods used in integration tests and later PRs
 impl DirectoryEntryWrapper {
     /// Create a new wrapper around a directory entry
     ///
