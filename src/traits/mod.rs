@@ -10,5 +10,6 @@ pub mod file;
 pub mod metadata;
 
 // Re-export main traits for convenience
+#[allow(unused_imports)] // Will be used in PR #4
 pub use file::AsyncFile;
 pub use metadata::AsyncMetadata;

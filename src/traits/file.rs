@@ -225,11 +225,13 @@ mod tests {
     use std::time::SystemTime;
 
     // Mock implementations for testing provided methods
+    #[allow(dead_code)] // Test fixture
     struct MockFile {
         content: Vec<u8>,
         metadata: MockMetadata,
     }
 
+    #[allow(dead_code)] // Test fixture
     struct MockMetadata {
         size: u64,
     }
