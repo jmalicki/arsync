@@ -156,10 +156,15 @@ pub async fn fallocate(file: &File, offset: u64, len: u64, _mode: u32) -> Result
     // NOTE: Rust's libc crate doesn't expose fstore struct, so we define it manually
     #[repr(C)]
     struct fstore_t {
+        /// Flags for allocation (e.g., F_ALLOCATECONTIG)
         fst_flags: u32,
+        /// Position mode (e.g., F_PEOFPOSMODE)
         fst_posmode: libc::c_int,
+        /// Offset from position mode
         fst_offset: libc::off_t,
+        /// Length to allocate
         fst_length: libc::off_t,
+        /// Bytes actually allocated (output)
         fst_bytesalloc: libc::off_t,
     }
 
