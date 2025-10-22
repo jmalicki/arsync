@@ -194,11 +194,14 @@ pub trait AsyncFile: Send + Sync + 'static {
     /// - I/O error occurs
     /// - write_at() returns 0 (indicates write failure)
     async fn write_all_at(&mut self, data: &[u8], offset: u64) -> Result<()> {
-        let mut buffer = data.to_vec();
+        let mut written = 0;
         let mut current_offset = offset;
 
-        while !buffer.is_empty() {
-            let (bytes_written, returned_buffer) = self.write_at(buffer, current_offset).await?;
+        while written < data.len() {
+            // Only copy the remaining unwritten slice
+            let remaining = &data[written..];
+            let buffer = remaining.to_vec();
+            let (bytes_written, _returned_buffer) = self.write_at(buffer, current_offset).await?;
 
             if bytes_written == 0 {
                 return Err(crate::error::SyncError::FileSystem(
@@ -206,8 +209,7 @@ pub trait AsyncFile: Send + Sync + 'static {
                 ));
             }
 
-            buffer = returned_buffer;
-            buffer.drain(..bytes_written);
+            written += bytes_written;
             current_offset += bytes_written as u64;
         }
 
