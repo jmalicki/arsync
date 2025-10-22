@@ -16,8 +16,8 @@ This document provides a comprehensive analysis of the current GitHub Actions wo
 - ✅ Conditional benchmark job (main branch only)
 
 **Issues Identified:**
-1. **Code Duplication**: Rust setup and caching repeated in all 7 jobs (70+ lines of duplication)
-2. **Hardcoded Values**: Rust version `1.90.0` appears 7 times
+1. **Code Duplication**: Rust setup and caching repeated in all 10 jobs (100+ lines of duplication)
+2. **Hardcoded Values**: Rust version appears multiple times across jobs
 3. **Missing Concurrency Control**: Old CI runs aren't cancelled when new commits are pushed
 4. **No Job Dependencies**: Jobs run in parallel when some could be ordered for faster feedback
 5. **Coverage Mismatch**: Generates HTML but tries to upload cobertura.xml (line 150)

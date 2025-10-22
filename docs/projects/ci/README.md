@@ -12,7 +12,7 @@ This directory contains documentation related to continuous integration and depl
 The actual workflow files are located in `.github/workflows/`:
 
 - **Current Workflows:**
-  - [`ci.yml`](../../../.github/workflows/ci.yml) - Current CI workflow (7 jobs)
+  - [`ci.yml`](../../../.github/workflows/ci.yml) - Current CI workflow (10 jobs)
   - [`release.yml`](../../../.github/workflows/release.yml) - Current release workflow
 
 - **Improved Workflows:**
