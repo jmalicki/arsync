@@ -139,6 +139,7 @@ pub async fn metadata_from_path(path: &Path) -> Result<compio_fs_extended::FileM
 ///     println!("Entry: {}", wrapper.name());
 /// }
 /// ```
+#[allow(dead_code)] // Used in integration tests and later PRs
 pub struct DirectoryEntryWrapper {
     /// The underlying directory entry
     entry: std::fs::DirEntry,
