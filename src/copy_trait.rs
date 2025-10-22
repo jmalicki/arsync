@@ -11,6 +11,7 @@ use compio::fs::File;
 use std::path::Path;
 
 /// Default buffer size for trait-based copying
+#[allow(dead_code)] // Used in later PRs
 const COPY_BUFFER_SIZE: usize = 64 * 1024; // 64KB
 
 /// Copy a file using the AsyncFile trait
@@ -52,6 +53,7 @@ const COPY_BUFFER_SIZE: usize = 64 * 1024; // 64KB
 ///     Ok(())
 /// }
 /// ```
+#[allow(dead_code)] // Used in later PRs
 pub async fn copy_file_with_trait(src: &Path, dst: &Path) -> Result<u64> {
     // Open source file
     let src_file = File::open(src)
