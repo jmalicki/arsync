@@ -10,6 +10,7 @@ use tracing::{info, Level};
 mod adaptive_concurrency;
 mod cli;
 mod copy;
+mod copy_trait;
 mod directory;
 mod error;
 mod hardlink_tracker;
