@@ -11,8 +11,7 @@ pub mod file;
 pub mod metadata;
 
 // Re-export main traits for convenience
-#[allow(unused_imports)]
-// TODO: Remove after wrappers implemented to avoid masking real warnings
+#[allow(unused_imports)] // TODO: Remove after wrappers implemented to avoid masking real warnings
 pub use directory::{AsyncDirectory, AsyncDirectoryEntry};
 pub use file::AsyncFile;
 pub use metadata::AsyncMetadata;
