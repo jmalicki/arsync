@@ -268,6 +268,8 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 **Note**: Created DirectoryEntryWrapper (no existing DirectoryEntry type existed).
 Wraps std::fs::DirEntry and implements AsyncDirectoryEntry trait.
 
+**PR**: https://github.com/jmalicki/arsync/pull/112 ✅
+
 ---
 
 ## Phase 4: Shared Operations (Incremental)
