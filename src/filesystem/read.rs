@@ -47,6 +47,7 @@ use std::ffi::OsStr;
 ///     Ok(())
 /// }
 /// ```
+#[allow(dead_code)] // Will be used in PR #12 and later
 pub async fn read_file_content(dir_fd: &DirectoryFd, filename: &OsStr) -> Result<Vec<u8>> {
     // Open file using DirectoryFd (TOCTOU-safe openat)
     let file = dir_fd
