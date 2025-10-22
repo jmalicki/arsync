@@ -246,23 +246,29 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 **Branch**: `feat/directory-entry-trait-impl`
 **Base**: `feat/trait-async-directory`
 
-**What**: Make existing DirectoryEntry implement trait
+**What**: Create DirectoryEntryWrapper and implement AsyncDirectoryEntry trait
 
 **Tasks**:
-- [ ] Add `impl AsyncDirectoryEntry` in `src/directory/types.rs`
-- [ ] Add integration tests
-- [ ] Verify trait methods work
+- [x] Add `DirectoryEntryWrapper` struct in `src/directory/types.rs`
+- [x] Add `impl AsyncDirectoryEntry` for wrapper
+- [x] Add integration tests (4 tests with real directories)
+- [x] Export from `src/directory/mod.rs`
 
-**Files**: `src/directory/types.rs`
+**Files**: `src/directory/types.rs`, `src/directory/mod.rs`, `tests/trait_directory_integration.rs` (new)
 
 **Time**: 2-3 hours
 
-**Integration**: Existing DirectoryEntry uses trait ✓
+**Integration**: Directory entries can now use trait ✓
 
 **Success**:
-- [ ] DirectoryEntry implements trait
-- [ ] All methods work
-- [ ] Tests pass
+- [x] DirectoryEntryWrapper implements trait
+- [x] All methods work
+- [x] All 4 integration tests pass
+
+**Note**: Created DirectoryEntryWrapper (no existing DirectoryEntry type existed).
+Wraps std::fs::DirEntry and implements AsyncDirectoryEntry trait.
+
+**PR**: https://github.com/jmalicki/arsync/pull/112 ✅
 
 ---
 
