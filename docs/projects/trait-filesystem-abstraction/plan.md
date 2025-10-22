@@ -106,17 +106,19 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 **What**: Just the trait definition
 
 **Tasks**:
-- [ ] Create `src/traits/file.rs`
-- [ ] Define `AsyncFile` trait with provided methods
-- [ ] Add tests (compile checks, provided methods)
+- [x] Create `src/traits/file.rs`
+- [x] Define `AsyncFile` trait with provided methods
+- [x] Add tests (compile checks, provided methods)
 
 **Files**: `src/traits/mod.rs`, `src/traits/file.rs` (new)
 
 **Time**: 2-3 hours
 
 **Success**:
-- [ ] Trait compiles
-- [ ] Provided methods work in tests
+- [x] Trait compiles
+- [x] Provided methods work in tests
+
+**PR**: https://github.com/jmalicki/arsync/pull/108 ✅
 
 ---
 
