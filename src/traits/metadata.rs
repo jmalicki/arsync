@@ -224,6 +224,7 @@ mod tests {
 
     // Mock implementation for testing
     #[derive(Debug)]
+    #[allow(dead_code)] // Test fixture
     struct MockMetadata {
         size: u64,
         is_file: bool,
