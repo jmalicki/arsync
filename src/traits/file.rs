@@ -86,7 +86,7 @@ pub trait AsyncFile: Send + Sync + 'static {
     /// Returns an error if:
     /// - The file is not open for writing
     /// - I/O error occurs
-    async fn write_at(&self, buf: Vec<u8>, offset: u64) -> Result<(usize, Vec<u8>)>;
+    async fn write_at(&mut self, buf: Vec<u8>, offset: u64) -> Result<(usize, Vec<u8>)>;
 
     /// Sync all pending data to storage
     ///
@@ -193,7 +193,7 @@ pub trait AsyncFile: Send + Sync + 'static {
     /// Returns an error if:
     /// - I/O error occurs
     /// - write_at() returns 0 (indicates write failure)
-    async fn write_all_at(&self, data: &[u8], offset: u64) -> Result<()> {
+    async fn write_all_at(&mut self, data: &[u8], offset: u64) -> Result<()> {
         let mut buffer = data.to_vec();
         let mut current_offset = offset;
 
@@ -241,7 +241,7 @@ mod tests {
     ///
     /// Requires: File that simulates partial writes (returns < requested bytes)
     pub async fn test_write_all_at_handles_partial_writes<F, M>(
-        file: F,
+        mut file: F,
         test_data: &[u8],
         start_offset: u64,
         verify_written: impl FnOnce() -> Vec<(u64, Vec<u8>)>,
@@ -301,7 +301,7 @@ mod tests {
     }
 
     /// Test write_all_at() error handling when write_at returns 0
-    pub async fn test_write_all_at_zero_write_error<F, M>(file: F)
+    pub async fn test_write_all_at_zero_write_error<F, M>(mut file: F)
     where
         F: AsyncFile<Metadata = M>,
         M: AsyncMetadata,
@@ -349,7 +349,7 @@ mod tests {
     /// Requires: Source with short reads, destination that tracks writes
     pub async fn test_copy_loop_with_short_reads<SrcF, SrcM, DstF, DstM>(
         source: SrcF,
-        dest: DstF,
+        mut dest: DstF,
         expected_data: &[u8],
         buffer_size: usize,
         verify_written: impl FnOnce() -> std::collections::BTreeMap<u64, Vec<u8>>,
@@ -475,7 +475,7 @@ mod tests {
         }
 
         #[allow(clippy::unimplemented)]
-        async fn write_at(&self, _buf: Vec<u8>, _offset: u64) -> Result<(usize, Vec<u8>)> {
+        async fn write_at(&mut self, _buf: Vec<u8>, _offset: u64) -> Result<(usize, Vec<u8>)> {
             unimplemented!("write_at not needed for provided method tests")
         }
 
@@ -541,7 +541,7 @@ mod tests {
             Ok((to_read, buf))
         }
 
-        async fn write_at(&self, buf: Vec<u8>, _offset: u64) -> Result<(usize, Vec<u8>)> {
+        async fn write_at(&mut self, buf: Vec<u8>, _offset: u64) -> Result<(usize, Vec<u8>)> {
             Ok((buf.len(), buf))
         }
 
@@ -590,7 +590,7 @@ mod tests {
             Ok((0, buf))
         }
 
-        async fn write_at(&self, buf: Vec<u8>, offset: u64) -> Result<(usize, Vec<u8>)> {
+        async fn write_at(&mut self, buf: Vec<u8>, offset: u64) -> Result<(usize, Vec<u8>)> {
             // Write all the data (no partial writes for this test)
             let len = buf.len();
             self.written_data
@@ -655,7 +655,7 @@ mod tests {
             Ok((0, buf))
         }
 
-        async fn write_at(&self, buf: Vec<u8>, offset: u64) -> Result<(usize, Vec<u8>)> {
+        async fn write_at(&mut self, buf: Vec<u8>, offset: u64) -> Result<(usize, Vec<u8>)> {
             // Simulate partial write: only write half the data (but at least 1 byte)
             let requested = buf.len();
             let written = (requested / 2).max(1);
@@ -717,7 +717,7 @@ mod tests {
             Ok((0, buf))
         }
 
-        async fn write_at(&self, buf: Vec<u8>, _offset: u64) -> Result<(usize, Vec<u8>)> {
+        async fn write_at(&mut self, buf: Vec<u8>, _offset: u64) -> Result<(usize, Vec<u8>)> {
             Ok((0, buf)) // Simulate write failure (0 bytes written)
         }
 
