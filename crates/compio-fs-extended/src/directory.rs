@@ -7,7 +7,6 @@ use std::os::fd::{AsFd, BorrowedFd};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 /// A directory file descriptor for secure directory-based operations
 ///
@@ -15,6 +14,13 @@ use std::sync::Arc;
 /// enabling secure `*at` system calls that avoid TOCTOU (Time-of-Check-Time-of-Use)
 /// race conditions. This is the recommended way to perform file operations
 /// relative to a directory.
+///
+/// # Cloning
+///
+/// `DirectoryFd` implements `Clone` with minimal overhead. Cloning creates a new
+/// handle to the same underlying file descriptor via `compio::fs::File`'s internal
+/// Arc-based implementation. This means cloning is cheap (just an atomic increment)
+/// and all clones refer to the same directory.
 ///
 /// # Example
 ///
@@ -24,14 +30,21 @@ use std::sync::Arc;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let dir_fd = DirectoryFd::open(Path::new("/some/directory")).await?;
-/// // Use dir_fd for secure file operations
+///
+/// // Cloning is cheap and creates another handle to the same directory
+/// let dir_fd_clone = dir_fd.clone();
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DirectoryFd {
     /// The underlying file descriptor
-    file: Arc<File>,
+    ///
+    /// Uses `compio::fs::File` directly, which implements `Clone` via its internal
+    /// `SharedFd` (Arc-based). This provides cheap cloning without requiring an
+    /// explicit `Arc<File>` wrapper, and all clones share the same underlying
+    /// file descriptor.
+    file: File,
     /// The path this directory represents (for debugging/error messages)
     path: PathBuf,
 }
@@ -72,15 +85,41 @@ impl DirectoryFd {
             .map_err(|e| directory_error(&format!("Failed to open directory {:?}: {}", path, e)))?;
 
         Ok(Self {
-            file: Arc::new(file),
+            file,
             path: path.to_path_buf(),
         })
     }
 
     /// Get a reference to the underlying file descriptor
     ///
-    /// This is used internally by `*at` operations to get the file descriptor
-    /// for the directory.
+    /// This method provides access to the underlying `compio::fs::File` for advanced
+    /// operations. Most users should use the higher-level methods provided by
+    /// `DirectoryFd` instead.
+    ///
+    /// # Common Use Cases
+    ///
+    /// - Passing to `compio::fs` APIs that accept `&File`
+    /// - Accessing file descriptor properties via `AsRawFd`
+    /// - Performing custom operations not yet wrapped by `DirectoryFd`
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use compio_fs_extended::directory::DirectoryFd;
+    /// use std::path::Path;
+    /// use std::os::unix::io::AsRawFd;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let dir_fd = DirectoryFd::open(Path::new("/tmp")).await?;
+    ///
+    /// // Access the raw file descriptor
+    /// let raw_fd = dir_fd.as_file().as_raw_fd();
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Note: This is used internally by `DirectoryFd`'s implementation of operations
+    /// like `set_permissions()` and `set_ownership()`.
     #[must_use]
     pub fn as_file(&self) -> &File {
         &self.file
@@ -150,7 +189,7 @@ impl DirectoryFd {
                 .map_err(|e| directory_error(&format!("invalid directory name: {e}")))?;
 
             // SAFETY: The raw fd is valid for the duration of this call because:
-            // 1. DirectoryFd holds an Arc<File> keeping the fd open
+            // 1. DirectoryFd owns the File, keeping the fd open
             // 2. The spawned task completes before DirectoryFd is dropped
             // We use raw fd here because BorrowedFd from as_fd() has a non-'static lifetime,
             // but spawn requires 'static. This is the standard pattern for moving fds into tasks.
@@ -310,7 +349,7 @@ impl DirectoryFd {
             let full_path = base_path.join(std::ffi::OsStr::from_bytes(name_cstr.as_bytes()));
 
             Ok(Self {
-                file: Arc::new(file),
+                file,
                 path: full_path,
             })
         })
@@ -641,15 +680,6 @@ pub async fn read_dir(path: &Path) -> Result<std::fs::ReadDir> {
     .map_err(|e| directory_error(&format!("spawn_blocking failed: {:?}", e)))?
 }
 
-impl Clone for DirectoryFd {
-    fn clone(&self) -> Self {
-        Self {
-            file: Arc::clone(&self.file),
-            path: self.path.clone(),
-        }
-    }
-}
-
 #[cfg(unix)]
 impl AsFd for DirectoryFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -712,10 +742,15 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
-        // Test cloning
-        let cloned_dir_fd = dir_fd.clone();
-        assert_eq!(dir_fd.path(), cloned_dir_fd.path());
-        assert_eq!(dir_fd.as_raw_fd(), cloned_dir_fd.as_raw_fd());
+        // Test cloning - should be cheap (just clones internal Arc)
+        let clone1 = dir_fd.clone();
+        let clone2 = dir_fd.clone();
+
+        // All clones refer to the same directory
+        assert_eq!(dir_fd.path(), clone1.path());
+        assert_eq!(dir_fd.path(), clone2.path());
+        assert_eq!(dir_fd.as_raw_fd(), clone1.as_raw_fd());
+        assert_eq!(clone1.as_raw_fd(), clone2.as_raw_fd());
     }
 
     #[compio::test]
@@ -724,7 +759,9 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Test creating a directory
-        let result = dir_fd.create_directory("test_subdir", 0o755).await;
+        let result = dir_fd
+            .create_directory(std::ffi::OsStr::new("test_subdir"), 0o755)
+            .await;
         assert!(result.is_ok());
 
         // Verify the directory was created
@@ -739,10 +776,15 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Create directory first time
-        dir_fd.create_directory("test_subdir", 0o755).await.unwrap();
+        dir_fd
+            .create_directory(std::ffi::OsStr::new("test_subdir"), 0o755)
+            .await
+            .unwrap();
 
         // Try to create it again (should fail)
-        let result = dir_fd.create_directory("test_subdir", 0o755).await;
+        let result = dir_fd
+            .create_directory(std::ffi::OsStr::new("test_subdir"), 0o755)
+            .await;
         assert!(result.is_err());
     }
 
@@ -752,7 +794,9 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Test creating directory with invalid name (empty string)
-        let result = dir_fd.create_directory("", 0o755).await;
+        let result = dir_fd
+            .create_directory(std::ffi::OsStr::new(""), 0o755)
+            .await;
         assert!(result.is_err());
     }
 
@@ -762,13 +806,16 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Create first level
-        dir_fd.create_directory("level1", 0o755).await.unwrap();
+        dir_fd
+            .create_directory(std::ffi::OsStr::new("level1"), 0o755)
+            .await
+            .unwrap();
 
         // Open the created directory and create second level
         let level1_path = temp_dir.path().join("level1");
         let level1_dir_fd = DirectoryFd::open(&level1_path).await.unwrap();
         level1_dir_fd
-            .create_directory("level2", 0o755)
+            .create_directory(std::ffi::OsStr::new("level2"), 0o755)
             .await
             .unwrap();
 
@@ -814,7 +861,9 @@ mod tests {
         // Test multiple directory creation operations
         let dirs = ["dir1", "dir2", "dir3"];
         for dir_name in &dirs {
-            let result = dir_fd.create_directory(dir_name, 0o755).await;
+            let result = dir_fd
+                .create_directory(std::ffi::OsStr::new(dir_name), 0o755)
+                .await;
             assert!(result.is_ok());
         }
 
