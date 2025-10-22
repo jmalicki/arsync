@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 /// Contains all information needed to process the entry, including
 /// metadata fetched using secure *at syscalls.
 #[derive(Debug)]
+#[allow(dead_code)] // Will be used in PR #12 and later
 pub struct FileEntry {
     /// Relative path from the walk root
     pub relative_path: PathBuf,
@@ -55,6 +56,7 @@ pub struct FileEntry {
 ///     Ok(())
 /// }
 /// ```
+#[allow(dead_code)] // Will be used in PR #12 and later
 pub struct SecureTreeWalker {
     /// Root directory file descriptor
     root: DirectoryFd,
@@ -62,6 +64,7 @@ pub struct SecureTreeWalker {
     root_path: PathBuf,
 }
 
+#[allow(dead_code)] // Methods will be used in PR #12 and later
 impl SecureTreeWalker {
     /// Create a new secure tree walker
     ///

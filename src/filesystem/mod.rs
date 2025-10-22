@@ -6,4 +6,5 @@
 
 pub mod walker;
 
+#[allow(unused_imports)] // Will be used in PR #12 and later
 pub use walker::SecureTreeWalker;
