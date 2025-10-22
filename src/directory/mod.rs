@@ -19,7 +19,9 @@ mod types;
 
 // Re-export public types
 #[allow(unused_imports)] // Used by external modules
-pub use types::{metadata_from_path, DirectoryStats, FileLocation, TraversalContext};
+pub use types::{
+    metadata_from_path, DirectoryEntryWrapper, DirectoryStats, FileLocation, TraversalContext,
+};
 
 // Re-export public functions
 #[allow(unused_imports)] // Used by external modules

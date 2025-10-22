@@ -4,12 +4,14 @@
 //! - `FileLocation`: Groups path, parent `DirectoryFd`, and filename
 //! - `TraversalContext`: Shared state passed through recursion
 //! - `DirectoryStats`: Statistics tracking
+//! - `DirectoryEntryWrapper`: Implements AsyncDirectoryEntry trait
 
 use crate::adaptive_concurrency::AdaptiveConcurrencyController;
 use crate::cli::CopyMethod;
 use crate::error::{Result, SyncError};
 use crate::io_uring::FileOperations;
 use crate::metadata::MetadataConfig;
+use crate::traits::AsyncDirectoryEntry;
 use compio::dispatcher::Dispatcher;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -117,4 +119,114 @@ pub async fn metadata_from_path(path: &Path) -> Result<compio_fs_extended::FileM
         #[cfg(target_os = "macos")]
         generation: None,
     })
+}
+
+/// Wrapper around std::fs::DirEntry that implements AsyncDirectoryEntry trait
+///
+/// This wrapper enables using standard directory entries through the
+/// AsyncDirectoryEntry trait interface, allowing uniform handling of
+/// directory traversal across different backends.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use arsync::directory::DirectoryEntryWrapper;
+/// use arsync::traits::AsyncDirectoryEntry;
+///
+/// for entry in std::fs::read_dir("/some/path")? {
+///     let entry = entry?;
+///     let wrapper = DirectoryEntryWrapper::new(entry);
+///     println!("Entry: {}", wrapper.name());
+/// }
+/// ```
+pub struct DirectoryEntryWrapper {
+    /// The underlying directory entry
+    entry: std::fs::DirEntry,
+    /// Cached name to avoid lifetime issues
+    name: String,
+    /// Cached path
+    path: PathBuf,
+}
+
+impl DirectoryEntryWrapper {
+    /// Create a new wrapper around a directory entry
+    ///
+    /// # Parameters
+    ///
+    /// * `entry` - The directory entry to wrap
+    ///
+    /// # Returns
+    ///
+    /// Returns a new `DirectoryEntryWrapper` instance
+    #[must_use]
+    pub fn new(entry: std::fs::DirEntry) -> Self {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = entry.path();
+
+        Self { entry, name, path }
+    }
+
+    /// Get a reference to the underlying entry
+    ///
+    /// # Returns
+    ///
+    /// Returns a reference to the wrapped `std::fs::DirEntry`
+    #[must_use]
+    pub fn inner(&self) -> &std::fs::DirEntry {
+        &self.entry
+    }
+
+    /// Consume the wrapper and return the underlying entry
+    ///
+    /// # Returns
+    ///
+    /// Returns the wrapped `std::fs::DirEntry`
+    #[must_use]
+    pub fn into_inner(self) -> std::fs::DirEntry {
+        self.entry
+    }
+}
+
+impl AsyncDirectoryEntry for DirectoryEntryWrapper {
+    type Metadata = compio_fs_extended::FileMetadata;
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    async fn metadata(&self) -> Result<Self::Metadata> {
+        // Get std metadata and convert
+        use std::os::unix::fs::MetadataExt;
+        use std::time::SystemTime;
+
+        let m = self
+            .entry
+            .metadata()
+            .map_err(|e| SyncError::FileSystem(format!("Failed to get entry metadata: {e}")))?;
+
+        Ok(compio_fs_extended::FileMetadata {
+            size: m.len(),
+            mode: m.mode(),
+            uid: m.uid(),
+            gid: m.gid(),
+            nlink: m.nlink(),
+            ino: m.ino(),
+            dev: m.dev(),
+            accessed: m.accessed().unwrap_or(SystemTime::UNIX_EPOCH),
+            modified: m.modified().unwrap_or(SystemTime::UNIX_EPOCH),
+            created: m.created().ok(),
+            #[cfg(target_os = "linux")]
+            attributes: None,
+            #[cfg(target_os = "linux")]
+            attributes_mask: None,
+            #[cfg(target_os = "macos")]
+            flags: None,
+            #[cfg(target_os = "macos")]
+            generation: None,
+        })
+    }
 }
