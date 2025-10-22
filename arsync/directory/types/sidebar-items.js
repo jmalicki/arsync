@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["metadata_from_path"],"struct":["DirectoryStats","FileLocation","TraversalContext"]};

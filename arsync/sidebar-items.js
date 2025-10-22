@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"macro":["t"],"mod":["adaptive_concurrency","cli","copy","copy_trait","directory","error","file_wrapper","hardlink_tracker","i18n","io_uring","metadata","progress","protocol","stats","sync","traits"],"struct":["Semaphore"]};

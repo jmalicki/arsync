@@ -1,0 +1,48 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Internal: Copy a single file with optimized, TOCTOU-safe operations"><title>copy_file_internal in arsync::copy - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="arsync" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0 (1159e78c4 2025-09-14)" data-channel="1.90.0" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../static.files/storage-68b7e25d.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../arsync/index.html">arsync</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">copy_<wbr>file_<wbr>internal</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#parameters" title="Parameters">Parameters</a><ul><li><a href="#paths-for-error-messages-only" title="Paths (for error messages only)">Paths (for error messages only)</a></li><li><a href="#required-directoryfd-parameters-actual-operations" title="Required `DirectoryFd` parameters (actual operations)">Required <code>DirectoryFd</code> parameters (actual operations)</a></li></ul></li><li><a href="#toctou-safety" title="TOCTOU Safety">TOCTOU Safety</a></li><li><a href="#errors" title="Errors">Errors</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="index.html">In arsync::<wbr>copy</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">arsync</a>::<wbr><a href="index.html">copy</a></div><h1>Function <span class="fn">copy_file_internal</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../src/arsync/copy.rs.html#186-231">Source</a> </span></div><pre class="rust item-decl"><code>pub async fn copy_file_internal(
+    src: &amp;<a class="struct" href="https://doc.rust-lang.org/1.90.0/std/path/struct.Path.html" title="struct std::path::Path">Path</a>,
+    dst: &amp;<a class="struct" href="https://doc.rust-lang.org/1.90.0/std/path/struct.Path.html" title="struct std::path::Path">Path</a>,
+    metadata_config: &amp;<a class="struct" href="../metadata/struct.MetadataConfig.html" title="struct arsync::metadata::MetadataConfig">MetadataConfig</a>,
+    parallel_config: &amp;<a class="struct" href="../cli/struct.ParallelCopyConfig.html" title="struct arsync::cli::ParallelCopyConfig">ParallelCopyConfig</a>,
+    dispatcher: &amp;'static Dispatcher,
+    src_metadata: &amp;FileMetadata,
+    src_parent_dir: &amp;DirectoryFd,
+    src_filename: &amp;<a class="struct" href="https://doc.rust-lang.org/1.90.0/std/ffi/os_str/struct.OsStr.html" title="struct std::ffi::os_str::OsStr">OsStr</a>,
+    dst_parent_dir: &amp;DirectoryFd,
+    dst_filename: &amp;<a class="struct" href="https://doc.rust-lang.org/1.90.0/std/ffi/os_str/struct.OsStr.html" title="struct std::ffi::os_str::OsStr">OsStr</a>,
+) -&gt; <a class="type" href="../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.unit.html">()</a>&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Internal: Copy a single file with optimized, TOCTOU-safe operations</p>
+<p><strong>This is the internal function used in recursive directory traversal.</strong>
+For public API, use <code>copy_file()</code> which provides a simpler interface.</p>
+<p>This function REQUIRES <code>DirectoryFd</code> for BOTH source and destination to enforce
+TOCTOU-safe operations on both sides. Metadata is pre-fetched to avoid redundant syscalls.</p>
+<h2 id="parameters"><a class="doc-anchor" href="#parameters">§</a>Parameters</h2><h3 id="paths-for-error-messages-only"><a class="doc-anchor" href="#paths-for-error-messages-only">§</a>Paths (for error messages only)</h3>
+<ul>
+<li><code>src</code>: Source path - <strong>NOT USED for file operations</strong>, only for error messages</li>
+<li><code>dst</code>: Destination path - <strong>NOT USED for file operations</strong>, only for error messages</li>
+</ul>
+<h3 id="required-directoryfd-parameters-actual-operations"><a class="doc-anchor" href="#required-directoryfd-parameters-actual-operations">§</a>Required <code>DirectoryFd</code> parameters (actual operations)</h3>
+<ul>
+<li><code>src_parent_dir</code>: Source parent <code>DirectoryFd</code> for TOCTOU-safe file opening</li>
+<li><code>src_filename</code>: Source <strong>basename only</strong> (no path separators) relative to <code>src_parent_dir</code></li>
+<li><code>src_metadata</code>: Pre-fetched metadata via <code>DirectoryFd::statx_full()</code></li>
+<li><code>dst_parent_dir</code>: Destination parent <code>DirectoryFd</code> for TOCTOU-safe creation</li>
+<li><code>dst_filename</code>: Destination <strong>basename only</strong> (no path separators) relative to <code>dst_parent_dir</code></li>
+<li><code>dispatcher</code>: For parallel copy operations</li>
+</ul>
+<p><strong>Why <code>&amp;str</code> not <code>&amp;Path</code>?</strong> Filenames must be simple basenames without <code>/</code> for TOCTOU safety.
+Using <code>openat(dirfd, "sub/file", ...)</code> would be TOCTOU-vulnerable if <code>sub</code> is replaced.</p>
+<h2 id="toctou-safety"><a class="doc-anchor" href="#toctou-safety">§</a>TOCTOU Safety</h2>
+<p>ALL file operations use dirfd-based syscalls (no path-based operations):</p>
+<ul>
+<li>Source: <code>openat(src_dirfd, src_filename, O_RDONLY)</code> - TOCTOU-safe read</li>
+<li>Dest: <code>openat(dst_dirfd, dst_filename, O_CREAT|O_WRONLY)</code> - TOCTOU-safe write</li>
+<li>Metadata: Already fetched via <code>statx(dirfd, filename, ...)</code> - TOCTOU-safe</li>
+</ul>
+<h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
+<p>This function will return an error if:</p>
+<ul>
+<li>Source file cannot be opened for reading</li>
+<li>Destination file cannot be created or opened for writing</li>
+<li>File copying operation fails (I/O errors, permission issues)</li>
+<li>Metadata preservation fails</li>
+</ul>
+</div></details></section></div></main></body></html>

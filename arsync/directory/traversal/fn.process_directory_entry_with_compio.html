@@ -1,0 +1,39 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Internal: Process directory entry recursively with TOCTOU-safe `DirectoryFd` operations"><title>process_directory_entry_with_compio in arsync::directory::traversal - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="arsync" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0 (1159e78c4 2025-09-14)" data-channel="1.90.0" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-68b7e25d.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc fn"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../arsync/index.html">arsync</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">process_<wbr>directory_<wbr>entry_<wbr>with_<wbr>compio</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#parameters" title="Parameters">Parameters</a></li><li><a href="#returns" title="Returns">Returns</a></li><li><a href="#errors" title="Errors">Errors</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="index.html">In arsync::<wbr>directory::<wbr>traversal</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">arsync</a>::<wbr><a href="../index.html">directory</a>::<wbr><a href="index.html">traversal</a></div><h1>Function <span class="fn">process_directory_entry_with_compio</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/arsync/directory/traversal.rs.html#246-488">Source</a> </span></div><pre class="rust item-decl"><code>pub(super) async fn process_directory_entry_with_compio(
+    src: <a class="struct" href="../struct.FileLocation.html" title="struct arsync::directory::FileLocation">FileLocation</a>,
+    dst: <a class="struct" href="../struct.FileLocation.html" title="struct arsync::directory::FileLocation">FileLocation</a>,
+    ctx: <a class="struct" href="../struct.TraversalContext.html" title="struct arsync::directory::TraversalContext">TraversalContext</a>,
+) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.unit.html">()</a>&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Internal: Process directory entry recursively with TOCTOU-safe <code>DirectoryFd</code> operations</p>
+<p>This is the main recursive function for directory traversal. It processes files, directories,
+and symlinks using compio’s dispatcher pattern to avoid stack overflow and enable
+concurrent processing.</p>
+<p><strong>REQUIRES <code>DirectoryFd</code></strong>: All <code>DirectoryFd</code> parameters are required (no Options).
+This enforces TOCTOU-safe operations at compile time. Use <code>process_root_entry</code> for root.</p>
+<h2 id="parameters"><a class="doc-anchor" href="#parameters">§</a>Parameters</h2>
+<ul>
+<li><code>dispatcher</code> - Static dispatcher for concurrent operations</li>
+<li><code>src_path</code> - Source path (for error messages only)</li>
+<li><code>dst_path</code> - Destination path (for error messages only)</li>
+<li><code>file_ops</code> - File operations handler</li>
+<li><code>_copy_method</code> - Copy method to use</li>
+<li><code>stats</code> - Shared statistics tracker</li>
+<li><code>hardlink_tracker</code> - Shared hardlink tracker for inode-based detection</li>
+<li><code>concurrency_controller</code> - Adaptive concurrency limiter</li>
+<li><code>metadata_config</code> - Metadata preservation configuration</li>
+<li><code>parallel_config</code> - Parallel copy configuration</li>
+<li><code>src_parent_dir</code> - Source parent <code>DirectoryFd</code> (REQUIRED for TOCTOU safety)</li>
+<li><code>src_filename</code> - Source basename (REQUIRED)</li>
+<li><code>dst_parent_dir</code> - Destination parent <code>DirectoryFd</code> (REQUIRED for TOCTOU safety)</li>
+<li><code>dst_filename</code> - Destination basename (REQUIRED)</li>
+</ul>
+<h2 id="returns"><a class="doc-anchor" href="#returns">§</a>Returns</h2>
+<p>Returns <code>Ok(())</code> if the entry was processed successfully, or <code>Err(SyncError)</code> if failed.</p>
+<h2 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h2>
+<p>Returns an error if:</p>
+<ul>
+<li>Directory creation fails</li>
+<li>Metadata retrieval fails</li>
+<li>File copy operations fail</li>
+<li>Symlink operations fail</li>
+<li>Hardlink operations fail</li>
+</ul>
+</div></details></section></div></main></body></html>

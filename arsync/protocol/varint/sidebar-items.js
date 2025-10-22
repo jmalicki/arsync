@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["decode_varint","decode_varint_signed","encode_varint","encode_varint_into","encode_varint_signed"]};

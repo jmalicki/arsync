@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["copy_directory","metadata_from_path","preserve_directory_metadata","preserve_directory_metadata_fd","preserve_directory_xattr"],"mod":["metadata","symlink","traversal","types"],"struct":["DirectoryStats","FileLocation","TraversalContext"]};

@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["arsync",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"enum\" href=\"arsync/cli/enum.CopyMethod.html\" title=\"enum arsync::cli::CopyMethod\">CopyMethod</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"arsync/directory/struct.DirectoryStats.html\" title=\"struct arsync::directory::DirectoryStats\">DirectoryStats</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"arsync/hardlink_tracker/struct.FilesystemStats.html\" title=\"struct arsync::hardlink_tracker::FilesystemStats\">FilesystemStats</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"arsync/hardlink_tracker/struct.FilesystemTracker.html\" title=\"struct arsync::hardlink_tracker::FilesystemTracker\">FilesystemTracker</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/1.90.0/core/default/trait.Default.html\" title=\"trait core::default::Default\">Default</a> for <a class=\"struct\" href=\"arsync/progress/struct.ProgressTracker.html\" title=\"struct arsync::progress::ProgressTracker\">ProgressTracker</a>"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1523]}

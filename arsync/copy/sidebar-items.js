@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BUFFER_SIZE","HUGE_PAGE_SIZE"],"fn":["align_to_page","copy_file","copy_file_internal","copy_read_write","copy_read_write_parallel","copy_region_sequential"],"static":["DISPATCHER"]};

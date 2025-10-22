@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["preserve_directory_metadata","preserve_directory_metadata_fd","preserve_directory_xattr","preserve_file_metadata"]};

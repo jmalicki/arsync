@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["check_fd_limits","is_emfile_error"],"struct":["AdaptiveConcurrencyController","ConcurrencyOptions","ConcurrencyStats"],"type":["SharedSemaphore"]};

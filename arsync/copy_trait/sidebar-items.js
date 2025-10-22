@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COPY_BUFFER_SIZE"],"fn":["copy_file_with_trait"]};

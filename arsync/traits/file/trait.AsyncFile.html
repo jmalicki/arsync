@@ -1,0 +1,171 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Unified file interface for both local and remote operations"><title>AsyncFile in arsync::traits::file - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-aa0817cf.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="arsync" data-themes="" data-resource-suffix="" data-rustdoc-version="1.90.0 (1159e78c4 2025-09-14)" data-channel="1.90.0" data-search-js="search-fa3e91e5.js" data-settings-js="settings-5514c975.js" ><script src="../../../static.files/storage-68b7e25d.js"></script><script defer src="sidebar-items.js"></script><script defer src="../../../static.files/main-eebb9057.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-32bb7600.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-6580c154.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc trait"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../../../arsync/index.html">arsync</a><span class="version">0.1.0</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Async<wbr>File</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#design" title="Design">Design</a></li><li><a href="#type-parameters" title="Type Parameters">Type Parameters</a></li><li><a href="#examples" title="Examples">Examples</a></li></ul><h3><a href="#required-associated-types">Required Associated Types</a></h3><ul class="block"><li><a href="#associatedtype.Metadata" title="Metadata">Metadata</a></li></ul><h3><a href="#required-methods">Required Methods</a></h3><ul class="block"><li><a href="#tymethod.copy_file_range" title="copy_file_range">copy_file_range</a></li><li><a href="#tymethod.metadata" title="metadata">metadata</a></li><li><a href="#tymethod.read_at" title="read_at">read_at</a></li><li><a href="#tymethod.sync_all" title="sync_all">sync_all</a></li><li><a href="#tymethod.write_at" title="write_at">write_at</a></li></ul><h3><a href="#provided-methods">Provided Methods</a></h3><ul class="block"><li><a href="#method.size" title="size">size</a></li><li><a href="#method.write_all_at" title="write_all_at">write_all_at</a></li></ul><h3><a href="#dyn-compatibility">Dyn Compatibility</a></h3><h3><a href="#implementors">Implementors</a></h3></section><div id="rustdoc-modnav"><h2><a href="index.html">In arsync::<wbr>traits::<wbr>file</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">arsync</a>::<wbr><a href="../index.html">traits</a>::<wbr><a href="index.html">file</a></div><h1>Trait <span class="trait">AsyncFile</span><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../src/arsync/traits/file.rs.html#43-218">Source</a> </span></div><pre class="rust item-decl"><code>pub trait AsyncFile:
+    <a class="trait" href="https://doc.rust-lang.org/1.90.0/core/marker/trait.Send.html" title="trait core::marker::Send">Send</a>
+    + <a class="trait" href="https://doc.rust-lang.org/1.90.0/core/marker/trait.Sync.html" title="trait core::marker::Sync">Sync</a>
+    + 'static {
+    type <a href="#associatedtype.Metadata" class="associatedtype">Metadata</a>: <a class="trait" href="../metadata/trait.AsyncMetadata.html" title="trait arsync::traits::metadata::AsyncMetadata">AsyncMetadata</a>;
+
+    // Required methods
+    async fn <a href="#tymethod.read_at" class="fn">read_at</a>(
+        &amp;self,
+        buf: <a class="struct" href="https://doc.rust-lang.org/1.90.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>&gt;,
+        offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>,
+    ) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;(<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.usize.html">usize</a>, <a class="struct" href="https://doc.rust-lang.org/1.90.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>&gt;)&gt;;
+<span class="item-spacer"></span>    async fn <a href="#tymethod.write_at" class="fn">write_at</a>(
+        &amp;mut self,
+        buf: <a class="struct" href="https://doc.rust-lang.org/1.90.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>&gt;,
+        offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>,
+    ) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;(<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.usize.html">usize</a>, <a class="struct" href="https://doc.rust-lang.org/1.90.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>&gt;)&gt;;
+<span class="item-spacer"></span>    async fn <a href="#tymethod.sync_all" class="fn">sync_all</a>(&amp;self) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.unit.html">()</a>&gt;;
+<span class="item-spacer"></span>    async fn <a href="#tymethod.metadata" class="fn">metadata</a>(&amp;self) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;Self::<a class="associatedtype" href="trait.AsyncFile.html#associatedtype.Metadata" title="type arsync::traits::file::AsyncFile::Metadata">Metadata</a>&gt;;
+<span class="item-spacer"></span>    async fn <a href="#tymethod.copy_file_range" class="fn">copy_file_range</a>(
+        &amp;self,
+        dst: &amp;mut Self,
+        src_offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>,
+        dst_offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>,
+        len: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>,
+    ) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>&gt;;
+
+    // Provided methods
+    async fn <a href="#method.size" class="fn">size</a>(&amp;self) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>&gt; { ... }
+<span class="item-spacer"></span>    async fn <a href="#method.write_all_at" class="fn">write_all_at</a>(&amp;mut self, data: &amp;[<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>], offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.unit.html">()</a>&gt; { ... }
+}</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Unified file interface for both local and remote operations</p>
+<p>This trait provides a consistent interface for file operations regardless
+of whether the underlying storage is local (using compio-fs-extended) or remote
+(using protocol transports like SSH, rsync, etc.).</p>
+<h2 id="design"><a class="doc-anchor" href="#design">§</a>Design</h2>
+<p>Uses compio’s buffer ownership pattern where buffers are passed by value
+and returned, enabling zero-copy I/O with io_uring.</p>
+<h2 id="type-parameters"><a class="doc-anchor" href="#type-parameters">§</a>Type Parameters</h2>
+<ul>
+<li><code>Metadata</code> - The metadata type for this file</li>
+</ul>
+<h2 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h2>
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">use </span>arsync::traits::AsyncFile;
+
+<span class="comment">// Read from file
+</span><span class="kw">let </span>file = filesystem.open_file(path).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>buffer = <span class="macro">vec!</span>[<span class="number">0u8</span>; <span class="number">4096</span>];
+<span class="kw">let </span>(bytes_read, buffer) = file.read_at(buffer, <span class="number">0</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Write to file
+</span><span class="kw">let </span>file = filesystem.create_file(path).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>data = <span class="string">b"Hello, World!"</span>.to_vec();
+<span class="kw">let </span>(bytes_written, buffer) = file.write_at(data, <span class="number">0</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+</div></details><h2 id="required-associated-types" class="section-header">Required Associated Types<a href="#required-associated-types" class="anchor">§</a></h2><div class="methods"><details class="toggle" open><summary><section id="associatedtype.Metadata" class="method"><a class="src rightside" href="../../../src/arsync/traits/file.rs.html#45">Source</a><h4 class="code-header">type <a href="#associatedtype.Metadata" class="associatedtype">Metadata</a>: <a class="trait" href="../metadata/trait.AsyncMetadata.html" title="trait arsync::traits::metadata::AsyncMetadata">AsyncMetadata</a></h4></section></summary><div class="docblock"><p>The metadata type for this file</p>
+</div></details></div><h2 id="required-methods" class="section-header">Required Methods<a href="#required-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="tymethod.read_at" class="method"><a class="src rightside" href="../../../src/arsync/traits/file.rs.html#67">Source</a><h4 class="code-header">async fn <a href="#tymethod.read_at" class="fn">read_at</a>(&amp;self, buf: <a class="struct" href="https://doc.rust-lang.org/1.90.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>&gt;, offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;(<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.usize.html">usize</a>, <a class="struct" href="https://doc.rust-lang.org/1.90.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>&gt;)&gt;</h4></section></summary><div class="docblock"><p>Read data from the file at a specific offset</p>
+<p>Uses compio’s buffer ownership pattern for zero-copy I/O.</p>
+<h5 id="parameters"><a class="doc-anchor" href="#parameters">§</a>Parameters</h5>
+<ul>
+<li><code>buf</code> - Buffer to read data into (compio takes ownership)</li>
+<li><code>offset</code> - Offset in the file to read from</li>
+</ul>
+<h5 id="returns"><a class="doc-anchor" href="#returns">§</a>Returns</h5>
+<p>Returns <code>Ok((bytes_read, buffer))</code> where:</p>
+<ul>
+<li><code>bytes_read</code> is the number of bytes actually read (0 at EOF)</li>
+<li><code>buffer</code> is the buffer returned by compio (caller can reuse)</li>
+</ul>
+<h5 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h5>
+<p>Returns an error if:</p>
+<ul>
+<li>The file is not open for reading</li>
+<li>I/O error occurs</li>
+</ul>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.write_at" class="method"><a class="src rightside" href="../../../src/arsync/traits/file.rs.html#89">Source</a><h4 class="code-header">async fn <a href="#tymethod.write_at" class="fn">write_at</a>(
+    &amp;mut self,
+    buf: <a class="struct" href="https://doc.rust-lang.org/1.90.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>&gt;,
+    offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>,
+) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;(<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.usize.html">usize</a>, <a class="struct" href="https://doc.rust-lang.org/1.90.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>&gt;)&gt;</h4></section></summary><div class="docblock"><p>Write data to the file at a specific offset</p>
+<p>Uses compio’s buffer ownership pattern for zero-copy I/O.</p>
+<h5 id="parameters-1"><a class="doc-anchor" href="#parameters-1">§</a>Parameters</h5>
+<ul>
+<li><code>buf</code> - Buffer containing data to write (compio takes ownership)</li>
+<li><code>offset</code> - Offset in the file to write to</li>
+</ul>
+<h5 id="returns-1"><a class="doc-anchor" href="#returns-1">§</a>Returns</h5>
+<p>Returns <code>Ok((bytes_written, buffer))</code> where:</p>
+<ul>
+<li><code>bytes_written</code> is the number of bytes actually written</li>
+<li><code>buffer</code> is the buffer returned by compio (caller can reuse)</li>
+</ul>
+<h5 id="errors-1"><a class="doc-anchor" href="#errors-1">§</a>Errors</h5>
+<p>Returns an error if:</p>
+<ul>
+<li>The file is not open for writing</li>
+<li>I/O error occurs</li>
+</ul>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.sync_all" class="method"><a class="src rightside" href="../../../src/arsync/traits/file.rs.html#98">Source</a><h4 class="code-header">async fn <a href="#tymethod.sync_all" class="fn">sync_all</a>(&amp;self) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.unit.html">()</a>&gt;</h4></section></summary><div class="docblock"><p>Sync all pending data to storage</p>
+<p>Ensures all written data is persisted to disk.</p>
+<h5 id="errors-2"><a class="doc-anchor" href="#errors-2">§</a>Errors</h5>
+<p>Returns an error if I/O error occurs during sync.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.metadata" class="method"><a class="src rightside" href="../../../src/arsync/traits/file.rs.html#109">Source</a><h4 class="code-header">async fn <a href="#tymethod.metadata" class="fn">metadata</a>(&amp;self) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;Self::<a class="associatedtype" href="trait.AsyncFile.html#associatedtype.Metadata" title="type arsync::traits::file::AsyncFile::Metadata">Metadata</a>&gt;</h4></section></summary><div class="docblock"><p>Get file metadata</p>
+<h5 id="returns-2"><a class="doc-anchor" href="#returns-2">§</a>Returns</h5>
+<p>Returns metadata for this file.</p>
+<h5 id="errors-3"><a class="doc-anchor" href="#errors-3">§</a>Errors</h5>
+<p>Returns an error if I/O error occurs.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="tymethod.copy_file_range" class="method"><a class="src rightside" href="../../../src/arsync/traits/file.rs.html#130-136">Source</a><h4 class="code-header">async fn <a href="#tymethod.copy_file_range" class="fn">copy_file_range</a>(
+    &amp;self,
+    dst: &amp;mut Self,
+    src_offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>,
+    dst_offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>,
+    len: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>,
+) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>&gt;</h4></section></summary><div class="docblock"><p>Copy data from this file to another file using copy_file_range</p>
+<p>This is the most efficient way to copy data between files on the same filesystem.
+Implementations should use the OS’s zero-copy mechanism (e.g., copy_file_range on Linux).</p>
+<h5 id="parameters-2"><a class="doc-anchor" href="#parameters-2">§</a>Parameters</h5>
+<ul>
+<li><code>dst</code> - Destination file</li>
+<li><code>src_offset</code> - Offset in source file to start copying from</li>
+<li><code>dst_offset</code> - Offset in destination file to start copying to</li>
+<li><code>len</code> - Number of bytes to copy</li>
+</ul>
+<h5 id="returns-3"><a class="doc-anchor" href="#returns-3">§</a>Returns</h5>
+<p>Returns the number of bytes actually copied.</p>
+<h5 id="errors-4"><a class="doc-anchor" href="#errors-4">§</a>Errors</h5>
+<p>Returns an error if I/O error occurs.</p>
+</div></details></div><h2 id="provided-methods" class="section-header">Provided Methods<a href="#provided-methods" class="anchor">§</a></h2><div class="methods"><details class="toggle method-toggle" open><summary><section id="method.size" class="method"><a class="src rightside" href="../../../src/arsync/traits/file.rs.html#149-152">Source</a><h4 class="code-header">async fn <a href="#method.size" class="fn">size</a>(&amp;self) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>&gt;</h4></section></summary><div class="docblock"><p>Get the file size</p>
+<p>Convenience method that gets metadata and returns size.</p>
+<h5 id="errors-5"><a class="doc-anchor" href="#errors-5">§</a>Errors</h5>
+<p>Returns an error if metadata cannot be retrieved.</p>
+</div></details><details class="toggle method-toggle" open><summary><section id="method.write_all_at" class="method"><a class="src rightside" href="../../../src/arsync/traits/file.rs.html#196-217">Source</a><h4 class="code-header">async fn <a href="#method.write_all_at" class="fn">write_all_at</a>(&amp;mut self, data: &amp;[<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u8.html">u8</a>], offset: <a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.u64.html">u64</a>) -&gt; <a class="type" href="../../error/type.Result.html" title="type arsync::error::Result">Result</a>&lt;<a class="primitive" href="https://doc.rust-lang.org/1.90.0/std/primitive.unit.html">()</a>&gt;</h4></section></summary><div class="docblock"><p>Write data to file at specific offset, ensuring all bytes are written</p>
+<p>Unlike <code>write_at()</code> which may perform partial writes, this method ensures
+all data is written by looping until complete.</p>
+<h5 id="design-rationale"><a class="doc-anchor" href="#design-rationale">§</a>Design Rationale</h5>
+<p><strong>Why <code>write_all_at()</code> is included but <code>read_all()</code> is NOT:</strong></p>
+<ul>
+<li>
+<p><strong>write_all_at()</strong>: Once you have data to write, you MUST write all of it
+before moving on. Partial writes would corrupt the file. This is a critical
+correctness requirement for copy/sync operations.</p>
+</li>
+<li>
+<p><strong>read_all()</strong>: NOT needed because you can process data as you read it in
+chunks (streaming). For copy operations, you read a chunk and immediately
+write it - no need to load the entire file into memory. Streaming is more
+efficient and works for files of any size.</p>
+</li>
+</ul>
+<p><strong>Usage pattern (correct streaming approach):</strong></p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>offset = <span class="number">0</span>;
+<span class="kw">let </span><span class="kw-2">mut </span>buffer = <span class="macro">vec!</span>[<span class="number">0u8</span>; <span class="number">64 </span>* <span class="number">1024</span>]; <span class="comment">// Reusable buffer
+</span><span class="kw">loop </span>{
+    <span class="kw">let </span>(n, buf) = src.read_at(buffer, offset).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">if </span>n == <span class="number">0 </span>{ <span class="kw">break</span>; } <span class="comment">// EOF
+     
+    </span>dst.write_all_at(<span class="kw-2">&amp;</span>buf[..n], offset).<span class="kw">await</span><span class="question-mark">?</span>; <span class="comment">// Must write ALL data
+    </span>buffer = buf; <span class="comment">// Reuse buffer
+    </span>offset += n <span class="kw">as </span>u64;
+}</code></pre></div>
+<h5 id="parameters-3"><a class="doc-anchor" href="#parameters-3">§</a>Parameters</h5>
+<ul>
+<li><code>data</code> - Data to write (will be copied into owned buffer)</li>
+<li><code>offset</code> - Offset in file to write at</li>
+</ul>
+<h5 id="errors-6"><a class="doc-anchor" href="#errors-6">§</a>Errors</h5>
+<p>Returns an error if:</p>
+<ul>
+<li>I/O error occurs</li>
+<li>write_at() returns 0 (indicates write failure)</li>
+</ul>
+</div></details></div><h2 id="dyn-compatibility" class="section-header">Dyn Compatibility<a href="#dyn-compatibility" class="anchor">§</a></h2><div class="dyn-compatibility-info"><p>This trait is <b>not</b> <a href="https://doc.rust-lang.org/1.90.0/reference/items/traits.html#dyn-compatibility">dyn compatible</a>.</p><p><i>In older versions of Rust, dyn compatibility was called "object safety", so this trait is not object safe.</i></p></div><h2 id="implementors" class="section-header">Implementors<a href="#implementors" class="anchor">§</a></h2><div id="implementors-list"><details class="toggle implementors-toggle"><summary><section id="impl-AsyncFile-for-AsyncFileWrapper" class="impl"><a class="src rightside" href="../../../src/arsync/file_wrapper.rs.html#83-158">Source</a><a href="#impl-AsyncFile-for-AsyncFileWrapper" class="anchor">§</a><h3 class="code-header">impl <a class="trait" href="trait.AsyncFile.html" title="trait arsync::traits::file::AsyncFile">AsyncFile</a> for <a class="struct" href="../../file_wrapper/struct.AsyncFileWrapper.html" title="struct arsync::file_wrapper::AsyncFileWrapper">AsyncFileWrapper</a></h3></section></summary><div class="impl-items"><section id="associatedtype.Metadata-1" class="associatedtype trait-impl"><a class="src rightside" href="../../../src/arsync/file_wrapper.rs.html#84">Source</a><a href="#associatedtype.Metadata-1" class="anchor">§</a><h4 class="code-header">type <a href="#associatedtype.Metadata" class="associatedtype">Metadata</a> = FileMetadata</h4></section></div></details></div><script src="../../../trait.impl/arsync/traits/file/trait.AsyncFile.js" async></script></section></div></main></body></html>

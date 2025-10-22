@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["handle_existing_hardlink","open_parent_dirfd","process_directory_entry_with_compio","process_file","process_root_entry","traverse_and_copy_directory_iterative"]};

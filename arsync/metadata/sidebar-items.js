@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["get_precise_timestamps","preserve_file_metadata","preserve_ownership_from_fd","preserve_permissions_from_fd","preserve_timestamps_from_fd","preserve_xattr_from_fd"],"struct":["MetadataConfig"]};
