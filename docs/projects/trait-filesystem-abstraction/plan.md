@@ -181,6 +181,8 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 - [ ] All trait methods tested
 - [ ] Performance acceptable
 
+**PR**: https://github.com/jmalicki/arsync/pull/109 ✅
+
 ---
 
 ### PR #5: Add copy helper using AsyncFile
