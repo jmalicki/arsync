@@ -41,9 +41,7 @@
 
 use crate::cli::ParallelCopyConfig;
 use crate::error::{Result, SyncError};
-use crate::file_wrapper::AsyncFileWrapper;
 use crate::metadata::{preserve_file_metadata, MetadataConfig};
-use crate::traits::AsyncFile;
 use compio::dispatcher::Dispatcher;
 use compio::fs::File;
 use compio::io::{AsyncReadAt, AsyncWriteAt};
