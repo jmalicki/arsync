@@ -210,6 +210,8 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 - [ ] Performance comparison (deferred to benchmarking PR)
 - [x] Tests pass
 
+**PR**: https://github.com/jmalicki/arsync/pull/110 ✅
+
 ---
 
 ## Phase 3: AsyncDirectory Trait
