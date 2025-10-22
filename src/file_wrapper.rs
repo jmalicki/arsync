@@ -28,6 +28,7 @@ use compio::io::{AsyncReadAt, AsyncWriteAt};
 /// let buffer = vec![0u8; 4096];
 /// let (bytes_read, buffer) = wrapper.read_at(buffer, 0).await?;
 /// ```
+#[allow(dead_code)] // Used in later PRs
 pub struct AsyncFileWrapper {
     /// The underlying compio file
     file: File,
@@ -51,6 +52,7 @@ impl AsyncFileWrapper {
     /// let wrapper = AsyncFileWrapper::new(file);
     /// ```
     #[must_use]
+    #[allow(dead_code)] // Used in later PRs
     pub fn new(file: File) -> Self {
         Self { file }
     }
@@ -61,6 +63,7 @@ impl AsyncFileWrapper {
     ///
     /// Returns a reference to the wrapped `compio::fs::File`
     #[must_use]
+    #[allow(dead_code)] // Used in later PRs
     pub fn inner(&self) -> &File {
         &self.file
     }
@@ -71,6 +74,7 @@ impl AsyncFileWrapper {
     ///
     /// Returns the wrapped `compio::fs::File`
     #[must_use]
+    #[allow(dead_code)] // Used in later PRs
     pub fn into_inner(self) -> File {
         self.file
     }
