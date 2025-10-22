@@ -26,7 +26,8 @@
 
 use crate::error::{xattr_error, Result};
 
-// macOS-specific constant for xattr operations on symlinks
+/// macOS-specific constant for xattr operations on symlinks
+/// Prevents following symlinks when getting/setting extended attributes
 #[cfg(target_os = "macos")]
 const XATTR_NOFOLLOW: libc::c_int = 0x0001;
 #[cfg(target_os = "linux")]
