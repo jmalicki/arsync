@@ -224,18 +224,20 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 **What**: Trait definitions for directory and entry
 
 **Tasks**:
-- [ ] Create `src/traits/directory.rs`
-- [ ] Define `AsyncDirectoryEntry` trait
-- [ ] Define `AsyncDirectory` trait
-- [ ] Add tests (compile checks)
+- [x] Create `src/traits/directory.rs`
+- [x] Define `AsyncDirectoryEntry` trait (3 required + 3 provided methods)
+- [x] Define `AsyncDirectory` trait (2 required methods)
+- [x] Add tests (4 tests with mock implementations)
 
 **Files**: `src/traits/mod.rs`, `src/traits/directory.rs` (new)
 
 **Time**: 3-4 hours
 
 **Success**:
-- [ ] Traits compile
-- [ ] Tests pass
+- [x] Traits compile
+- [x] All 4 tests pass
+
+**PR**: https://github.com/jmalicki/arsync/pull/111 ✅
 
 ---
 
