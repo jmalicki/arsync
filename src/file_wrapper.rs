@@ -125,7 +125,13 @@ impl AsyncFile for AsyncFileWrapper {
             accessed: m.accessed().unwrap_or(SystemTime::UNIX_EPOCH),
             modified: m.modified().unwrap_or(SystemTime::UNIX_EPOCH),
             created: m.created().ok(),
-            flags: None,      // Not available from standard metadata
+            #[cfg(target_os = "linux")]
+            attributes: None,
+            #[cfg(target_os = "linux")]
+            attributes_mask: None,
+            #[cfg(target_os = "macos")]
+            flags: None, // Not available from standard metadata
+            #[cfg(target_os = "macos")]
             generation: None, // Not available from standard metadata
         })
     }
