@@ -224,11 +224,11 @@ mod tests {
     // Generic Test Suite - Reusable for ANY AsyncFile implementation
     // =========================================================================
     //
-    // These functions test trait behavior generically. Any AsyncFile 
+    // These functions test trait behavior generically. Any AsyncFile
     // implementation can instantiate these tests by providing factory functions.
-    
+
     /// Test the size() provided method
-    pub async fn test_size_method<F, M>(file: F, expected_size: u64) 
+    pub async fn test_size_method<F, M>(file: F, expected_size: u64)
     where
         F: AsyncFile<Metadata = M>,
         M: AsyncMetadata,
@@ -238,15 +238,14 @@ mod tests {
     }
 
     /// Test write_all_at() with partial writes
-    /// 
+    ///
     /// Requires: File that simulates partial writes (returns < requested bytes)
     pub async fn test_write_all_at_handles_partial_writes<F, M>(
         file: F,
         test_data: &[u8],
         start_offset: u64,
         verify_written: impl FnOnce() -> Vec<(u64, Vec<u8>)>,
-    )
-    where
+    ) where
         F: AsyncFile<Metadata = M>,
         M: AsyncMetadata,
     {
@@ -255,38 +254,48 @@ mod tests {
 
         // Verify the writes
         let writes = verify_written();
-        
+
         // Should have made multiple calls since each write is partial
-        assert!(writes.len() > 1, 
-            "Expected multiple write calls due to partial writes, got {}", 
-            writes.len());
-        
+        assert!(
+            writes.len() > 1,
+            "Expected multiple write calls due to partial writes, got {}",
+            writes.len()
+        );
+
         // Reconstruct the data that was actually written
         let mut reconstructed = Vec::new();
         let mut expected_offset = start_offset;
-        
+
         for (i, (offset, data)) in writes.iter().enumerate() {
             // Verify offset advances correctly
-            assert_eq!(*offset, expected_offset, 
-                "Call {}: offset should be {}, got {}", 
-                i, expected_offset, offset);
-            
+            assert_eq!(
+                *offset, expected_offset,
+                "Call {}: offset should be {}, got {}",
+                i, expected_offset, offset
+            );
+
             reconstructed.extend_from_slice(data);
             expected_offset += data.len() as u64;
         }
-        
+
         // THE CRITICAL TEST: Verify reconstructed data matches original
-        assert_eq!(reconstructed, test_data, 
-            "Reconstructed data from partial writes must match original data exactly");
-        
+        assert_eq!(
+            reconstructed, test_data,
+            "Reconstructed data from partial writes must match original data exactly"
+        );
+
         // Verify each chunk contains correct data
         let mut data_position = 0;
         for (i, (_offset, chunk)) in writes.iter().enumerate() {
             let chunk_len = chunk.len();
             let expected_chunk = &test_data[data_position..data_position + chunk_len];
-            assert_eq!(chunk.as_slice(), expected_chunk,
-                "Call {}: chunk data should match original data at position {}", 
-                i, data_position);
+            assert_eq!(
+                chunk.as_slice(),
+                expected_chunk,
+                "Call {}: chunk data should match original data at position {}",
+                i,
+                data_position
+            );
             data_position += chunk_len;
         }
     }
@@ -298,24 +307,20 @@ mod tests {
         M: AsyncMetadata,
     {
         let result = file.write_all_at(b"test", 0).await;
-        
+
         // Should error when write_at returns 0
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("no bytes written"));
+        assert!(result.unwrap_err().to_string().contains("no bytes written"));
     }
 
     /// Test streaming read pattern with short reads
-    /// 
+    ///
     /// Requires: File that simulates short reads (returns < requested bytes)
     pub async fn test_streaming_pattern_with_short_reads<F, M>(
         file: F,
         expected_data: &[u8],
         buffer_size: usize,
-    )
-    where
+    ) where
         F: AsyncFile<Metadata = M>,
         M: AsyncMetadata,
     {
@@ -340,7 +345,7 @@ mod tests {
     }
 
     /// Test full copy loop with short reads
-    /// 
+    ///
     /// Requires: Source with short reads, destination that tracks writes
     pub async fn test_copy_loop_with_short_reads<SrcF, SrcM, DstF, DstM>(
         source: SrcF,
@@ -348,8 +353,7 @@ mod tests {
         expected_data: &[u8],
         buffer_size: usize,
         verify_written: impl FnOnce() -> std::collections::BTreeMap<u64, Vec<u8>>,
-    )
-    where
+    ) where
         SrcF: AsyncFile<Metadata = SrcM>,
         SrcM: AsyncMetadata,
         DstF: AsyncFile<Metadata = DstM>,
@@ -373,23 +377,30 @@ mod tests {
         // Verify the copied data
         let writes = verify_written();
         let mut reconstructed = Vec::new();
-        
+
         let mut expected_offset = 0u64;
         for (offset, chunk) in writes.iter() {
-            assert_eq!(*offset, expected_offset, 
-                "Write at offset {} but expected {}", offset, expected_offset);
+            assert_eq!(
+                *offset, expected_offset,
+                "Write at offset {} but expected {}",
+                offset, expected_offset
+            );
             reconstructed.extend_from_slice(chunk);
             expected_offset += chunk.len() as u64;
         }
 
         // THE CRITICAL TEST: Copied data must match source exactly
-        assert_eq!(reconstructed, expected_data, 
-            "Copied data must match source data exactly, even with short reads");
-        
+        assert_eq!(
+            reconstructed, expected_data,
+            "Copied data must match source data exactly, even with short reads"
+        );
+
         // Verify multiple operations occurred (proves short reads happened)
-        assert!(writes.len() > 3, 
-            "Expected multiple write operations due to short reads, got {}", 
-            writes.len());
+        assert!(
+            writes.len() > 3,
+            "Expected multiple write operations due to short reads, got {}",
+            writes.len()
+        );
     }
 
     // =========================================================================
@@ -614,21 +625,19 @@ mod tests {
             content: source_data.clone(),
         };
 
-        let written_data = std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
+        let written_data =
+            std::sync::Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::new()));
         let dest = MockDestFile {
             written_data: written_data.clone(),
         };
 
         let written_data_clone = written_data.clone();
-        
+
         // Call generic helper
-        test_copy_loop_with_short_reads(
-            source,
-            dest,
-            &source_data,
-            64,
-            move || written_data_clone.lock().unwrap().clone()
-        ).await;
+        test_copy_loop_with_short_reads(source, dest, &source_data, 64, move || {
+            written_data_clone.lock().unwrap().clone()
+        })
+        .await;
     }
 
     // Mock file that simulates partial writes and tracks actual data written
@@ -647,14 +656,14 @@ mod tests {
             // Simulate partial write: only write half the data (but at least 1 byte)
             let requested = buf.len();
             let written = (requested / 2).max(1);
-            
+
             // Track the actual data written (first 'written' bytes of buffer)
             let data_written = buf[..written].to_vec();
             self.written_data
                 .lock()
                 .unwrap()
                 .push((offset, data_written));
-            
+
             Ok((written, buf))
         }
 
@@ -686,14 +695,12 @@ mod tests {
 
         let test_data = b"Hello, World! This is a test of partial writes.";
         let written_data_clone = written_data.clone();
-        
+
         // Call generic helper
-        test_write_all_at_handles_partial_writes(
-            file,
-            test_data,
-            100,
-            move || written_data_clone.lock().unwrap().clone()
-        ).await;
+        test_write_all_at_handles_partial_writes(file, test_data, 100, move || {
+            written_data_clone.lock().unwrap().clone()
+        })
+        .await;
     }
 
     // Mock that returns 0 bytes written (write failure)
@@ -732,7 +739,7 @@ mod tests {
     #[compio::test]
     async fn mock_write_all_at_zero_write_error() {
         let file = ZeroWriteMockFile;
-        
+
         // Call generic helper
         test_write_all_at_zero_write_error(file).await;
     }
