@@ -6,6 +6,9 @@
 //!
 //! See `docs/projects/trait-filesystem-abstraction/` for design documentation.
 
+// Disallow std::fs usage in this module to enforce async filesystem operations
+#![deny(clippy::disallowed_methods)]
+
 pub mod file;
 pub mod metadata;
 

@@ -12,6 +12,9 @@
 //! - `traversal`: Recursive directory traversal logic
 //! - `mod`: Public API and module coordination (this file)
 
+// Disallow std::fs usage in this module to enforce async filesystem operations
+#![deny(clippy::disallowed_methods)]
+
 mod metadata;
 mod symlink;
 mod traversal;
@@ -138,6 +141,7 @@ pub async fn copy_directory(
 mod tests {
     #![allow(clippy::unwrap_used)]
     #![allow(clippy::expect_used)]
+    #![allow(clippy::disallowed_methods)]
     use super::*;
     use crate::stats::SharedStats;
     use std::os::unix::fs::MetadataExt;

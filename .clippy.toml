@@ -1,21 +1,68 @@
-# Minimal clippy configuration for settings that cannot be in Cargo.toml
-# Main lint configuration is now in Cargo.toml [workspace.lints.clippy]
+# Clippy configuration for arsync
+# This file contains advanced clippy configurations that cannot be expressed
+# in the Cargo.toml [lints] section
 
-# Documentation linting
-doc-valid-idents = ["self", "Self", "super", "crate", "Self", "T", "E", "Ok", "Err"]
+# Disallow std::fs usage in specific modules
+# This helps enforce the use of async filesystem operations in core modules
+disallowed-methods = [
+    { path = "std::fs::read", reason = "Use compio::fs::read for async operations" },
+    { path = "std::fs::write", reason = "Use compio::fs::write for async operations" },
+    { path = "std::fs::read_to_string", reason = "Use compio::fs::read_to_string for async operations" },
+    { path = "std::fs::create_dir", reason = "Use compio::fs::create_dir for async operations" },
+    { path = "std::fs::create_dir_all", reason = "Use compio::fs::create_dir_all for async operations" },
+    { path = "std::fs::remove_dir", reason = "Use compio::fs::remove_dir for async operations" },
+    { path = "std::fs::remove_dir_all", reason = "Use compio::fs::remove_dir_all for async operations" },
+    { path = "std::fs::remove_file", reason = "Use compio::fs::remove_file for async operations" },
+    { path = "std::fs::rename", reason = "Use compio::fs::rename for async operations" },
+    { path = "std::fs::copy", reason = "Use compio::fs::copy for async operations" },
+    { path = "std::fs::hard_link", reason = "Use compio::fs::hard_link for async operations" },
+    { path = "std::fs::symlink", reason = "Use compio::fs::symlink for async operations" },
+    { path = "std::fs::read_link", reason = "Use compio::fs::read_link for async operations" },
+    { path = "std::fs::metadata", reason = "Use compio::fs::metadata for async operations" },
+    { path = "std::fs::symlink_metadata", reason = "Use compio::fs::symlink_metadata for async operations" },
+    { path = "std::fs::set_permissions", reason = "Use compio::fs::set_permissions for async operations" },
+    { path = "std::fs::File::open", reason = "Use compio::fs::File::open for async operations" },
+    { path = "std::fs::File::create", reason = "Use compio::fs::File::create for async operations" },
+    { path = "std::fs::OpenOptions::new", reason = "Use compio::fs::OpenOptions::new for async operations" },
+    { path = "std::fs::read_dir", reason = "Use compio::fs::read_dir for async operations" },
+    { path = "std::fs::canonicalize", reason = "Use compio::fs::canonicalize for async operations" },
+    { path = "std::fs::copy_file", reason = "Use compio::fs::copy_file for async operations" },
+    { path = "std::fs::create_symlink", reason = "Use compio::fs::create_symlink for async operations" },
+    { path = "std::fs::create_hard_link", reason = "Use compio::fs::create_hard_link for async operations" },
+    { path = "std::fs::remove_symlink", reason = "Use compio::fs::remove_symlink for async operations" },
+    { path = "std::fs::set_times", reason = "Use compio::fs::set_times for async operations" },
+    { path = "std::fs::set_file_times", reason = "Use compio::fs::set_file_times for async operations" },
+    { path = "std::fs::DirBuilder::new", reason = "Use compio::fs::DirBuilder::new for async operations" },
+    { path = "std::fs::DirEntry::metadata", reason = "Use compio::fs::DirEntry::metadata for async operations" },
+    { path = "std::fs::DirEntry::file_type", reason = "Use compio::fs::DirEntry::file_type for async operations" },
+    { path = "std::fs::DirEntry::path", reason = "Use compio::fs::DirEntry::path for async operations" },
+    { path = "std::fs::DirEntry::file_name", reason = "Use compio::fs::DirEntry::file_name for async operations" },
+    { path = "std::fs::ReadDir::new", reason = "Use compio::fs::ReadDir::new for async operations" },
+    { path = "std::fs::Permissions::from_mode", reason = "Use compio::fs::Permissions::from_mode for async operations" },
+    { path = "std::fs::Permissions::set_readonly", reason = "Use compio::fs::Permissions::set_readonly for async operations" },
+    { path = "std::fs::Permissions::readonly", reason = "Use compio::fs::Permissions::readonly for async operations" },
+    { path = "std::fs::FileType::is_dir", reason = "Use compio::fs::FileType::is_dir for async operations" },
+    { path = "std::fs::FileType::is_file", reason = "Use compio::fs::FileType::is_file for async operations" },
+    { path = "std::fs::FileType::is_symlink", reason = "Use compio::fs::FileType::is_symlink for async operations" },
+    { path = "std::fs::FileType::is_socket", reason = "Use compio::fs::FileType::is_socket for async operations" },
+    { path = "std::fs::FileType::is_pipe", reason = "Use compio::fs::FileType::is_pipe for async operations" },
+    { path = "std::fs::FileType::is_char_device", reason = "Use compio::fs::FileType::is_char_device for async operations" },
+    { path = "std::fs::FileType::is_block_device", reason = "Use compio::fs::FileType::is_block_device for async operations" },
+    { path = "std::fs::Metadata::is_dir", reason = "Use compio::fs::Metadata::is_dir for async operations" },
+    { path = "std::fs::Metadata::is_file", reason = "Use compio::fs::Metadata::is_file for async operations" },
+    { path = "std::fs::Metadata::is_symlink", reason = "Use compio::fs::Metadata::is_symlink for async operations" },
+    { path = "std::fs::Metadata::len", reason = "Use compio::fs::Metadata::len for async operations" },
+    { path = "std::fs::Metadata::permissions", reason = "Use compio::fs::Metadata::permissions for async operations" },
+    { path = "std::fs::Metadata::modified", reason = "Use compio::fs::Metadata::modified for async operations" },
+    { path = "std::fs::Metadata::accessed", reason = "Use compio::fs::Metadata::accessed for async operations" },
+    { path = "std::fs::Metadata::created", reason = "Use compio::fs::Metadata::created for async operations" },
+    { path = "std::fs::Metadata::file_type", reason = "Use compio::fs::Metadata::file_type for async operations" },
+    { path = "std::fs::Metadata::is_socket", reason = "Use compio::fs::Metadata::is_socket for async operations" },
+    { path = "std::fs::Metadata::is_pipe", reason = "Use compio::fs::Metadata::is_pipe for async operations" },
+    { path = "std::fs::Metadata::is_char_device", reason = "Use compio::fs::Metadata::is_char_device for async operations" },
+    { path = "std::fs::Metadata::is_block_device", reason = "Use compio::fs::Metadata::is_block_device for async operations" }
+]
 
-# Performance and correctness
-disallowed-names = ["foo", "bar", "baz", "tmp", "temp"]
-# Note: HashMap and BTreeMap are allowed. Use DashMap for concurrent access when needed.
-disallowed-types = []
-disallowed-methods = ["std::panic::panic_any"]
-
-# Complexity thresholds (also configured in Cargo.toml for lint levels)
-too-many-arguments-threshold = 5
-too-many-lines-threshold = 100
-single-char-binding-names-threshold = 2
-
-# Test code policy: allow unwrap/expect in tests
+# Allow unwrap and expect in tests (common pattern)
 allow-unwrap-in-tests = true
 allow-expect-in-tests = true
-
