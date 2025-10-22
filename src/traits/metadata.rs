@@ -165,7 +165,7 @@ pub trait AsyncMetadata: Send + Sync + 'static {
     /// Returns a string describing the file type with additional details like size.
     fn file_type_description(&self) -> String {
         if self.is_symlink() {
-            "symbolic link".to_string()
+            "symlink".to_string()
         } else if self.is_dir() {
             "directory".to_string()
         } else if self.is_file() {
