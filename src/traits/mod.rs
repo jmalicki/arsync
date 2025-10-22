@@ -6,11 +6,12 @@
 //!
 //! See `docs/projects/trait-filesystem-abstraction/` for design documentation.
 
+pub mod directory;
 pub mod file;
 pub mod metadata;
 
 // Re-export main traits for convenience
-#[allow(unused_imports)]
-// TODO: Remove after PR #4 (file wrapper) to avoid masking real warnings
+#[allow(unused_imports)] // TODO: Remove after wrappers implemented to avoid masking real warnings
+pub use directory::{AsyncDirectory, AsyncDirectoryEntry};
 pub use file::AsyncFile;
 pub use metadata::AsyncMetadata;
