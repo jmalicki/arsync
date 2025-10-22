@@ -39,6 +39,11 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct DirectoryFd {
     /// The underlying file descriptor
+    ///
+    /// Uses `compio::fs::File` directly, which implements `Clone` via its internal
+    /// `SharedFd` (Arc-based). This provides cheap cloning without requiring an
+    /// explicit `Arc<File>` wrapper, and all clones share the same underlying
+    /// file descriptor.
     file: File,
     /// The path this directory represents (for debugging/error messages)
     path: PathBuf,
@@ -87,8 +92,34 @@ impl DirectoryFd {
 
     /// Get a reference to the underlying file descriptor
     ///
-    /// This is used internally by `*at` operations to get the file descriptor
-    /// for the directory.
+    /// This method provides access to the underlying `compio::fs::File` for advanced
+    /// operations. Most users should use the higher-level methods provided by
+    /// `DirectoryFd` instead.
+    ///
+    /// # Common Use Cases
+    ///
+    /// - Passing to `compio::fs` APIs that accept `&File`
+    /// - Accessing file descriptor properties via `AsRawFd`
+    /// - Performing custom operations not yet wrapped by `DirectoryFd`
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use compio_fs_extended::directory::DirectoryFd;
+    /// use std::path::Path;
+    /// use std::os::unix::io::AsRawFd;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let dir_fd = DirectoryFd::open(Path::new("/tmp")).await?;
+    /// 
+    /// // Access the raw file descriptor
+    /// let raw_fd = dir_fd.as_file().as_raw_fd();
+    /// # Ok(())
+    /// # }
+    /// ```
+    ///
+    /// Note: This is used internally by `DirectoryFd`'s implementation of operations
+    /// like `set_permissions()` and `set_ownership()`.
     #[must_use]
     pub fn as_file(&self) -> &File {
         &self.file
