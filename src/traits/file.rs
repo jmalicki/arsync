@@ -38,6 +38,8 @@ use crate::error::Result;
 /// let data = b"Hello, World!".to_vec();
 /// let (bytes_written, buffer) = file.write_at(data, 0).await?;
 /// ```
+#[allow(async_fn_in_trait)] // Intentional design for compio-style async I/O
+#[allow(dead_code)] // Will be used in PR #4 (file wrapper)
 pub trait AsyncFile: Send + Sync + 'static {
     /// The metadata type for this file
     type Metadata: AsyncMetadata;
