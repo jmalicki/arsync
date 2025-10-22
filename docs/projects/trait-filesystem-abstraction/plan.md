@@ -375,19 +375,21 @@ Wraps std::fs::DirEntry and implements AsyncDirectoryEntry trait.
 **Requirements**: [implementation-requirements.md](./implementation-requirements.md)
 
 **Tasks**:
-- [ ] Create `src/filesystem/metadata.rs`
-- [ ] Implement `preserve_metadata()` using DirectoryFd
-- [ ] Uses lutimensat, lfchmodat, lfchownat
-- [ ] Add tests
+- [x] Create `src/filesystem/metadata.rs`
+- [x] Implement `preserve_metadata()` using DirectoryFd
+- [x] Uses lutimensat, lfchmodat, lfchownat
+- [x] Add tests (3 tests: permissions, timestamps, no-config)
 
 **Files**: `src/filesystem/mod.rs`, `src/filesystem/metadata.rs` (new)
 
 **Time**: 3-4 hours
 
 **Success**:
-- [ ] Uses DirectoryFd *at syscalls
-- [ ] TOCTOU-safe
-- [ ] Tests pass
+- [x] Uses DirectoryFd *at syscalls
+- [x] TOCTOU-safe
+- [x] All 3 tests pass
+
+**PR**: https://github.com/jmalicki/arsync/pull/116 ✅
 
 ---
 
