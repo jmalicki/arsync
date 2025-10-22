@@ -29,6 +29,7 @@ pub mod varint;
 
 /// Parsed location (local or remote)
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // Used in later PRs for protocol implementation
 pub enum Location {
     /// Local filesystem path
     Local(PathBuf),
@@ -50,6 +51,7 @@ impl Location {
     ///
     /// Returns an error if the path string is invalid (reserved for future validation)
     #[allow(clippy::unnecessary_wraps)] // May add validation in future
+    #[allow(dead_code)] // Used in later PRs
     pub fn parse(s: &str) -> Result<Self> {
         // Check for remote syntax: [user@]host:path
         if let Some(colon_pos) = s.find(':') {
@@ -96,12 +98,14 @@ impl Location {
 
     /// Check if this is a remote location
     #[must_use]
+    #[allow(dead_code)] // Used in later PRs
     pub const fn is_remote(&self) -> bool {
         matches!(self, Self::Remote { .. })
     }
 
     /// Check if this is a local location
     #[must_use]
+    #[allow(dead_code)] // Used in later PRs
     pub const fn is_local(&self) -> bool {
         matches!(self, Self::Local(_))
     }
@@ -109,6 +113,7 @@ impl Location {
 
 /// Role in pipe-based protocol testing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)] // Used in later PRs for protocol testing
 pub enum PipeRole {
     /// Send data (like rsync client)
     Sender,
