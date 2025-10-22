@@ -52,6 +52,7 @@ pub mod copy_trait;
 pub mod directory;
 pub mod error;
 pub mod file_wrapper;
+pub mod filesystem;
 pub mod hardlink_tracker;
 pub mod i18n;
 pub mod io_uring;
