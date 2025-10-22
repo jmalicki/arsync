@@ -15,31 +15,28 @@ use std::path::{Path, PathBuf};
 /// race conditions. This is the recommended way to perform file operations
 /// relative to a directory.
 ///
-/// # Sharing and Cloning
+/// # Cloning
 ///
-/// `DirectoryFd` does not implement `Clone`. If you need to share a `DirectoryFd`
-/// across multiple contexts, wrap it in `Arc<DirectoryFd>` or `Rc<DirectoryFd>`.
-/// This keeps the zero-cost principle - you only pay for reference counting when needed.
+/// `DirectoryFd` implements `Clone` with minimal overhead. Cloning creates a new
+/// handle to the same underlying file descriptor via `compio::fs::File`'s internal
+/// Arc-based implementation. This means cloning is cheap (just an atomic increment)
+/// and all clones refer to the same directory.
 ///
 /// # Example
 ///
 /// ```rust,no_run
 /// use compio_fs_extended::directory::DirectoryFd;
 /// use std::path::Path;
-/// use std::sync::Arc;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let dir_fd = DirectoryFd::open(Path::new("/some/directory")).await?;
-/// // Use dir_fd for secure file operations
-///
-/// // If you need to share it:
-/// let shared = Arc::new(dir_fd);
-/// let clone1 = Arc::clone(&shared);
-/// let clone2 = Arc::clone(&shared);
+/// 
+/// // Cloning is cheap and creates another handle to the same directory
+/// let dir_fd_clone = dir_fd.clone();
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DirectoryFd {
     /// The underlying file descriptor
     file: File,
@@ -710,20 +707,18 @@ mod tests {
     }
 
     #[compio::test]
-    async fn test_directory_fd_arc_sharing() {
-        use std::sync::Arc;
-
+    async fn test_directory_fd_clone() {
         let temp_dir = TempDir::new().unwrap();
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
-        // Test Arc-based sharing (since DirectoryFd doesn't implement Clone)
-        let shared = Arc::new(dir_fd);
-        let clone1 = Arc::clone(&shared);
-        let clone2 = Arc::clone(&shared);
+        // Test cloning - should be cheap (just clones internal Arc)
+        let clone1 = dir_fd.clone();
+        let clone2 = dir_fd.clone();
 
-        assert_eq!(shared.path(), clone1.path());
-        assert_eq!(shared.path(), clone2.path());
-        assert_eq!(shared.as_raw_fd(), clone1.as_raw_fd());
+        // All clones refer to the same directory
+        assert_eq!(dir_fd.path(), clone1.path());
+        assert_eq!(dir_fd.path(), clone2.path());
+        assert_eq!(dir_fd.as_raw_fd(), clone1.as_raw_fd());
         assert_eq!(clone1.as_raw_fd(), clone2.as_raw_fd());
     }
 
