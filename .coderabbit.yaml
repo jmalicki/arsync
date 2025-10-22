@@ -25,8 +25,16 @@ reviews:
   instructions:
     - "Do NOT suggest changing rust-version or MSRV in Cargo.toml files - this is managed by the project maintainer"
     - "Do NOT comment on date formatting in documentation (October 18, 2025 vs October 18, 2025,)"
-    - "Focus on functional correctness, safety, and performance issues"
-    - "Defer style/formatting to rustfmt and clippy"
+    - "Do NOT comment on style, formatting, naming conventions, or code organization - these are handled by rustfmt and clippy"
+    - "Do NOT suggest variable renames unless the name is genuinely misleading or confusing"
+    - "FOCUS ON: Logic errors, correctness bugs, safety issues (use-after-free, data races, unsafe code correctness)"
+    - "FOCUS ON: Concurrency issues (deadlocks, race conditions, incorrect synchronization)"
+    - "FOCUS ON: Performance problems (unnecessary allocations, O(n²) algorithms, inefficient patterns)"
+    - "FOCUS ON: Error handling (unhandled errors, incorrect error propagation, panics in library code)"
+    - "FOCUS ON: Security vulnerabilities (path traversal, integer overflow, buffer overruns)"
+    - "FOCUS ON: API design issues that affect correctness or safety"
+    - "FOCUS ON: Async/await correctness, especially with io_uring and platform abstractions"
+    - "Be thorough in analyzing control flow, edge cases, and boundary conditions"
 
 chat:
   auto_reply: false
