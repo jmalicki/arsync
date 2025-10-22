@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let dir_fd = DirectoryFd::open(Path::new("/some/directory")).await?;
-/// 
+///
 /// // Cloning is cheap and creates another handle to the same directory
 /// let dir_fd_clone = dir_fd.clone();
 /// # Ok(())
@@ -728,7 +728,9 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Test creating a directory
-        let result = dir_fd.create_directory(std::ffi::OsStr::new("test_subdir"), 0o755).await;
+        let result = dir_fd
+            .create_directory(std::ffi::OsStr::new("test_subdir"), 0o755)
+            .await;
         assert!(result.is_ok());
 
         // Verify the directory was created
@@ -743,10 +745,15 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Create directory first time
-        dir_fd.create_directory(std::ffi::OsStr::new("test_subdir"), 0o755).await.unwrap();
+        dir_fd
+            .create_directory(std::ffi::OsStr::new("test_subdir"), 0o755)
+            .await
+            .unwrap();
 
         // Try to create it again (should fail)
-        let result = dir_fd.create_directory(std::ffi::OsStr::new("test_subdir"), 0o755).await;
+        let result = dir_fd
+            .create_directory(std::ffi::OsStr::new("test_subdir"), 0o755)
+            .await;
         assert!(result.is_err());
     }
 
@@ -756,7 +763,9 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Test creating directory with invalid name (empty string)
-        let result = dir_fd.create_directory(std::ffi::OsStr::new(""), 0o755).await;
+        let result = dir_fd
+            .create_directory(std::ffi::OsStr::new(""), 0o755)
+            .await;
         assert!(result.is_err());
     }
 
@@ -766,7 +775,10 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Create first level
-        dir_fd.create_directory(std::ffi::OsStr::new("level1"), 0o755).await.unwrap();
+        dir_fd
+            .create_directory(std::ffi::OsStr::new("level1"), 0o755)
+            .await
+            .unwrap();
 
         // Open the created directory and create second level
         let level1_path = temp_dir.path().join("level1");
@@ -818,7 +830,9 @@ mod tests {
         // Test multiple directory creation operations
         let dirs = ["dir1", "dir2", "dir3"];
         for dir_name in &dirs {
-            let result = dir_fd.create_directory(std::ffi::OsStr::new(dir_name), 0o755).await;
+            let result = dir_fd
+                .create_directory(std::ffi::OsStr::new(dir_name), 0o755)
+                .await;
             assert!(result.is_ok());
         }
 
