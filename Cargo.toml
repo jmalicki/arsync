@@ -24,6 +24,12 @@ members = ["benchmarks","crates/compio-fs-extended"]
 
 # Workspace-wide lints configuration (replaces clippy.toml)
 # This enforces high documentation and code quality standards
+
+# Rustc lints
+[workspace.lints.rust]
+# Our MSRV (1.90.0) fully supports async fn in trait (stable since 1.75.0)
+async-fn-in-trait = "allow"
+
 [workspace.lints.clippy]
 # Complexity and code quality lints
 too-many-arguments = "warn"
