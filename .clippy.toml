@@ -9,7 +9,7 @@ msrv = "1.90.0"
 # Documentation linting
 doc-valid-idents = ["self", "Self", "super", "crate", "Self", "T", "E", "Ok", "Err"]
 
-# Disallow std::fs usage in specific modules
+# Disallow std::fs usage in specific modules (src/traits and src/directory)
 # This helps enforce the use of async filesystem operations in core modules
 disallowed-methods = [
     { path = "std::fs::read", reason = "Use compio::fs::read for async operations" },

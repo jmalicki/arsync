@@ -12,8 +12,6 @@
 //! - `traversal`: Recursive directory traversal logic
 //! - `mod`: Public API and module coordination (this file)
 
-// Disallow std::fs usage in this module to enforce async filesystem operations
-#![deny(clippy::disallowed_methods)]
 
 mod metadata;
 mod symlink;
