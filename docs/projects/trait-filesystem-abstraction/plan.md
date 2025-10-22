@@ -347,18 +347,20 @@ Wraps std::fs::DirEntry and implements AsyncDirectoryEntry trait.
 **Requirements**: [implementation-requirements.md](./implementation-requirements.md)
 
 **Tasks**:
-- [ ] Create `src/filesystem/write.rs`
-- [ ] Implement `write_file_content()` using openat
-- [ ] Add tests
+- [x] Create `src/filesystem/write.rs`
+- [x] Implement `write_file_content()` using openat
+- [x] Add tests (5 tests: small, empty, binary, large, overwrite)
 
 **Files**: `src/filesystem/mod.rs`, `src/filesystem/write.rs` (new)
 
 **Time**: 2-3 hours
 
 **Success**:
-- [ ] Uses DirectoryFd::open_file_at()
-- [ ] O_NOFOLLOW for security
-- [ ] Tests pass
+- [x] Uses DirectoryFd::open_file_at()
+- [x] TOCTOU-safe (openat)
+- [x] All 5 tests pass
+
+**PR**: https://github.com/jmalicki/arsync/pull/115 ✅
 
 ---
 
@@ -373,19 +375,21 @@ Wraps std::fs::DirEntry and implements AsyncDirectoryEntry trait.
 **Requirements**: [implementation-requirements.md](./implementation-requirements.md)
 
 **Tasks**:
-- [ ] Create `src/filesystem/metadata.rs`
-- [ ] Implement `preserve_metadata()` using DirectoryFd
-- [ ] Uses lutimensat, lfchmodat, lfchownat
-- [ ] Add tests
+- [x] Create `src/filesystem/metadata.rs`
+- [x] Implement `preserve_metadata()` using DirectoryFd
+- [x] Uses lutimensat, lfchmodat, lfchownat
+- [x] Add tests (3 tests: permissions, timestamps, no-config)
 
 **Files**: `src/filesystem/mod.rs`, `src/filesystem/metadata.rs` (new)
 
 **Time**: 3-4 hours
 
 **Success**:
-- [ ] Uses DirectoryFd *at syscalls
-- [ ] TOCTOU-safe
-- [ ] Tests pass
+- [x] Uses DirectoryFd *at syscalls
+- [x] TOCTOU-safe
+- [x] All 3 tests pass
+
+**PR**: https://github.com/jmalicki/arsync/pull/116 ✅
 
 ---
 
