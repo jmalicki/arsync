@@ -7,7 +7,6 @@ use std::os::fd::{AsFd, BorrowedFd};
 #[cfg(unix)]
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 /// A directory file descriptor for secure directory-based operations
 ///
@@ -16,22 +15,34 @@ use std::sync::Arc;
 /// race conditions. This is the recommended way to perform file operations
 /// relative to a directory.
 ///
+/// # Sharing and Cloning
+///
+/// `DirectoryFd` does not implement `Clone`. If you need to share a `DirectoryFd`
+/// across multiple contexts, wrap it in `Arc<DirectoryFd>` or `Rc<DirectoryFd>`.
+/// This keeps the zero-cost principle - you only pay for reference counting when needed.
+///
 /// # Example
 ///
 /// ```rust,no_run
 /// use compio_fs_extended::directory::DirectoryFd;
 /// use std::path::Path;
+/// use std::sync::Arc;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let dir_fd = DirectoryFd::open(Path::new("/some/directory")).await?;
 /// // Use dir_fd for secure file operations
+///
+/// // If you need to share it:
+/// let shared = Arc::new(dir_fd);
+/// let clone1 = Arc::clone(&shared);
+/// let clone2 = Arc::clone(&shared);
 /// # Ok(())
 /// # }
 /// ```
 #[derive(Debug)]
 pub struct DirectoryFd {
     /// The underlying file descriptor
-    file: Arc<File>,
+    file: File,
     /// The path this directory represents (for debugging/error messages)
     path: PathBuf,
 }
@@ -72,7 +83,7 @@ impl DirectoryFd {
             .map_err(|e| directory_error(&format!("Failed to open directory {:?}: {}", path, e)))?;
 
         Ok(Self {
-            file: Arc::new(file),
+            file,
             path: path.to_path_buf(),
         })
     }
@@ -150,7 +161,7 @@ impl DirectoryFd {
                 .map_err(|e| directory_error(&format!("invalid directory name: {e}")))?;
 
             // SAFETY: The raw fd is valid for the duration of this call because:
-            // 1. DirectoryFd holds an Arc<File> keeping the fd open
+            // 1. DirectoryFd owns the File, keeping the fd open
             // 2. The spawned task completes before DirectoryFd is dropped
             // We use raw fd here because BorrowedFd from as_fd() has a non-'static lifetime,
             // but spawn requires 'static. This is the standard pattern for moving fds into tasks.
@@ -310,7 +321,7 @@ impl DirectoryFd {
             let full_path = base_path.join(std::ffi::OsStr::from_bytes(name_cstr.as_bytes()));
 
             Ok(Self {
-                file: Arc::new(file),
+                file,
                 path: full_path,
             })
         })
@@ -641,15 +652,6 @@ pub async fn read_dir(path: &Path) -> Result<std::fs::ReadDir> {
     .map_err(|e| directory_error(&format!("spawn_blocking failed: {:?}", e)))?
 }
 
-impl Clone for DirectoryFd {
-    fn clone(&self) -> Self {
-        Self {
-            file: Arc::clone(&self.file),
-            path: self.path.clone(),
-        }
-    }
-}
-
 #[cfg(unix)]
 impl AsFd for DirectoryFd {
     fn as_fd(&self) -> BorrowedFd<'_> {
@@ -708,14 +710,21 @@ mod tests {
     }
 
     #[compio::test]
-    async fn test_directory_fd_clone() {
+    async fn test_directory_fd_arc_sharing() {
+        use std::sync::Arc;
+
         let temp_dir = TempDir::new().unwrap();
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
-        // Test cloning
-        let cloned_dir_fd = dir_fd.clone();
-        assert_eq!(dir_fd.path(), cloned_dir_fd.path());
-        assert_eq!(dir_fd.as_raw_fd(), cloned_dir_fd.as_raw_fd());
+        // Test Arc-based sharing (since DirectoryFd doesn't implement Clone)
+        let shared = Arc::new(dir_fd);
+        let clone1 = Arc::clone(&shared);
+        let clone2 = Arc::clone(&shared);
+
+        assert_eq!(shared.path(), clone1.path());
+        assert_eq!(shared.path(), clone2.path());
+        assert_eq!(shared.as_raw_fd(), clone1.as_raw_fd());
+        assert_eq!(clone1.as_raw_fd(), clone2.as_raw_fd());
     }
 
     #[compio::test]
@@ -724,7 +733,7 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Test creating a directory
-        let result = dir_fd.create_directory("test_subdir", 0o755).await;
+        let result = dir_fd.create_directory(std::ffi::OsStr::new("test_subdir"), 0o755).await;
         assert!(result.is_ok());
 
         // Verify the directory was created
@@ -739,10 +748,10 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Create directory first time
-        dir_fd.create_directory("test_subdir", 0o755).await.unwrap();
+        dir_fd.create_directory(std::ffi::OsStr::new("test_subdir"), 0o755).await.unwrap();
 
         // Try to create it again (should fail)
-        let result = dir_fd.create_directory("test_subdir", 0o755).await;
+        let result = dir_fd.create_directory(std::ffi::OsStr::new("test_subdir"), 0o755).await;
         assert!(result.is_err());
     }
 
@@ -752,7 +761,7 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Test creating directory with invalid name (empty string)
-        let result = dir_fd.create_directory("", 0o755).await;
+        let result = dir_fd.create_directory(std::ffi::OsStr::new(""), 0o755).await;
         assert!(result.is_err());
     }
 
@@ -762,13 +771,13 @@ mod tests {
         let dir_fd = DirectoryFd::open(temp_dir.path()).await.unwrap();
 
         // Create first level
-        dir_fd.create_directory("level1", 0o755).await.unwrap();
+        dir_fd.create_directory(std::ffi::OsStr::new("level1"), 0o755).await.unwrap();
 
         // Open the created directory and create second level
         let level1_path = temp_dir.path().join("level1");
         let level1_dir_fd = DirectoryFd::open(&level1_path).await.unwrap();
         level1_dir_fd
-            .create_directory("level2", 0o755)
+            .create_directory(std::ffi::OsStr::new("level2"), 0o755)
             .await
             .unwrap();
 
@@ -814,7 +823,7 @@ mod tests {
         // Test multiple directory creation operations
         let dirs = ["dir1", "dir2", "dir3"];
         for dir_name in &dirs {
-            let result = dir_fd.create_directory(dir_name, 0o755).await;
+            let result = dir_fd.create_directory(std::ffi::OsStr::new(dir_name), 0o755).await;
             assert!(result.is_ok());
         }
 
