@@ -5,7 +5,7 @@
 //! filesystem abstraction.
 
 use crate::error::{Result, SyncError};
-use crate::traits::{AsyncFile, AsyncMetadata};
+use crate::traits::AsyncFile;
 use compio::fs::File;
 use compio::io::{AsyncReadAt, AsyncWriteAt};
 
