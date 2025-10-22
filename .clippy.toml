@@ -1,6 +1,10 @@
 # Minimal clippy configuration for settings that cannot be in Cargo.toml
 # Main lint configuration is now in Cargo.toml [workspace.lints.clippy]
 
+# MSRV - Clippy should respect our minimum supported Rust version
+# This prevents warnings about features that are stable in our MSRV
+msrv = "1.90.0"
+
 # Documentation linting
 doc-valid-idents = ["self", "Self", "super", "crate", "Self", "T", "E", "Ok", "Err"]
 

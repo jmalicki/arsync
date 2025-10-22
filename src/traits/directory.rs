@@ -25,7 +25,6 @@ use std::path::Path;
 /// let metadata = entry.metadata().await?;
 /// println!("Is file: {}", metadata.is_file());
 /// ```
-#[allow(async_fn_in_trait)] // Intentional design for compio-style async I/O
 #[allow(dead_code)] // Will be used in PR #7 (directory wrapper)
 pub trait AsyncDirectoryEntry: Send + Sync + 'static {
     /// The metadata type for this entry
@@ -124,7 +123,6 @@ pub trait AsyncDirectoryEntry: Send + Sync + 'static {
 ///     println!("Entry: {}", entry.name());
 /// }
 /// ```
-#[allow(async_fn_in_trait)] // Intentional design for compio-style async I/O
 #[allow(dead_code)] // Will be used in PR #7 (directory wrapper)
 pub trait AsyncDirectory: Send + Sync + 'static {
     /// The directory entry type
