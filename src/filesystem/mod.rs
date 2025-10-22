@@ -6,6 +6,8 @@
 
 pub mod read;
 pub mod walker;
+pub mod write;
 
 pub use read::read_file_content;
 pub use walker::SecureTreeWalker;
+pub use write::write_file_content;
