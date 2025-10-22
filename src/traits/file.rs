@@ -61,7 +61,7 @@ pub trait AsyncFile: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns `Err(SyncError)` if:
+    /// Returns an error if:
     /// - The file is not open for reading
     /// - I/O error occurs
     async fn read_at(&self, buf: Vec<u8>, offset: u64) -> Result<(usize, Vec<u8>)>;
@@ -83,7 +83,7 @@ pub trait AsyncFile: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns `Err(SyncError)` if:
+    /// Returns an error if:
     /// - The file is not open for writing
     /// - I/O error occurs
     async fn write_at(&self, buf: Vec<u8>, offset: u64) -> Result<(usize, Vec<u8>)>;
@@ -94,7 +94,7 @@ pub trait AsyncFile: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns `Err(SyncError)` if I/O error occurs during sync.
+    /// Returns an error if I/O error occurs during sync.
     async fn sync_all(&self) -> Result<()>;
 
     /// Get file metadata
@@ -105,13 +105,13 @@ pub trait AsyncFile: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns `Err(SyncError)` if I/O error occurs.
+    /// Returns an error if I/O error occurs.
     async fn metadata(&self) -> Result<Self::Metadata>;
 
     /// Copy data from this file to another file using copy_file_range
     ///
     /// This is the most efficient way to copy data between files on the same filesystem.
-    /// Falls back to read/write if copy_file_range is not supported.
+    /// Implementations should use the OS's zero-copy mechanism (e.g., copy_file_range on Linux).
     ///
     /// # Parameters
     ///
@@ -126,7 +126,7 @@ pub trait AsyncFile: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns `Err(SyncError)` if I/O error occurs.
+    /// Returns an error if I/O error occurs.
     async fn copy_file_range(
         &self,
         dst: &mut Self,
@@ -145,49 +145,43 @@ pub trait AsyncFile: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns `Err(SyncError)` if metadata cannot be retrieved.
+    /// Returns an error if metadata cannot be retrieved.
     async fn size(&self) -> Result<u64> {
         let metadata = self.metadata().await?;
         Ok(metadata.size())
     }
 
-    /// Read entire file contents
-    ///
-    /// Convenience method for reading small files. For large files, use read_at
-    /// in a loop with appropriate buffer size.
-    ///
-    /// # Errors
-    ///
-    /// Returns `Err(SyncError)` if:
-    /// - File is too large (> 100 MB to prevent excessive memory usage)
-    /// - I/O error occurs
-    async fn read_all(&self) -> Result<Vec<u8>> {
-        let metadata = self.metadata().await?;
-        let size = metadata.size();
-
-        // Prevent accidentally loading huge files into memory
-        const MAX_SIZE: u64 = 100 * 1024 * 1024; // 100 MB
-        if size > MAX_SIZE {
-            return Err(crate::error::SyncError::FileSystem(format!(
-                "File too large for read_all: {} bytes (max {} bytes)",
-                size, MAX_SIZE
-            )));
-        }
-
-        if size == 0 {
-            return Ok(Vec::new());
-        }
-
-        let buffer = vec![0u8; size as usize];
-        let (bytes_read, mut buffer) = self.read_at(buffer, 0).await?;
-        buffer.truncate(bytes_read);
-        Ok(buffer)
-    }
-
     /// Write data to file at specific offset, ensuring all bytes are written
     ///
-    /// Unlike write_at which may perform partial writes, this method ensures
-    /// all data is written by retrying until complete.
+    /// Unlike `write_at()` which may perform partial writes, this method ensures
+    /// all data is written by looping until complete.
+    ///
+    /// # Design Rationale
+    ///
+    /// **Why `write_all_at()` is included but `read_all()` is NOT:**
+    ///
+    /// - **write_all_at()**: Once you have data to write, you MUST write all of it
+    ///   before moving on. Partial writes would corrupt the file. This is a critical
+    ///   correctness requirement for copy/sync operations.
+    ///
+    /// - **read_all()**: NOT needed because you can process data as you read it in
+    ///   chunks (streaming). For copy operations, you read a chunk and immediately
+    ///   write it - no need to load the entire file into memory. Streaming is more
+    ///   efficient and works for files of any size.
+    ///
+    /// **Usage pattern (correct streaming approach):**
+    /// ```rust,ignore
+    /// let mut offset = 0;
+    /// let mut buffer = vec![0u8; 64 * 1024]; // Reusable buffer
+    /// loop {
+    ///     let (n, buf) = src.read_at(buffer, offset).await?;
+    ///     if n == 0 { break; } // EOF
+    ///     
+    ///     dst.write_all_at(&buf[..n], offset).await?; // Must write ALL data
+    ///     buffer = buf; // Reuse buffer
+    ///     offset += n as u64;
+    /// }
+    /// ```
     ///
     /// # Parameters
     ///
@@ -196,7 +190,9 @@ pub trait AsyncFile: Send + Sync + 'static {
     ///
     /// # Errors
     ///
-    /// Returns `Err(SyncError)` if I/O error occurs.
+    /// Returns an error if:
+    /// - I/O error occurs
+    /// - write_at() returns 0 (indicates write failure)
     async fn write_all_at(&self, data: &[u8], offset: u64) -> Result<()> {
         let mut buffer = data.to_vec();
         let mut current_offset = offset;
@@ -301,8 +297,10 @@ mod tests {
         }
 
         async fn metadata(&self) -> Result<Self::Metadata> {
+            // Return stored metadata, not derived from content
+            // This correctly mimics real file behavior where metadata is stored separately
             Ok(MockMetadata {
-                size: self.content.len() as u64,
+                size: self.metadata.size,
             })
         }
 
@@ -327,40 +325,5 @@ mod tests {
 
         let size = file.size().await.unwrap();
         assert_eq!(size, 5);
-    }
-
-    #[compio::test]
-    async fn test_read_all_small_file() {
-        let file = MockFile {
-            content: b"Hello, World!".to_vec(),
-            metadata: MockMetadata { size: 13 },
-        };
-
-        let contents = file.read_all().await.unwrap();
-        assert_eq!(contents, b"Hello, World!");
-    }
-
-    #[compio::test]
-    async fn test_read_all_empty_file() {
-        let file = MockFile {
-            content: Vec::new(),
-            metadata: MockMetadata { size: 0 },
-        };
-
-        let contents = file.read_all().await.unwrap();
-        assert_eq!(contents, b"");
-    }
-
-    #[compio::test]
-    async fn test_read_all_too_large() {
-        let size = 200 * 1024 * 1024; // 200 MB
-        let file = MockFile {
-            content: vec![0u8; size as usize], // Actual large content
-            metadata: MockMetadata { size },
-        };
-
-        let result = file.read_all().await;
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("too large"));
     }
 }
