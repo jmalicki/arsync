@@ -291,6 +291,7 @@ mod tests {
             Ok((to_copy, buf))
         }
 
+        #[allow(clippy::unimplemented)]
         async fn write_at(&self, _buf: Vec<u8>, _offset: u64) -> Result<(usize, Vec<u8>)> {
             unimplemented!("write_at not needed for provided method tests")
         }
