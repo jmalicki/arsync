@@ -193,22 +193,22 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 **What**: Small helper function that uses AsyncFile trait
 
 **Tasks**:
-- [ ] Add `copy_file_with_trait()` to `src/copy.rs`
-- [ ] Use AsyncFileWrapper and trait methods
-- [ ] Add tests comparing to existing `copy_file()`
+- [x] Add `copy_file_with_trait()` in new `src/copy_trait.rs`
+- [x] Use AsyncFileWrapper and trait methods
+- [x] Add tests (4 tests: small, empty, large, exact match)
 - [ ] Benchmark
 
-**Files**: `src/copy.rs`
+**Files**: `src/lib.rs`, `src/main.rs`, `src/copy_trait.rs` (new)
 
 **Time**: 2-3 hours
 
 **Integration**: Real copy operation uses traits ✓
 
 **Success**:
-- [ ] Helper works correctly
-- [ ] Behavior matches existing
-- [ ] Performance equivalent
-- [ ] Tests pass
+- [x] Helper works correctly
+- [x] All 4 tests pass
+- [ ] Performance comparison (deferred to benchmarking PR)
+- [x] Tests pass
 
 ---
 
