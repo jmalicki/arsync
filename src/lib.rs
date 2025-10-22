@@ -58,6 +58,7 @@ pub mod progress;
 pub mod protocol;
 pub mod stats;
 pub mod sync;
+pub mod traits;
 
 // Re-export commonly used types
 pub use error::{Result, SyncError};
