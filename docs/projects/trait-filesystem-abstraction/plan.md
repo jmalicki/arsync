@@ -96,6 +96,42 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 
 ---
 
+### PR #2.1 (Future): Richer special-file typing
+
+**Branch**: `feat/metadata-special-file-types` (optional enhancement)
+**Base**: `feat/metadata-impl-trait`
+
+**What**: Enhance `AsyncMetadata` to expose Unix special file types
+
+**Context**: CodeRabbit review suggestion from PR #107 - currently `file_type()` returns generic "unknown" for special files. Could expose richer typing using Unix mode bits.
+
+**Tasks**:
+- [ ] Add methods to detect specific special file types:
+  - `is_block_device()` - block devices
+  - `is_char_device()` - character devices  
+  - `is_fifo()` - named pipes/FIFOs
+  - `is_socket()` - Unix domain sockets
+- [ ] Update `file_type()` to return specific types: "block", "char", "fifo", "socket"
+- [ ] Update `file_type_description()` for consistency
+- [ ] Add tests for each special file type
+- [ ] Requires exposing Unix mode bits (`S_IFBLK`, `S_IFCHR`, `S_IFIFO`, `S_IFSOCK`)
+
+**Files**: `src/traits/metadata.rs`, tests
+
+**Time**: 2-3 hours
+
+**Priority**: Low - Nice to have for completeness, but not needed for core functionality
+
+**Success**:
+- [ ] Can detect and describe all Unix file types
+- [ ] `file_type()` returns specific strings for special files
+- [ ] Tests cover all file types
+- [ ] Documentation explains when/why to use these methods
+
+**Note**: This enhancement can be deferred indefinitely. The current implementation with "unknown" for special files is sufficient for most use cases.
+
+---
+
 ## Phase 2: AsyncFile Trait
 
 ### PR #3: Define AsyncFile trait
