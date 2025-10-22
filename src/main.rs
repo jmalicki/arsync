@@ -19,6 +19,7 @@ mod i18n;
 mod io_uring;
 mod metadata;
 mod progress;
+mod protocol;
 mod stats;
 mod sync;
 mod traits;
