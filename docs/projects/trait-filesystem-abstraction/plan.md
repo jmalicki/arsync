@@ -237,6 +237,8 @@ Incremental plan with **fine-grained steps**. Each PR is small, focused, and int
 - [x] Traits compile
 - [x] All 4 tests pass
 
+**PR**: https://github.com/jmalicki/arsync/pull/111 ✅
+
 ---
 
 ### PR #7: Implement traits for DirectoryEntry
