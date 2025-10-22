@@ -13,6 +13,7 @@ mod copy;
 mod copy_trait;
 mod directory;
 mod error;
+mod file_wrapper;
 mod hardlink_tracker;
 mod i18n;
 mod io_uring;
