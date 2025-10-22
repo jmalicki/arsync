@@ -29,6 +29,7 @@ use std::time::SystemTime;
 /// println!("Is file: {}", metadata.is_file());
 /// println!("Permissions: {:o}", metadata.permissions());
 /// ```
+#[allow(dead_code)] // Will be used in PR #4 (file wrapper)
 pub trait AsyncMetadata: Send + Sync + 'static {
     /// Get the size of the file or directory
     ///
