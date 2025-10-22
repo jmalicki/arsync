@@ -306,6 +306,7 @@ mod tests {
             })
         }
 
+        #[allow(clippy::unimplemented)]
         async fn copy_file_range(
             &self,
             _dst: &mut Self,
