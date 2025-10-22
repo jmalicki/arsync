@@ -29,6 +29,7 @@ use std::time::SystemTime;
 /// println!("Is file: {}", metadata.is_file());
 /// println!("Permissions: {:o}", metadata.permissions());
 /// ```
+#[allow(dead_code)] // Will be used in PR #4 (file wrapper)
 pub trait AsyncMetadata: Send + Sync + 'static {
     /// Get the size of the file or directory
     ///
@@ -164,7 +165,7 @@ pub trait AsyncMetadata: Send + Sync + 'static {
     /// Returns a string describing the file type with additional details like size.
     fn file_type_description(&self) -> String {
         if self.is_symlink() {
-            "symbolic link".to_string()
+            "symlink".to_string()
         } else if self.is_dir() {
             "directory".to_string()
         } else if self.is_file() {
@@ -223,6 +224,7 @@ mod tests {
 
     // Mock implementation for testing
     #[derive(Debug)]
+    #[allow(dead_code)] // Test fixture
     struct MockMetadata {
         size: u64,
         is_file: bool,

@@ -19,6 +19,7 @@ mod metadata;
 mod progress;
 mod stats;
 mod sync;
+mod traits;
 
 use cli::Args;
 use i18n::{set_language, Language, TranslationKey};
