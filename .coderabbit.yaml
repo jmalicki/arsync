@@ -15,6 +15,7 @@ reviews:
   auto_review:
     enabled: true
     auto_incremental_review: true
+    drafts: false  # Skip reviews for draft PRs
   
   # Ignore patterns - tell CodeRabbit to skip certain checks
   path_filters:
