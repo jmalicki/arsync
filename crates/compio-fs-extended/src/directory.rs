@@ -111,7 +111,7 @@ impl DirectoryFd {
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let dir_fd = DirectoryFd::open(Path::new("/tmp")).await?;
-    /// 
+    ///
     /// // Access the raw file descriptor
     /// let raw_fd = dir_fd.as_file().as_raw_fd();
     /// # Ok(())
