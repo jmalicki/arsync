@@ -1,0 +1,21 @@
+name: PR Base Branch Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  check-base-branch:
+    name: Prevent Merging Into Closed PR Branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Check if base branch was used in closed PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const script = require('./.github/scripts/check-pr-base-branch.js');
+            await script({github, context, core});
+
