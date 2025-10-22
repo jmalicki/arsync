@@ -285,24 +285,26 @@ Wraps std::fs::DirEntry and implements AsyncDirectoryEntry trait.
 **Requirements**: [implementation-requirements.md](./implementation-requirements.md)
 
 **Before**:
-- [ ] Read `src/directory/mod.rs`
-- [ ] Read `crates/compio-fs-extended/src/directory.rs`
+- [x] Read `src/directory/mod.rs`
+- [x] Read `crates/compio-fs-extended/src/directory.rs`
 
 **Tasks**:
-- [ ] Create `src/filesystem/mod.rs`
-- [ ] Create `src/filesystem/walker.rs` with `SecureTreeWalker`
-- [ ] Uses DirectoryFd throughout
-- [ ] Add comprehensive tests
+- [x] Create `src/filesystem/mod.rs`
+- [x] Create `src/filesystem/walker.rs` with `SecureTreeWalker`
+- [x] Uses DirectoryFd throughout
+- [x] Add comprehensive tests (5 tests)
 
-**Files**: `src/lib.rs`, `src/filesystem/*.rs` (2 new)
+**Files**: `src/lib.rs`, `src/main.rs`, `src/filesystem/*.rs` (2 new)
 
 **Time**: 6-8 hours
 
 **Success**:
-- [ ] Uses DirectoryFd + *at syscalls
-- [ ] TOCTOU-safe
-- [ ] stat() once per file
-- [ ] Tests pass
+- [x] Uses DirectoryFd + *at syscalls
+- [x] TOCTOU-safe (all ops via DirectoryFd)
+- [x] statx_full() once per file
+- [x] All 5 tests pass
+
+**PR**: https://github.com/jmalicki/arsync/pull/113 ✅
 
 ---
 
