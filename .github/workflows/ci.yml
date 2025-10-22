@@ -327,30 +327,3 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./target/doc
         force_orphan: true
-
-  ci-success:
-    name: CI Success
-    runs-on: ubuntu-latest
-    needs: 
-      - code-quality
-      - dependencies
-      - test
-      - integration-tests
-      - docker-tests
-      - coverage
-      - security
-      - docs
-    if: always()
-    steps:
-      - name: Check all jobs success
-        run: |
-          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]]; then
-            echo "One or more jobs failed"
-            exit 1
-          fi
-          if [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]]; then
-            echo "One or more jobs were cancelled"
-            exit 1
-          fi
-          echo "All jobs succeeded!"
-          echo "Note: Performance tests run conditionally on main branch"
