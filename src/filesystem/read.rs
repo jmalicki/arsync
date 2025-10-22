@@ -61,9 +61,6 @@ pub async fn read_file_content(dir_fd: &DirectoryFd, filename: &OsStr) -> Result
         })?;
 
     // Get file size for allocation
-    use std::os::unix::fs::MetadataExt;
-    use std::time::SystemTime;
-
     let m = file
         .metadata()
         .await
