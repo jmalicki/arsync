@@ -555,6 +555,7 @@ mod tests {
             })
         }
 
+        #[allow(clippy::unimplemented)]
         async fn copy_file_range(
             &self,
             _dst: &mut Self,
@@ -607,6 +608,7 @@ mod tests {
             Ok(MockMetadata { size: 0 })
         }
 
+        #[allow(clippy::unimplemented)]
         async fn copy_file_range(
             &self,
             _dst: &mut Self,
@@ -642,6 +644,7 @@ mod tests {
 
     // Mock file that simulates partial writes and tracks actual data written
     struct PartialWriteMockFile {
+        #[allow(clippy::type_complexity)] // Test fixture tracking (offset, data) pairs
         written_data: std::sync::Arc<std::sync::Mutex<Vec<(u64, Vec<u8>)>>>, // (offset, data)
     }
 
@@ -675,6 +678,7 @@ mod tests {
             Ok(MockMetadata { size: 0 })
         }
 
+        #[allow(clippy::unimplemented)]
         async fn copy_file_range(
             &self,
             _dst: &mut Self,
@@ -725,6 +729,7 @@ mod tests {
             Ok(MockMetadata { size: 0 })
         }
 
+        #[allow(clippy::unimplemented)]
         async fn copy_file_range(
             &self,
             _dst: &mut Self,

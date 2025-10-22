@@ -6,7 +6,8 @@ doc-valid-idents = ["self", "Self", "super", "crate", "Self", "T", "E", "Ok", "E
 
 # Performance and correctness
 disallowed-names = ["foo", "bar", "baz", "tmp", "temp"]
-disallowed-types = ["std::collections::HashMap", "std::collections::BTreeMap"]
+# Note: HashMap and BTreeMap are allowed. Use DashMap for concurrent access when needed.
+disallowed-types = []
 disallowed-methods = ["std::panic::panic_any"]
 
 # Complexity thresholds (also configured in Cargo.toml for lint levels)
