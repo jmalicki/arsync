@@ -110,15 +110,26 @@ impl SecureTreeWalker {
     ///
     /// Returns a Vec rather than an async iterator for simplicity.
     /// For very large directories, this may use significant memory.
+    ///
+    /// # TOCTOU Safety
+    ///
+    /// While directory listing uses path-based `read_dir` (kernel limitation - no io_uring
+    /// GETDENTS64 support), all operations on individual entries use DirectoryFd + *at
+    /// syscalls (statx_full, open_directory_at). This provides TOCTOU safety for actual
+    /// file operations, though the directory itself could theoretically be replaced between
+    /// opening the DirectoryFd and listing entries (mitigated by keeping DirectoryFd open).
     pub async fn walk(&self) -> Result<Vec<FileEntry>> {
         let mut result = Vec::new();
         let mut queue: VecDeque<(DirectoryFd, PathBuf)> = VecDeque::new();
 
-        // Start with root
+        // Start with root (DirectoryFd.clone() is cheap - just clones Arc)
         queue.push_back((self.root.clone(), PathBuf::new()));
 
         while let Some((dir_fd, rel_path)) = queue.pop_front() {
             // Read directory entries
+            // Note: Uses path-based read_dir due to kernel limitation (no GETDENTS64 in io_uring)
+            // See: https://lwn.net/Articles/878873/
+            // The DirectoryFd remains open, providing some TOCTOU protection
             let entries = compio_fs_extended::directory::read_dir(dir_fd.path())
                 .await
                 .map_err(|e| {
@@ -139,7 +150,7 @@ impl SecureTreeWalker {
                 let name = entry.file_name();
                 let entry_rel_path = rel_path.join(&name);
 
-                // Get metadata using DirectoryFd (TOCTOU-safe)
+                // Get metadata using DirectoryFd (TOCTOU-safe *at syscall)
                 let metadata = dir_fd.statx_full(&name).await.map_err(|e| {
                     SyncError::FileSystem(format!(
                         "Failed to get metadata for {}: {e}",
@@ -147,25 +158,31 @@ impl SecureTreeWalker {
                     ))
                 })?;
 
-                // Add to results
-                result.push(FileEntry {
-                    relative_path: entry_rel_path.clone(),
-                    name: name.clone(),
-                    metadata: metadata.clone(),
-                    parent_fd: dir_fd.clone(),
-                });
+                let is_dir = metadata.is_dir();
 
-                // If it's a directory, add to queue for traversal
-                if metadata.is_dir() {
-                    // Open subdirectory using DirectoryFd (TOCTOU-safe)
-                    let subdir_fd = dir_fd.open_directory_at(&name).await.map_err(|e| {
+                // If it's a directory, open it now before we move the name
+                let subdir_fd = if is_dir {
+                    Some(dir_fd.open_directory_at(&name).await.map_err(|e| {
                         SyncError::FileSystem(format!(
                             "Failed to open subdirectory {}: {e}",
                             entry_rel_path.display()
                         ))
-                    })?;
+                    })?)
+                } else {
+                    None
+                };
 
-                    queue.push_back((subdir_fd, entry_rel_path));
+                // Add to results (avoiding unnecessary clones)
+                result.push(FileEntry {
+                    relative_path: entry_rel_path.clone(),
+                    name,
+                    metadata,
+                    parent_fd: dir_fd.clone(),
+                });
+
+                // If it's a directory, add to queue for traversal
+                if let Some(fd) = subdir_fd {
+                    queue.push_back((fd, entry_rel_path));
                 }
             }
         }
