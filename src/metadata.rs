@@ -431,8 +431,6 @@ pub async fn get_precise_timestamps(path: &Path) -> Result<(SystemTime, SystemTi
 // Trait Implementations
 // ============================================================================
 
-use crate::traits::AsyncMetadata;
-
 /// Implementation of AsyncMetadata for FileMetadata
 ///
 /// This enables FileMetadata to be used with the trait-based filesystem abstraction.
